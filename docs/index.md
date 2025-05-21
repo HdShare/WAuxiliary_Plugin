@@ -58,4 +58,8 @@ features:
     details: 输入框输入[龙图]长按发送，成为真龙
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/yfishyon/long
 
+  - title: 黑丝举牌@周芷越
+    details: 命令[黑丝举牌 第一行 第二行 第三行]第二行和第三行并非必要
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/zhouzhiyue/hsjp
+
 ---

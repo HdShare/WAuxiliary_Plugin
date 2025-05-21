@@ -49,4 +49,13 @@ features:
   - title: 点歌@CkBcDD
     details: 命令[/点歌 Never Gonna Give You Up]，监听收到消息时自动发送歌曲卡片
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CkBcDD/Fetch-Music
+
+  - title: 瑟瑟@yfishyon
+    details: 命令[白丝/黑丝]，长按发送按钮发送相应瑟瑟内容
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/yfishyon/sese
+
+  - title: 龙图@yfishyon
+    details: 输入框输入[龙图]长按发送，成为真龙
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/yfishyon/long
+
 ---

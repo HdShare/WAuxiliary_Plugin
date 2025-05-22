@@ -50,16 +50,15 @@ features:
     details: 命令[/点歌 Never Gonna Give You Up]，监听收到消息时自动发送歌曲卡片
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CkBcDD/Fetch-Music
 
-  - title: 瑟瑟@yfishyon
-    details: 命令[白丝/黑丝]，长按发送按钮发送相应瑟瑟内容
+   - title: 看看腿@yfishyon
+    details: 输入框输入[黑丝]/[白丝]，长按发送看看腿
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/yfishyon/sese
 
-  - title: 龙图@yfishyon
-    details: 输入框输入[龙图]长按发送，成为真龙
+   - title: 龙图@yfishyon
+    details: 输入框输入[龙图]，长按发送成为龙王
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/yfishyon/long
 
-  - title: 黑丝举牌@周芷越
-    details: 命令[黑丝举牌 第一行 第二行 第三行]第二行和第三行并非必要
-    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/zhouzhiyue/hsjp
-
+   - title: 举牌@周芷越
+    details: 输入框输入[举牌 内容]，生成举牌
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/周芷越/jupai
 ---

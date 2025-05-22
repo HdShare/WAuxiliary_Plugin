@@ -43,7 +43,7 @@ void sendMusic(String talker, String title) {
                     String singer = singerObj != null ? singerObj.toString() : "未知歌手";
                     String link = linkObj != null ? linkObj.toString() : "";
                     String url = urlObj.toString();
-                    String appId = "wx8dd6ecd81906fd84";
+                    String appId = "wx8dd6ecd81906fd84";    // 网易云音乐
                     
                     log("找到歌曲: " + name + " - " + singer);
                     sendMusicCard(talker, name, singer, url, link, appId);

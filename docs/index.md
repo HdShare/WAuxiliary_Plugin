@@ -50,6 +50,10 @@ features:
     details: 命令[/作图 Corn Hub], 长按发送按钮生成并发送图片
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CkBcDD/TXT-to-IMG
 
+  - title: 群投票@CkBcDD
+    details: 命令[/投票 标题 选项1 选项2 ……], 监听消息发送，其他群成员发送数字[1, 2, etc.]选择。发送[/结束投票]以结算。
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CkBcDD/Group-Poll
+
   - title: 点歌@CkBcDD
     details: 命令[/点歌 Never Gonna Give You Up], 监听收到消息时自动发送歌曲卡片
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CkBcDD/Fetch-Music

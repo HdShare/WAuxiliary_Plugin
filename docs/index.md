@@ -73,4 +73,8 @@ features:
   - title: 举牌@周芷越
     details: 输入框输入[举牌 内容], 生成举牌
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/周芷越/jupai
+
+  - title: 表情合成@Kyo
+    details: 监听收到[系统表情1+系统表情2]时自动合成新表情并发送(使用emojik.vercel.app)
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/Kyo/EmojiKitchen
 ---

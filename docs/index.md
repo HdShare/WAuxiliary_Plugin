@@ -18,9 +18,17 @@ features:
     details: 命令[/点歌 你好], 监听收到消息时自动发送歌曲卡片
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/MusicPlugin
 
+  - title: 视频插件@hd
+    details: 命令[/视频], 监听收到消息时自动发送视频
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/VideoPlugin
+
   - title: 自动回复@hd
     details: 监听收到文本消息时自动回复对应内容
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/AutoReply
+
+  - title: 自动回复艾特@hd
+    details: 监听收到艾特消息时自动艾特询问干嘛
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/AutoReplyAt
 
   - title: 历史今天@hd
     details: 命令[/历史今天], 监听收到消息时自动发送历史今天图片
@@ -49,6 +57,10 @@ features:
   - title: 进群邀请@hd
     details: 监听私聊收到[进群]时自动发送群聊邀请(需修改群聊wxid)
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/JoinGroupInvite
+
+  - title: 自动同意好友@hd
+    details: 监听收到好友申请时自动通过
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/AutoAgreeFriend
 
   - title: 文生图@CkBcDD
     details: 命令[/作图 Corn Hub], 长按发送按钮生成并发送图片

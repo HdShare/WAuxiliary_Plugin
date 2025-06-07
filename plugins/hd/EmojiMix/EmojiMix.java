@@ -7,6 +7,7 @@ import java.io.File;
 import me.hd.wauxv.plugin.api.callback.PluginCallBack;
 
 void onHandleMsg(Object msgInfoBean) {
+    if (!msgInfoBean.isSend()) return;
     if (msgInfoBean.isText()) {
         String content = msgInfoBean.getContent();
         String talker = msgInfoBean.getTalker();
@@ -15,8 +16,7 @@ void onHandleMsg(Object msgInfoBean) {
             if (emojis.length == 2) {
                 String emoji1 = emojis[0].trim();
                 String emoji2 = emojis[1].trim();
-
-                get("https://sbtxqq.com/api/emojimix.php?emoji1=" + emoji1 + "&emoji2=" + emoji2, null, new PluginCallBack.HttpCallback() {
+                get("https://api.317ak.com/API/yljk/emo/emo.php?emoji1=" + emoji1 + "&emoji2=" + emoji2, null, new PluginCallBack.HttpCallback() {
                     public void onSuccess(int respCode, String respContent) {
                         JSONObject jsonObject = JSON.parseObject(respContent);
                         int code = JSONPath.eval(jsonObject, "$.code");
@@ -28,14 +28,16 @@ void onHandleMsg(Object msgInfoBean) {
                                 }
 
                                 public void onError(Exception e) {
-                                    sendText(getTargetTalker(), "[晴天API]下载异常:" + e.getMessage());
+                                    sendText(getTargetTalker(), "[倾梦API]下载异常:" + e.getMessage());
                                 }
                             });
+                        } else {
+                            sendText(getTargetTalker(), "[倾梦API]生成失败:" + JSONPath.eval(jsonObject, "$.text"));
                         }
                     }
 
                     public void onError(Exception e) {
-                        sendText(getTargetTalker(), "[晴天API]生成异常:" + e.getMessage());
+                        sendText(getTargetTalker(), "[倾梦API]生成异常:" + e.getMessage());
                     }
                 });
             }

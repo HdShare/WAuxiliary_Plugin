@@ -89,4 +89,8 @@ features:
   - title: 表情合成@Kyo
     details: 监听收到[系统表情1+系统表情2]时自动合成新表情并发送(使用emojik.vercel.app)
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/Kyo/EmojiKitchen
+
+  - title: Http主动发送@CK
+    details: 通过 http 请求主动发送消息 `curl -X POST 'http://0.0.0.0:13333' --data '{"ids":["wxid1","wxid2"],"msg":"HelloWorld"}' --location`
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CK/HttpSend
 ---

@@ -90,6 +90,10 @@ features:
     details: 监听收到[系统表情1+系统表情2]时自动合成新表情并发送(使用emojik.vercel.app)
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/Kyo/EmojiKitchen
 
+  - title: Http主动发送@CK
+    details: 通过 http 请求主动发送消息 `curl -X POST 'http://0.0.0.0:13333' --data '{"ids":["wxid1","wxid2"],"msg":"HelloWorld"}' --location`
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CK/HttpSend
+
   - title: DeepSeek多角色智能体@CK
     details: "监听收到消息时通过DeepSeek AI自动聊天(需修改密钥)，不同的群和好友可设置不同的角色。选定对应对话框输入“角色设定: 你是一个逗逼”(不含引号)，长按发送按钮即可设定，重复设定可更新角色"
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CK/DeepSeek

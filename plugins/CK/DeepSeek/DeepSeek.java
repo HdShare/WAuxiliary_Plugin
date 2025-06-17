@@ -223,8 +223,13 @@ void onHandleMsg(Object msgInfoBean) {
             if (hasForbiddenWord(userContent)) {
                 return;
             }
-
-            // 第二步：关键词触发逻辑
+            // 第二步：ID排除判断
+            for (String excluded : excludedIds) {
+                if (excluded.equals(talkerId)) {
+                    return; // 跳过处理
+                }
+            }
+            // 第三步：关键词触发逻辑
             boolean containsTrigger = false;
             if (privateTriggerWords.length == 0) {
                 containsTrigger = true;

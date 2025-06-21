@@ -560,9 +560,3 @@ config.put("ENABLE_DETAILED_LOG", true);  // 详细日志
 - **[HdShare](https://github.com/HdShare)**: WAuxiliary框架的主要开发者
 - **开源社区**: 提供技术支持和最佳实践
 - **所有用户**: 测试反馈和功能建议
-
----
-
-**⭐ 如果这个插件对您有帮助，请给个Star支持一下！欢迎Fork和贡献代码！**
-
-**📧 技术交流 | �� 问题反馈 | 💡 功能建议** 

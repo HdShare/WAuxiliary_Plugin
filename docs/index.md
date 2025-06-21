@@ -105,8 +105,8 @@ features:
   - title: 抖音视频解析下载@coderpwh
     details: "监听消息，或者长按发送按钮，解析抖音视频链接并下载发送"
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/coderpwh/douyin
-    
-  - title: 微信群组管理@C3604
+
+  - title: 微信自动管理@C3604
     details: "自动添加好友，自动拉群，群管"
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/C3604/WeChatAutoManager
 ---

@@ -66,6 +66,14 @@ features:
     details: 自定义好友或者群聊头像
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/CustomAvatar
 
+  - title: 摸头@hd
+    details: 命令[/rua]引用他人消息, 即可生成摸头GIF并发送
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/Avatar-rua
+
+  - title: 语录@hd
+    details: 命令[/q]引用他人消息, 即可生成语录图并发送
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/msg-q/
+
   - title: 文生图@CkBcDD
     details: 命令[/作图 Corn Hub], 长按发送按钮生成并发送图片
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CkBcDD/TXT-to-IMG

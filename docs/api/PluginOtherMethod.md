@@ -33,3 +33,11 @@ Activity getTopActivity();
 ```java
 void uploadDeviceStep(long step);
 ```
+
+## 获取头像链接
+
+```java
+void getAvatarUrl(String username);
+
+void getAvatarUrl(String username, boolean isBigHeadImg);
+```

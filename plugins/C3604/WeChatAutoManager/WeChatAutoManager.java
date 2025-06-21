@@ -14,36 +14,34 @@ import java.util.Map;
 Map getPluginConfig() {
     Map config = new HashMap();
     
-    // === �� 群组配置中心 ===
-    // ⚠️ 重要：以下所有群组ID均为示例，使用前必须替换为您的真实群组ID
-    config.put("LOG_GROUP_ID", "your_log_group_id@chatroom");
+    // === 📱 群组配置中心 ===
+    config.put("LOG_GROUP_ID", "12345678901@chatroom");
     
     String[] userGroups = {
-        "your_group1_id@chatroom", // 群组1
-        "your_group2_id@chatroom", // 群组2
-        "your_group3_id@chatroom", // 群组3  
-        "your_group4_id@chatroom"  // 群组4
+        "11111111111@chatroom", // 示例群1
+        "22222222222@chatroom", // 示例群2
+        "33333333333@chatroom", // 示例群3  
+        "44444444444@chatroom"  // 示例群4
     };
     config.put("USER_GROUPS", userGroups);
     
     // 群组名称映射
     Map groupNameMap = new HashMap();
-    groupNameMap.put("your_group1_id@chatroom", "群组1");
-    groupNameMap.put("your_group2_id@chatroom", "群组2");
-    groupNameMap.put("your_group3_id@chatroom", "群组3");
-    groupNameMap.put("your_group4_id@chatroom", "群组4");
-    groupNameMap.put("your_log_group_id@chatroom", "管理日志群");
+    groupNameMap.put("11111111111@chatroom", "示例群1");
+    groupNameMap.put("22222222222@chatroom", "示例群2");
+    groupNameMap.put("33333333333@chatroom", "示例群3");
+    groupNameMap.put("44444444444@chatroom", "示例群4");
+    groupNameMap.put("12345678901@chatroom", "管理日志群");
     config.put("GROUP_NAME_MAP", groupNameMap);
     
     // === 🤝 好友管理配置 ===
     config.put("WELCOME_MESSAGE", "✨ 你好呀～很高兴通过你的好友申请！\n\n有什么想问的或需要帮忙的，尽管说，不用太客气😉 我看到消息会第一时间回复～\n\n🏎️ 想进群？回复「加群」就可以啦～\n\n🤖 （本消息为自动回复）");
     
     // === 🎯 群邀请配置 ===
-    // ⚠️ 重要：请将触发关键词修改为您需要的关键词
     config.put("TRIGGER_KEYWORD", "加群");
     config.put("MAX_GROUP_MEMBERS", 500);
     
-    config.put("CONFIRM_MESSAGE", "📩 群聊邀请已发送，请注意查收。\n\n❗ 温馨提示：由于微信群环境较为复杂，请您务必提高防范意识，切勿轻信涉及资金往来等操作。\n\n📌 请关注我们的相关信息渠道，以防群聊被封后无法联系。\n\n（本消息为自动回复）");
+    config.put("CONFIRM_MESSAGE", "📩 群聊邀请已发送，请注意查收。\n\n❗ 温馨提示：由于微信群环境较为复杂，请您务必提高防范意识，切勿轻信涉及资金往来等操作。\n\n📌 请关注微信公众号【示例公众号】，以防群聊被封后无法联系。届时我们将通过公众号推送最新群信息。\n\n（本消息为自动回复）");
     config.put("ERROR_MESSAGE", "抱歉，群聊邀请发送失败，请稍后重试。");
     config.put("FULL_GROUP_MESSAGE", "抱歉，所有群组都已满员，暂时无法发送邀请，请稍后重试。");
     
@@ -56,7 +54,7 @@ Map getPluginConfig() {
     config.put("LEFT_MESSAGE", "😢 {userName} 离开了群聊，我们会想念你的！\n\n期待您再次回来！");
     
     // === 📋 日志配置 ===
-    config.put("ENABLE_DETAILED_LOG", true);
+    // 已优化为汇总日志模式，无需详细日志配置
     
     return config;
 }
@@ -142,14 +140,9 @@ void onNewFriend(String wxid, String ticket, int scene) {
         
         Map config = getPluginConfig();
         String welcomeMessage = (String) config.get("WELCOME_MESSAGE");
-        boolean enableDetailedLog = (Boolean) config.get("ENABLE_DETAILED_LOG");
-        
-        // 记录开始处理好友申请
-        sendInfoLog("检测到好友申请: wxid=" + wxid + ", scene=" + scene);
         
         // 自动通过好友申请
         verifyUser(wxid, ticket, scene);
-        sendFunctionLog("已自动通过好友申请: " + wxid);
         
         // 异步发送欢迎消息，避免阻塞主线程
         new Thread(new Runnable() {
@@ -160,14 +153,13 @@ void onNewFriend(String wxid, String ticket, int scene) {
                     
                     // 发送欢迎消息
                     sendText(wxid, welcomeMessage);
-                    sendFunctionLog("已发送欢迎消息给: " + wxid);
                     
-                    // 详细日志记录
-                    if (enableDetailedLog) {
-                        logDetailedFriendInfo(wxid, scene);
-                    }
+                    // 发送汇总日志
+                    sendFriendSummaryLog(wxid, scene, true, null);
+                    
                 } catch (Exception e) {
-                    sendErrorLog("发送欢迎消息异常: " + e.getMessage());
+                    // 发送失败日志
+                    sendFriendSummaryLog(wxid, scene, false, e.getMessage());
                 }
             }
         }).start();
@@ -178,35 +170,41 @@ void onNewFriend(String wxid, String ticket, int scene) {
 }
 
 /**
- * 记录详细的好友申请信息
+ * 发送好友申请处理汇总日志
  */
-void logDetailedFriendInfo(String wxid, int scene) {
+void sendFriendSummaryLog(String wxid, int scene, boolean success, String errorMsg) {
     try {
-        Map config = getPluginConfig();
-        String welcomeMessage = (String) config.get("WELCOME_MESSAGE");
-        
         // 获取好友昵称
         String friendName = getFriendName(wxid);
         if (friendName == null || friendName.isEmpty()) {
             friendName = "未知用户";
         }
         
-        // 获取当前时间
+        // 构建汇总日志
         String currentTime = getCurrentTime();
-        
         StringBuilder logContent = new StringBuilder();
-        logContent.append("=== 详细好友申请信息 ===\n");
-        logContent.append("时间: ").append(currentTime).append("\n");
-        logContent.append("用户ID: ").append(wxid).append("\n");
-        logContent.append("用户昵称: ").append(friendName).append("\n");
-        logContent.append("申请场景: ").append(scene).append("\n");
-        logContent.append("欢迎消息: ").append(welcomeMessage.substring(0, Math.min(50, welcomeMessage.length()))).append("...").append("\n");
-        logContent.append("======================");
         
-        sendDetailedLog("新好友申请", logContent.toString());
+        if (success) {
+            logContent.append("#功能 ").append(currentTime)
+                    .append(" 🤝 好友申请监控-完成处理")
+                    .append("\n✅ 用户: ").append(friendName).append("(").append(wxid).append(")")
+                    .append("\n✅ 场景: ").append(scene)
+                    .append("\n✅ 已通过好友申请")
+                    .append("\n✅ 已发送欢迎消息");
+        } else {
+            logContent.append("#报错 ").append(currentTime)
+                    .append(" ❌ 好友申请监控-处理失败")
+                    .append("\n🔍 用户: ").append(friendName).append("(").append(wxid).append(")")
+                    .append("\n🔍 场景: ").append(scene)
+                    .append("\n❌ 错误: ").append(errorMsg != null ? errorMsg : "未知错误");
+        }
+        
+        Map config = getPluginConfig();
+        String logGroupId = (String) config.get("LOG_GROUP_ID");
+        sendText(logGroupId, logContent.toString());
         
     } catch (Exception e) {
-        sendErrorLog("获取详细好友申请信息失败: " + e.getMessage());
+        sendErrorLog("发送好友申请汇总日志失败: " + e.getMessage());
     }
 }
 
@@ -236,9 +234,9 @@ void onHandleMsg(Object msgInfoBean) {
         // 只处理私聊消息中的群邀请关键词
         if (!msgInfoBean.isGroupChat()) {
             String triggerKeyword = (String) config.get("TRIGGER_KEYWORD");
-            
-            if (content.equals(triggerKeyword)) {
-                handleGroupInviteRequest(talker);
+        
+        if (content.equals(triggerKeyword)) {
+            handleGroupInviteRequest(talker);
             }
         }
     }
@@ -277,52 +275,40 @@ void handleInfoCommand() {
 void handleGroupInviteRequest(String talker) {
     try {
         Map config = getPluginConfig();
-        String triggerKeyword = (String) config.get("TRIGGER_KEYWORD");
         String confirmMessage = (String) config.get("CONFIRM_MESSAGE");
         String errorMessage = (String) config.get("ERROR_MESSAGE");
         String fullGroupMessage = (String) config.get("FULL_GROUP_MESSAGE");
-        boolean enableDetailedLog = (Boolean) config.get("ENABLE_DETAILED_LOG");
-        
-        // 记录触发日志
-        sendInfoLog("检测到关键词触发 - 用户: " + talker + ", 关键词: " + triggerKeyword);
         
         // 获取合适的群组（人数不超过500人）
         String suitableGroupId = getSuitableGroupId();
         
         // 检查是否找到合适的群组
         if (suitableGroupId != null && !suitableGroupId.isEmpty()) {
-            // 获取群名称（一次获取，多次使用）
-            String groupName = getGroupName(suitableGroupId);
-            
-            // 第一步：发送群聊邀请
-            sendFunctionLog("开始发送群聊邀请 - 用户: " + talker + ", 目标群: " + groupName + "(" + suitableGroupId + ")");
+            // 发送群聊邀请
             inviteChatroomMember(suitableGroupId, talker);
             
-            // 记录邀请发送成功日志
-            sendFunctionLog("群聊邀请发送成功 - 用户: " + talker + ", 目标群: " + groupName + "(" + suitableGroupId + ")");
-            
-            // 第二步：发送确认消息给用户
-            sendInfoLog("发送确认消息给用户: " + talker);
+            // 发送确认消息给用户
             sendText(talker, confirmMessage);
             
-            sendFunctionLog("完整流程执行成功 - 用户: " + talker);
+            // 发送成功汇总日志
+            sendInviteSummaryLog(talker, suitableGroupId, true, null);
             
-            // 详细日志记录
-            if (enableDetailedLog) {
-                logDetailedInviteInfo(talker, suitableGroupId);
-            }
         } else {
-            sendErrorLog("无法找到合适的群组（所有群都已满员）");
             // 发送错误提示给用户
             sendText(talker, fullGroupMessage);
+            
+            // 发送失败汇总日志
+            sendInviteSummaryLog(talker, null, false, "所有群组已满员");
         }
     } catch (Exception e) {
         Map config = getPluginConfig();
         String errorMessage = (String) config.get("ERROR_MESSAGE");
-        // 记录错误日志
-        sendErrorLog("群聊邀请发送失败 - 用户: " + talker + ", 错误: " + e.getMessage());
+        
         // 发送错误提示给用户
         sendText(talker, errorMessage);
+        
+        // 发送异常汇总日志
+        sendInviteSummaryLog(talker, null, false, e.getMessage());
     }
 }
 
@@ -336,97 +322,84 @@ String getSuitableGroupId() {
     int maxGroupMembers = (Integer) config.get("MAX_GROUP_MEMBERS");
     
     if (userGroups == null || userGroups.length == 0) {
-        sendErrorLog("警告：用户群组数组为空");
         return null;
     }
     
-    // 第一步：收集所有可用的群组
+    // 收集所有可用的群组
     java.util.List availableGroups = new java.util.ArrayList();
-    
-    sendInfoLog("开始扫描所有群组，寻找可用的群...");
     
     for (int i = 0; i < userGroups.length; i++) {
         String groupId = userGroups[i];
-        String groupName = getGroupName(groupId);
-        
-        sendInfoLog("检查群组 " + (i + 1) + "/" + userGroups.length + " - " + groupName);
         
         try {
             // 获取群成员数量
             int memberCount = getGroupMemberCount(groupId);
-            sendInfoLog("群组 " + groupName + " 当前人数: " + memberCount + "/" + maxGroupMembers);
             
             // 检查群人数是否未满
             if (memberCount < maxGroupMembers) {
                 availableGroups.add(groupId);
-                sendInfoLog("群组 " + groupName + " 可用，已加入候选列表 (人数: " + memberCount + "/" + maxGroupMembers + ")");
-            } else {
-                sendInfoLog("群组 " + groupName + " 已满员，跳过");
             }
         } catch (Exception e) {
-            sendErrorLog("获取群组 " + groupName + " 人数失败: " + e.getMessage());
             // 获取失败的群组不加入候选列表
         }
     }
     
-    // 第二步：从可用群组中随机选择一个
+    // 从可用群组中随机选择一个
     if (availableGroups.size() == 0) {
-        sendErrorLog("所有群组都已满员或无法访问，无法找到合适的群组");
         return null;
     }
-    
-    sendInfoLog("找到 " + availableGroups.size() + " 个可用群组，开始随机选择...");
     
     // 使用当前时间作为随机种子，生成随机索引
     java.util.Random random = new java.util.Random();
     int randomIndex = random.nextInt(availableGroups.size());
     String selectedGroupId = (String) availableGroups.get(randomIndex);
-    String selectedGroupName = getGroupName(selectedGroupId);
-    
-    // 再次获取选中群组的成员数量，用于日志记录
-    try {
-        int memberCount = getGroupMemberCount(selectedGroupId);
-        sendFunctionLog("随机选择群组 - " + selectedGroupName + " (第" + (randomIndex + 1) + "/" + availableGroups.size() + "个, 人数: " + memberCount + "/" + maxGroupMembers + ")");
-    } catch (Exception e) {
-        sendFunctionLog("随机选择群组 - " + selectedGroupName + " (第" + (randomIndex + 1) + "/" + availableGroups.size() + "个, 人数获取失败)");
-    }
     
     return selectedGroupId;
 }
 
 /**
- * 记录详细的邀请信息
+ * 发送群邀请处理汇总日志
  */
-void logDetailedInviteInfo(String userWxid, String targetGroupId) {
+void sendInviteSummaryLog(String userWxid, String targetGroupId, boolean success, String errorMsg) {
     try {
         Map config = getPluginConfig();
-        int maxGroupMembers = (Integer) config.get("MAX_GROUP_MEMBERS");
         String triggerKeyword = (String) config.get("TRIGGER_KEYWORD");
         
-        // 获取群成员数量
-        int memberCount = getGroupMemberCount(targetGroupId);
-        
-        // 获取当前时间
+        // 构建汇总日志
         String currentTime = getCurrentTime();
-        
         StringBuilder logContent = new StringBuilder();
-        // 获取群名称
-        String groupName = getGroupName(targetGroupId);
         
-        logContent.append("=== 详细邀请信息 ===\n");
-        logContent.append("时间: ").append(currentTime).append("\n");
-        logContent.append("用户ID: ").append(userWxid).append("\n");
-        logContent.append("群名称: ").append(groupName).append("\n");
-        logContent.append("群ID: ").append(targetGroupId).append("\n");
-        logContent.append("目标群成员数: ").append(memberCount).append("\n");
-        logContent.append("群人数上限: ").append(maxGroupMembers).append("\n");
-        logContent.append("触发关键词: ").append(triggerKeyword).append("\n");
-        logContent.append("==================");
+        if (success && targetGroupId != null) {
+            // 获取群名称和成员数量
+            String groupName = getGroupName(targetGroupId);
+            int memberCount = 0;
+            try {
+                memberCount = getGroupMemberCount(targetGroupId);
+            } catch (Exception e) {
+                // 如果获取失败，设为0
+            }
+            
+            logContent.append("#功能 ").append(currentTime)
+                    .append(" 🎯 关键词监控-完成处理")
+                    .append("\n✅ 用户: ").append(userWxid)
+                    .append("\n✅ 关键词: ").append(triggerKeyword)
+                    .append("\n✅ 目标群: ").append(groupName).append("(").append(targetGroupId).append(")")
+                    .append("\n✅ 群人数: ").append(memberCount).append("人")
+                    .append("\n✅ 已发送群聊邀请")
+                    .append("\n✅ 已发送提醒消息");
+        } else {
+            logContent.append("#报错 ").append(currentTime)
+                    .append(" ❌ 关键词监控-处理失败")
+                    .append("\n🔍 用户: ").append(userWxid)
+                    .append("\n🔍 关键词: ").append(triggerKeyword)
+                    .append("\n❌ 错误: ").append(errorMsg != null ? errorMsg : "未知错误");
+        }
         
-        sendDetailedLog("群聊邀请成功", logContent.toString());
+        String logGroupId = (String) config.get("LOG_GROUP_ID");
+        sendText(logGroupId, logContent.toString());
         
     } catch (Exception e) {
-        sendErrorLog("获取详细邀请信息失败: " + e.getMessage());
+        sendErrorLog("发送群邀请汇总日志失败: " + e.getMessage());
     }
 }
 
@@ -439,10 +412,6 @@ void onMemberChange(String type, String groupWxid, String userWxid, String userN
     
     // 首次触发时发送启动日志
     sendStartupLogIfNeeded();
-    
-    // 记录基础日志
-    String groupName = getGroupName(groupWxid);
-    sendInfoLog("检测到成员变动 - 类型: " + type + ", 群: " + groupName + "(" + groupWxid + "), 用户: " + userName + " (" + userWxid + ")");
     
     if (type.equals("join")) {
         handleMemberJoin(groupWxid, userWxid, userName);
@@ -457,10 +426,8 @@ void onMemberChange(String type, String groupWxid, String userWxid, String userN
 void handleMemberJoin(String groupWxid, String userWxid, String userName) {
     Map config = getPluginConfig();
     boolean enableJoinTips = (Boolean) config.get("ENABLE_JOIN_TIPS");
-    boolean enableDetailedLog = (Boolean) config.get("ENABLE_DETAILED_LOG");
     
     if (!enableJoinTips) {
-        sendInfoLog("入群提示已禁用，跳过处理");
         return;
     }
     
@@ -471,17 +438,12 @@ void handleMemberJoin(String groupWxid, String userWxid, String userName) {
         // 发送欢迎消息
         sendText(groupWxid, welcomeMessage);
         
-        // 记录成功日志
-        String groupName = getGroupName(groupWxid);
-        sendFunctionLog("欢迎消息发送成功 - 群: " + groupName + "(" + groupWxid + "), 用户: " + userName);
-        
-        // 详细日志记录
-        if (enableDetailedLog) {
-            logDetailedJoinInfo(groupWxid, userWxid, userName);
-        }
+        // 发送成功汇总日志
+        sendJoinSummaryLog(groupWxid, userWxid, userName, true, null);
         
     } catch (Exception e) {
-        sendErrorLog("发送欢迎消息失败: " + e.getMessage());
+        // 发送失败汇总日志
+        sendJoinSummaryLog(groupWxid, userWxid, userName, false, e.getMessage());
     }
 }
 
@@ -491,10 +453,8 @@ void handleMemberJoin(String groupWxid, String userWxid, String userName) {
 void handleMemberLeft(String groupWxid, String userWxid, String userName) {
     Map config = getPluginConfig();
     boolean enableLeftTips = (Boolean) config.get("ENABLE_LEFT_TIPS");
-    boolean enableDetailedLog = (Boolean) config.get("ENABLE_DETAILED_LOG");
     
     if (!enableLeftTips) {
-        sendInfoLog("退群提示已禁用，跳过处理");
         return;
     }
     
@@ -505,17 +465,12 @@ void handleMemberLeft(String groupWxid, String userWxid, String userName) {
         // 发送离开消息
         sendText(groupWxid, leftMessage);
         
-        // 记录成功日志
-        String groupName = getGroupName(groupWxid);
-        sendFunctionLog("离开消息发送成功 - 群: " + groupName + "(" + groupWxid + "), 用户: " + userName);
-        
-        // 详细日志记录
-        if (enableDetailedLog) {
-            logDetailedLeftInfo(groupWxid, userWxid, userName);
-        }
+        // 发送成功汇总日志
+        sendLeftSummaryLog(groupWxid, userWxid, userName, true, null);
         
     } catch (Exception e) {
-        sendErrorLog("发送离开消息失败: " + e.getMessage());
+        // 发送失败汇总日志
+        sendLeftSummaryLog(groupWxid, userWxid, userName, false, e.getMessage());
     }
 }
 
@@ -585,217 +540,290 @@ boolean isTargetGroup(String groupWxid) {
 }
 
 /**
- * 记录详细的入群信息
+ * 发送新成员入群汇总日志
  */
-void logDetailedJoinInfo(String groupWxid, String userWxid, String userName) {
+void sendJoinSummaryLog(String groupWxid, String userWxid, String userName, boolean success, String errorMsg) {
     try {
-        // 获取群成员数量
-        int memberCount = getGroupMemberCount(groupWxid);
-        
-        // 获取当前时间
-        String currentTime = getCurrentTime();
-        
-        StringBuilder logContent = new StringBuilder();
         // 获取群名称
         String groupName = getGroupName(groupWxid);
         
-        logContent.append("=== 详细入群信息 ===\n");
-        logContent.append("时间: ").append(currentTime).append("\n");
-        logContent.append("群名称: ").append(groupName).append("\n");
-        logContent.append("群ID: ").append(groupWxid).append("\n");
-        logContent.append("用户ID: ").append(userWxid).append("\n");
-        logContent.append("用户昵称: ").append(userName).append("\n");
-        logContent.append("群成员数: ").append(memberCount).append("\n");
-        logContent.append("================");
+        // 构建汇总日志
+        String currentTime = getCurrentTime();
+        StringBuilder logContent = new StringBuilder();
         
-        sendDetailedLog("新成员入群", logContent.toString());
+        if (success) {
+            // 获取群成员数量
+            int memberCount = 0;
+            try {
+                memberCount = getGroupMemberCount(groupWxid);
+            } catch (Exception e) {
+                // 如果获取失败，设为0
+            }
+            
+            logContent.append("#功能 ").append(currentTime)
+                    .append(" 🎉 新入群监控-完成处理")
+                    .append("\n✅ 群组: ").append(groupName).append("(").append(groupWxid).append(")")
+                    .append("\n✅ 新成员: ").append(userName).append("(").append(userWxid).append(")")
+                    .append("\n✅ 群人数: ").append(memberCount).append("人")
+                    .append("\n✅ 已发送欢迎消息");
+        } else {
+            logContent.append("#报错 ").append(currentTime)
+                    .append(" ❌ 新入群监控-处理失败")
+                    .append("\n🔍 群组: ").append(groupName).append("(").append(groupWxid).append(")")
+                    .append("\n🔍 新成员: ").append(userName).append("(").append(userWxid).append(")")
+                    .append("\n❌ 错误: ").append(errorMsg != null ? errorMsg : "未知错误");
+        }
+        
+        Map config = getPluginConfig();
+        String logGroupId = (String) config.get("LOG_GROUP_ID");
+        sendText(logGroupId, logContent.toString());
         
     } catch (Exception e) {
-        sendErrorLog("获取详细入群信息失败: " + e.getMessage());
+        sendErrorLog("发送入群汇总日志失败: " + e.getMessage());
     }
 }
 
 /**
- * 记录详细的退群信息
+ * 发送成员退群汇总日志
  */
-void logDetailedLeftInfo(String groupWxid, String userWxid, String userName) {
+void sendLeftSummaryLog(String groupWxid, String userWxid, String userName, boolean success, String errorMsg) {
     try {
-        // 获取群成员数量
-        int memberCount = getGroupMemberCount(groupWxid);
-        
-        // 获取当前时间
-        String currentTime = getCurrentTime();
-        
-        StringBuilder logContent = new StringBuilder();
         // 获取群名称
         String groupName = getGroupName(groupWxid);
         
-        logContent.append("=== 详细退群信息 ===\n");
-        logContent.append("时间: ").append(currentTime).append("\n");
-        logContent.append("群名称: ").append(groupName).append("\n");
-        logContent.append("群ID: ").append(groupWxid).append("\n");
-        logContent.append("用户ID: ").append(userWxid).append("\n");
-        logContent.append("用户昵称: ").append(userName).append("\n");
-        logContent.append("群成员数: ").append(memberCount).append("\n");
-        logContent.append("================");
+        // 构建汇总日志
+        String currentTime = getCurrentTime();
+        StringBuilder logContent = new StringBuilder();
         
-        sendDetailedLog("成员退群", logContent.toString());
+        if (success) {
+            // 获取群成员数量
+            int memberCount = 0;
+            try {
+                memberCount = getGroupMemberCount(groupWxid);
+            } catch (Exception e) {
+                // 如果获取失败，设为0
+            }
+            
+            logContent.append("#功能 ").append(currentTime)
+                    .append(" 👋 退群监控-完成处理")
+                    .append("\n✅ 群组: ").append(groupName).append("(").append(groupWxid).append(")")
+                    .append("\n✅ 退群成员: ").append(userName).append("(").append(userWxid).append(")")
+                    .append("\n✅ 群人数: ").append(memberCount).append("人")
+                    .append("\n✅ 已发送退群提示");
+        } else {
+            logContent.append("#报错 ").append(currentTime)
+                    .append(" ❌ 退群监控-处理失败")
+                    .append("\n🔍 群组: ").append(groupName).append("(").append(groupWxid).append(")")
+                    .append("\n🔍 退群成员: ").append(userName).append("(").append(userWxid).append(")")
+                    .append("\n❌ 错误: ").append(errorMsg != null ? errorMsg : "未知错误");
+        }
+        
+        Map config = getPluginConfig();
+        String logGroupId = (String) config.get("LOG_GROUP_ID");
+        sendText(logGroupId, logContent.toString());
         
     } catch (Exception e) {
-        sendErrorLog("获取详细退群信息失败: " + e.getMessage());
+        sendErrorLog("发送退群汇总日志失败: " + e.getMessage());
     }
 }
 
-// ==================== 状态信息功能 ====================
+// ==================== 插件初始化 ====================
+// 用于跟踪是否已发送启动日志的标记
+boolean hasLoggedStartup = false;
+boolean hasLoggedBasicStartup = false;
+
 /**
- * 生成状态信息
+ * 生成完整的状态信息消息（公共方法）
+ * @param title 消息标题
+ * @param extraInfo 额外信息行（可选）
+ * @param footerTip 底部提示信息
+ * @return 完整的状态信息字符串
  */
 String generateStatusMessage(String title, String extraInfo, String footerTip) {
-    Map config = getPluginConfig();
-    String logGroupId = (String) config.get("LOG_GROUP_ID");
-    String[] userGroups = (String) config.get("USER_GROUPS");
-    String triggerKeyword = (String) config.get("TRIGGER_KEYWORD");
-    int maxGroupMembers = (Integer) config.get("MAX_GROUP_MEMBERS");
-    boolean enableJoinTips = (Boolean) config.get("ENABLE_JOIN_TIPS");
-    boolean enableLeftTips = (Boolean) config.get("ENABLE_LEFT_TIPS");
-    boolean enableAtUser = (Boolean) config.get("ENABLE_AT_USER");
-    boolean enableDetailedLog = (Boolean) config.get("ENABLE_DETAILED_LOG");
-    
-    StringBuilder message = new StringBuilder();
-    
-    // 标题和基本信息
-    message.append("#信息 ").append(getCurrentTime()).append(" 🚀 ").append(title).append("\n\n");
-    
-    message.append("📋 插件版本: v1.0\n");
-    message.append("⏰ 查询时间: ").append(getCurrentTime()).append("\n");
-    if (extraInfo != null && !extraInfo.isEmpty()) {
-        message.append(extraInfo).append("\n");
-    }
-    message.append("\n");
-    
-    // 功能配置状态
-    message.append("=== 🔧 功能配置状态 ===\n");
-    message.append("好友自动通过: ✅ 启用\n");
-    message.append("群邀请功能: ✅ 启用 (关键词: ").append(triggerKeyword).append(")\n");
-    message.append("入群提示: ").append(enableJoinTips ? "✅ 启用" : "❌ 禁用").append("\n");
-    message.append("退群提示: ").append(enableLeftTips ? "✅ 启用" : "❌ 禁用").append("\n");
-    message.append("@用户功能: ").append(enableAtUser ? "✅ 启用" : "❌ 禁用").append("\n");
-    message.append("详细日志: ").append(enableDetailedLog ? "✅ 启用" : "❌ 禁用").append("\n");
-    message.append("\n");
-    
-    // 群组配置信息
-    message.append("=== 📊 群组配置信息 ===\n");
-    String logGroupName = getGroupName(logGroupId);
-    message.append("日志群组: ").append(logGroupName).append("(").append(logGroupId).append(")\n");
-    message.append("群人数上限: ").append(maxGroupMembers).append(" 人\n");
-    message.append("用户群组数量: ").append(userGroups.length).append(" 个\n");
-    message.append("\n");
-    
-    // 用户群组列表及人员统计
-    message.append("=== 🏘️ 用户群组列表及人员统计 ===\n");
-    int totalUsers = 0;
-    int availableGroups = 0;
-    int fullGroups = 0;
-    
-    for (int i = 0; i < userGroups.length; i++) {
-        String groupId = userGroups[i];
-        String groupName = getGroupName(groupId);
+    try {
+        Map config = getPluginConfig();
+        String logGroupId = (String) config.get("LOG_GROUP_ID");
+        String triggerKeyword = (String) config.get("TRIGGER_KEYWORD");
         
-        try {
-            int memberCount = getGroupMemberCount(groupId);
-            double usagePercentage = ((double) memberCount / maxGroupMembers) * 100;
-            
-            message.append((i + 1)).append(". ").append(groupName);
-            message.append(" - 人数: ").append(memberCount).append("/").append(maxGroupMembers);
-            message.append(" (").append(String.format("%.0f", usagePercentage)).append("%) ");
-            
-            if (memberCount >= maxGroupMembers) {
-                message.append("🔴 已满");
-                fullGroups++;
-            } else {
-                message.append("🟢 可用");
-                availableGroups++;
-            }
-            message.append("\n");
-            
-            totalUsers += memberCount;
-        } catch (Exception e) {
-            message.append((i + 1)).append(". ").append(groupName);
-            message.append(" - ❌ 获取失败 (").append(e.getMessage()).append(")\n");
+        // 添加类型安全检查
+        Integer maxGroupMembersObj = (Integer) config.get("MAX_GROUP_MEMBERS");
+        int maxGroupMembers = maxGroupMembersObj != null ? maxGroupMembersObj : 500;
+        
+        Boolean enableJoinTipsObj = (Boolean) config.get("ENABLE_JOIN_TIPS");
+        boolean enableJoinTips = enableJoinTipsObj != null ? enableJoinTipsObj : true;
+        
+        Boolean enableLeftTipsObj = (Boolean) config.get("ENABLE_LEFT_TIPS");
+        boolean enableLeftTips = enableLeftTipsObj != null ? enableLeftTipsObj : false;
+        
+        Boolean enableAtUserObj = (Boolean) config.get("ENABLE_AT_USER");
+        boolean enableAtUser = enableAtUserObj != null ? enableAtUserObj : true;
+        
+        // 已改为汇总日志模式，不再需要详细日志配置
+        boolean enableDetailedLog = false;
+        
+        Map groupNameMap = (Map) config.get("GROUP_NAME_MAP");
+        String[] userGroups = (String[]) config.get("USER_GROUPS");
+        
+        // 空值保护
+        if (groupNameMap == null) groupNameMap = new HashMap();
+        if (userGroups == null) userGroups = new String[0];
+        if (triggerKeyword == null) triggerKeyword = "进群";
+        if (logGroupId == null) logGroupId = "未配置";
+        
+        // 获取当前时间
+        String currentTime = getCurrentTime();
+        
+        // 构建完整的状态信息
+        StringBuilder message = new StringBuilder();
+        // 根据标题判断使用的标签类型
+        String logTag = title.contains("当前状态信息") ? "#信息" : "#功能";
+        message.append(logTag).append(" ").append(currentTime).append(" 🚀 ").append(title).append("\n\n");
+        message.append("📋 插件版本: v1.0.2\n");
+        message.append("⏰ 查询时间: ").append(currentTime).append("\n");
+        if (extraInfo != null && !extraInfo.isEmpty()) {
+            message.append(extraInfo).append("\n");
         }
+        message.append("\n");
+        
+        message.append("=== 🔧 功能配置状态 ===\n");
+        message.append("好友自动通过: ✅ 启用\n");
+        message.append("群邀请功能: ✅ 启用 (关键词: ").append(triggerKeyword).append(")\n");
+        message.append("入群提示: ").append(enableJoinTips ? "✅ 启用" : "❌ 禁用").append("\n");
+        message.append("退群提示: ").append(enableLeftTips ? "✅ 启用" : "❌ 禁用").append("\n");
+        message.append("@用户功能: ").append(enableAtUser ? "✅ 启用" : "❌ 禁用").append("\n");
+        message.append("日志模式: ✅ 汇总模式 (每种操作仅输出一条汇总日志)\n\n");
+        
+        message.append("=== 📊 群组配置信息 ===\n");
+        String logGroupName = (String) groupNameMap.get(logGroupId);
+        if (logGroupName == null) logGroupName = "未知群组";
+        message.append("日志群组: ").append(logGroupName).append("(").append(logGroupId).append(")\n");
+        message.append("群人数上限: ").append(maxGroupMembers).append(" 人\n");
+        message.append("用户群组数量: ").append(userGroups.length).append(" 个\n\n");
+        
+        // 添加用户群组列表和人员数量统计
+        message.append("=== 🏘️ 用户群组列表及人员统计 ===\n");
+        int totalMembers = 0;
+        int fullGroups = 0;
+        int availableGroups = 0;
+        int failedGroups = 0;
+        
+        for (int i = 0; i < userGroups.length; i++) {
+            String groupId = userGroups[i];
+            String groupName = (String) groupNameMap.get(groupId);
+            if (groupName == null) groupName = "未知群组";
+            
+            try {
+                // 获取群成员数量
+                int memberCount = getGroupMemberCount(groupId);
+                totalMembers += memberCount;
+                
+                // 判断群状态
+                String status;
+                if (memberCount >= maxGroupMembers) {
+                    status = "🔴 已满";
+                    fullGroups++;
+                } else {
+                    status = "🟢 可用";
+                    availableGroups++;
+                }
+                
+                // 计算使用率
+                int usagePercent = (int)((double)memberCount / maxGroupMembers * 100);
+                
+                message.append((i + 1)).append(". ").append(groupName)
+                    .append(" - 人数: ").append(memberCount).append("/").append(maxGroupMembers)
+                    .append(" (").append(usagePercent).append("%) ").append(status).append("\n");
+                    
+            } catch (Exception e) {
+                // 如果获取群成员数量失败，显示错误信息
+                message.append((i + 1)).append(". ").append(groupName).append(" - 人数: ❌ 获取失败\n");
+                failedGroups++;
+            }
+        }
+        
+        // 添加统计汇总信息
+        message.append("\n=== 📊 群组统计汇总 ===\n");
+        message.append("总群数: ").append(userGroups.length).append(" 个\n");
+        message.append("可用群: ").append(availableGroups).append(" 个 🟢\n");
+        message.append("已满群: ").append(fullGroups).append(" 个 🔴\n");
+        if (failedGroups > 0) {
+            message.append("异常群: ").append(failedGroups).append(" 个 ❌\n");
+        }
+        message.append("监控总人数: ").append(totalMembers).append(" 人\n");
+        if (userGroups.length > 0) {
+            message.append("平均群人数: ").append(totalMembers / userGroups.length).append(" 人\n");
+        }
+        
+        message.append("\n=============================\n");
+        if (footerTip != null && !footerTip.isEmpty()) {
+            message.append(footerTip);
+        } else {
+            message.append("✅ 插件状态信息生成完成！");
+        }
+        
+        return message.toString();
+        
+    } catch (Exception e) {
+        return "#报错 " + getCurrentTime() + " 生成状态信息失败: " + e.getMessage();
     }
-    message.append("\n");
-    
-    // 群组统计汇总
-    message.append("=== 📊 群组统计汇总 ===\n");
-    message.append("总群数: ").append(userGroups.length).append(" 个\n");
-    message.append("可用群: ").append(availableGroups).append(" 个 🟢\n");
-    message.append("已满群: ").append(fullGroups).append(" 个 🔴\n");
-    message.append("监控总人数: ").append(totalUsers).append(" 人\n");
-    if (userGroups.length > 0) {
-        int avgUsers = totalUsers / userGroups.length;
-        message.append("平均群人数: ").append(avgUsers).append(" 人\n");
-    }
-    message.append("\n");
-    
-    message.append("=============================\n");
-    if (footerTip != null && !footerTip.isEmpty()) {
-        message.append(footerTip);
-    } else {
-        message.append("✅ 插件运行正常，所有功能已就绪！");
-    }
-    
-    return message.toString();
 }
 
-// ==================== 启动日志功能 ====================
 /**
- * 立即发送插件启动的基础日志
+ * 立即发送完整的启动日志（插件加载时调用）
  */
 void sendBasicStartupLog() {
-    // 异步发送基础启动日志，避免阻塞主线程
+    if (hasLoggedBasicStartup) {
+        return;
+    }
+    hasLoggedBasicStartup = true;
+    
+    // 异步发送完整的启动日志
     new Thread(new Runnable() {
         public void run() {
             try {
+                // 等待WAuxiliary环境完全初始化
+                Thread.sleep(3000);
+                
                 // 调用共用的状态信息生成方法
-                String statusMessage = generateStatusMessage("🚀 微信自动管理插件已启动", "📋 插件版本: v1.0\n⏰ 初始化时间: " + getCurrentTime(), "✅ 插件初始化完成，所有功能已就绪！");
+                String startupMessage = generateStatusMessage("微信自动管理插件已启动", "⏰ 初始化时间: " + getCurrentTime(), "✅ 插件初始化完成，所有功能已就绪！");
                 
                 Map config = getPluginConfig();
                 String logGroupId = (String) config.get("LOG_GROUP_ID");
                 
-                // 发送完整的状态信息
-                sendText(logGroupId, statusMessage);
+                // 发送完整的初始化消息
+                sendText(logGroupId, startupMessage);
                 
             } catch (Exception e) {
-                sendErrorLog("发送启动日志失败: " + e.getMessage());
+                // 如果启动日志发送失败，静默处理
             }
         }
     }).start();
 }
 
-private static boolean hasStartupLogSent = false;
+// 立即调用基础启动日志
+{
+    sendBasicStartupLog();
+}
 
 /**
- * 如果未发送过，则发送启动日志
+ * 发送功能首次触发确认日志
  */
 void sendStartupLogIfNeeded() {
-    if (!hasStartupLogSent) {
-        synchronized (this) {
-            if (!hasStartupLogSent) {
-                hasStartupLogSent = true;
-                
-                // 延迟3秒发送启动日志，确保插件完全加载
-                new Thread(new Runnable() {
-                    public void run() {
-                        try {
-                            Thread.sleep(3000); // 等待3秒
-                            sendBasicStartupLog();
-                        } catch (Exception e) {
-                            sendErrorLog("延迟发送启动日志失败: " + e.getMessage());
-                        }
-                    }
-                }).start();
-            }
-        }
+    if (hasLoggedStartup) {
+        return;
+    }
+    hasLoggedStartup = true;
+    
+    // 发送首次功能触发确认
+    try {
+        Map config = getPluginConfig();
+        String logGroupId = (String) config.get("LOG_GROUP_ID");
+        String currentTime = getCurrentTime();
+        
+        String confirmMessage = "#信息 " + currentTime + " ✅ 插件功能已激活 - 开始正常运行";
+        sendText(logGroupId, confirmMessage);
+        
+    } catch (Exception e) {
+        // 如果确认日志发送失败，静默处理
     }
 } 

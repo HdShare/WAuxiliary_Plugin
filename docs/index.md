@@ -62,6 +62,18 @@ features:
     details: 监听收到好友申请时自动通过
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/AutoAgreeFriend
 
+  - title: 自定义头像@hd
+    details: 自定义好友或者群聊头像
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/CustomAvatar
+
+  - title: 摸头@hd
+    details: 命令[/rua]引用他人消息, 即可生成摸头GIF并发送
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/Avatar-rua
+
+  - title: 语录@hd
+    details: 命令[/q]引用他人消息, 即可生成语录图并发送
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/hd/msg-q/
+
   - title: 文生图@CkBcDD
     details: 命令[/作图 Corn Hub], 长按发送按钮生成并发送图片
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CkBcDD/TXT-to-IMG
@@ -101,4 +113,7 @@ features:
   - title: 抖音视频解析下载@coderpwh
     details: "监听消息，或者长按发送按钮，解析抖音视频(图文)链接并下载发送"
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/coderpwh/douyin
----
+
+  - title: 微信自动管理@C3604
+    details: "自动添加好友，自动拉群，群管"
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/C3604/WeChatAutoManager

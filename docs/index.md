@@ -99,6 +99,6 @@ features:
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/CK/DeepSeek
 
   - title: 抖音视频解析下载@coderpwh
-    details: "监听消息，或者长按发送按钮，解析抖音视频链接并下载发送"
+    details: "监听消息，或者长按发送按钮，解析抖音视频(图文)链接并下载发送"
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/coderpwh/douyin
 ---

@@ -1,7 +1,7 @@
 # 全局变量
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.3.r722.c2ba115 版本
+本文档适用于 WAuxiliary v1.2.4 版本
 :::
 
 ## 变量说明

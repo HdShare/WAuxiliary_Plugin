@@ -2,7 +2,7 @@
 layout: home
 
 hero:
-  name: "WAuxiliary Plugins"
+  name: "WAuxiliary Plugin"
   text: "WAuxiliary 插件"
 
 features:
@@ -103,13 +103,17 @@ features:
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/icksky/HttpSend
 
   - title: DeepSeek多角色智能体@icksky
-    details: "监听收到消息时通过DeepSeek AI自动聊天(需修改密钥)，不同的群和好友可设置不同的角色。选定对应对话框输入“角色设定: 你是一个逗逼”(不含引号)，长按发送按钮即可设定，重复设定可更新角色"
+    details: 监听收到消息时通过DeepSeek AI自动聊天(需修改密钥)，不同的群和好友可设置不同的角色。选定对应对话框输入“角色设定: 你是一个逗逼”(不含引号)，长按发送按钮即可设定，重复设定可更新角色
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/icksky/DeepSeek
 
   - title: 抖音视频解析下载@coderpwh
-    details: "监听消息，或者长按发送按钮，解析抖音视频(图文)链接并下载发送"
+    details: 监听消息，或者长按发送按钮，解析抖音视频(图文)链接并下载发送
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/coderpwh/douyin
 
   - title: 微信自动管理@C3604
-    details: "自动添加好友，自动拉群，群管"
+    details: 自动添加好友，自动拉群，群管
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/C3604/WeChatAutoManager
+
+  - title: AiChatbot@Aden
+    details: 群聊艾特回复，私聊检测Bot回复，输入重置长按发送可清空记忆
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/Aden/AiChatbot

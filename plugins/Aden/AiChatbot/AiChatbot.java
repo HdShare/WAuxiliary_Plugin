@@ -59,55 +59,96 @@ void addAssistantMsg(String content) {
 // 初始化角色
 initCompanionRole();
 
-// 构建Bot API请求参数
+// 构建bot API请求参数
 Map getBotParam(String content) {
     Map paramMap = new HashMap();
-    paramMap.put("model", "deepseek-ai/DeepSeek-V3"); // 替换为实际模型名称
-    addUserMsg(content);
-    paramMap.put("messages", msgList);
+    paramMap.put("model", "gpt-4.1");
+    
+    // 创建临时消息列表（兼容无泛型环境）
+    List tempList = new ArrayList();
+    for (Object item : msgList) {
+        tempList.add(item);
+    }
+    
+    // 添加当前用户消息（临时）
+    Map userMsg = new HashMap();
+    userMsg.put("role", "user");
+    userMsg.put("content", content);
+    tempList.add(userMsg);
+    
+    paramMap.put("messages", tempList);
     paramMap.put("temperature", 0.7);
     paramMap.put("max_tokens", 2000);
     return paramMap;
 }
 
-// 构建Bot API请求头
+// 构建bot API请求头
 Map getBotHeader() {
     Map headerMap = new HashMap();
     headerMap.put("Content-Type", "application/json");
-    headerMap.put("Authorization", "sk-"); // 替换为实际API密钥
+    headerMap.put("Authorization", "sk-密钥");
     return headerMap;
 }
 
-// 发送请求到Bot API
+// 发送请求到bot API
 void sendBotResp(String talker, String content) {
-    post("https://chat.openai.com/v1/chat/completions", // 替换为实际API地址
+    post("https://chat.openai.com/v1/chat/completions",
             getBotParam(content),
             getBotHeader(),
             new PluginCallBack.HttpCallback() {
                 public void onSuccess(int code, String respContent) {
+                    // 调试输出
+                    System.out.println("API响应: " + respContent);
+                    
                     try {
                         JSONObject jsonObj = new JSONObject(respContent);
+                        
+                        // 关键修复：检查是否存在choices字段
+                        if (!jsonObj.has("choices")) {
+                            // 检查错误信息
+                            if (jsonObj.has("error")) {
+                                JSONObject error = jsonObj.getJSONObject("error");
+                                String errorMsg = error.optString("message", "未知错误");
+                                sendText(talker, "[bot] API错误: " + errorMsg);
+                            } else {
+                                sendText(talker, "[bot] 无效响应格式: " + respContent);
+                            }
+                            return;
+                        }
+                        
                         JSONArray choices = jsonObj.getJSONArray("choices");
                         if (choices.length() > 0) {
                             JSONObject firstChoice = choices.getJSONObject(0);
-                            JSONObject message = firstChoice.getJSONObject("message");
-                            String msgContent = message.getString("content");
                             
-                            // 添加助手回复到历史
+                            // 检查message字段是否存在
+                            if (!firstChoice.has("message")) {
+                                sendText(talker, "[bot] 响应缺少message字段");
+                                return;
+                            }
+                            
+                            JSONObject message = firstChoice.getJSONObject("message");
+                            String msgContent = message.optString("content", "");
+                            
+                            if (msgContent.isEmpty()) {
+                                sendText(talker, "[bot] 收到空回复");
+                                return;
+                            }
+                            
+                            // 仅在成功时添加到历史记录
+                            addUserMsg(content);
                             addAssistantMsg(msgContent);
                             
-                            // 发送回复给用户
                             sendText(talker, msgContent);
+                        } else {
+                            sendText(talker, "[bot] 空的choices数组");
                         }
                     } catch (Exception e) {
-                        // 错误处理：解析失败
-                        sendText(talker, "[Bot] 解析响应失败: " + e.getMessage());
+                        sendText(talker, "[bot] 解析响应失败: " + e.getMessage());
                     }
                 }
 
                 public void onError(Exception e) {
-                    // 错误处理：请求异常
-                    sendText(talker, "[Bot] 请求异常: " + e.getMessage());
+                    sendText(talker, "[bot] 请求异常: " + e.getMessage());
                 }
             }
     );
@@ -120,7 +161,7 @@ boolean onLongClickSendBtn(String text) {
         // 重置记忆
         resetMemory();
         // 显示toast提示
-        toast("✅ 记忆已重置，现在我是全新的Bot啦！");
+        toast("✅ 记忆已重置，现在我是全新的bot啦！");
         return true; // 返回true表示已处理，不再发送消息
     }
     return false; // 返回false表示未处理，继续发送消息
@@ -140,7 +181,7 @@ void onHandleMsg(Object msgInfoBean) {
                 .replaceAll("^\\s+|\\s+$", "") // 去除首尾空格
                 .replaceAll("\\s+", " "); // 合并多余空格
             
-            // 如果清理后的内容非空，则发送给Bot
+            // 如果清理后的内容非空，则发送给bot
             if (!cleanedContent.isEmpty()) {
                 sendBotResp(talker, cleanedContent);
             }
@@ -148,11 +189,15 @@ void onHandleMsg(Object msgInfoBean) {
     }
     // 私聊消息处理
     else if (msgInfoBean.isText()) {
-        // 私聊触发关键词
-        if (content.startsWith("Bot")) {
-            String cleanedContent = content.substring(4).trim();
-            if (!cleanedContent.isEmpty()) {
-                sendBotResp(talker, cleanedContent);
+        // 私聊触发关键词 - 不区分大小写
+        // 检查消息是否以"bot"开头（不区分大小写）
+        if (content.length() >= 3) {
+            String prefix = content.substring(0, 3).toLowerCase();
+            if ("bot".equals(prefix)) {
+                String cleanedContent = content.substring(3).trim();
+                if (!cleanedContent.isEmpty()) {
+                    sendBotResp(talker, cleanedContent);
+                }
             }
         }
     }

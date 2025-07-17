@@ -4,6 +4,18 @@
 本文档适用于 WAuxiliary v1.2.4 版本
 :::
 
+## 插件加载
+
+```java
+void onLoad();
+```
+
+## 插件卸载
+
+```java
+void onUnLoad();
+```
+
 ## 监听收到消息
 
 ```java

@@ -3,11 +3,94 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Random;
+import java.util.Arrays;
 
 import me.hd.wauxv.plugin.api.callback.PluginCallBack;
 
+// 全局变量
 boolean isRunning = false;
 int SERVER_PORT = 13333;
+
+// 消息队列和队列处理线程
+ConcurrentLinkedQueue messageQueue = new ConcurrentLinkedQueue();
+AtomicBoolean queueProcessorRunning = new AtomicBoolean(false);
+Thread queueProcessorThread = null;
+
+// 启动队列处理线程
+void startQueueProcessor() {
+    if (queueProcessorRunning.compareAndSet(false, true)) {
+        queueProcessorThread = new Thread(new Runnable() {
+            public void run() {
+                processMessageQueue();
+            }
+        });
+        queueProcessorThread.setDaemon(true);
+        queueProcessorThread.start();
+    }
+}
+
+// 队列处理逻辑
+void processMessageQueue() {
+    log("消息队列处理器已启动");
+    while (queueProcessorRunning.get()) {
+        try {
+            Object taskObj = messageQueue.poll();
+            if (taskObj != null) {
+                // 使用Map来存储任务信息
+                java.util.Map task = (java.util.Map) taskObj;
+                long currentTime = System.currentTimeMillis();
+                long executeTime = (Long) task.get("executeTime");
+                
+                if (currentTime >= executeTime) {
+                    // 执行发送
+                    try {
+                        String talkerId = (String) task.get("talkerId");
+                        String message = (String) task.get("message");
+                        sendText(talkerId, message);
+                    } catch (Exception e) {
+                        log("队列发送失败: " + e.getMessage());
+                        // 重新加入队列
+                        messageQueue.offer(task);
+                    }
+                } else {
+                    // 还没到执行时间，重新放回队列
+                    messageQueue.offer(task);
+                    Thread.sleep(100); // 短暂休眠避免CPU占用过高
+                }
+            } else {
+                Thread.sleep(100); // 队列为空时休眠
+            }
+        } catch (InterruptedException e) {
+            log("队列处理器被中断: " + e.getMessage());
+            break;
+        } catch (Exception e) {
+            log("队列处理器异常: " + e.getMessage());
+        }
+    }
+    log("消息队列处理器已停止");
+}
+
+// 停止队列处理线程
+void stopQueueProcessor() {
+    queueProcessorRunning.set(false);
+    if (queueProcessorThread != null) {
+        queueProcessorThread.interrupt();
+        queueProcessorThread = null;
+    }
+}
+
+// 添加消息到队列
+void addMessageToQueue(String talkerId, String message, long delayMs) {
+    long executeTime = System.currentTimeMillis() + delayMs;
+    java.util.Map task = new java.util.HashMap();
+    task.put("talkerId", talkerId);
+    task.put("message", message);
+    task.put("executeTime", executeTime);
+    messageQueue.offer(task);
+}
 
 void handleClient(java.net.Socket socket) throws IOException {
     try {
@@ -80,29 +163,25 @@ void handleIncomingMessage(String[] talkerIds, String msg, int delayMin, int del
         return;
     }
 
-    log("收到 POST 请求: ids=" + Arrays.toString(talkerIds) + ", msg=" + msg + ", delay_min=" + delayMin + ", delay_max=" + delayMax);
+    // 确保队列处理器正在运行
+    if (!queueProcessorRunning.get()) {
+        startQueueProcessor();
+    }
 
-    new Thread(new Runnable() {
-        public void run() {
-            for (String talkerId : talkerIds) {
-                if (talkerId == null || talkerId.isEmpty()) continue;
+    // 为每个接收者计算延迟时间并加入队列
+    long baseDelay = 0;
+    for (String talkerId : talkerIds) {
+        if (talkerId == null || talkerId.isEmpty()) continue;
 
-                try {
-                    sendText(talkerId, msg);
-                    log("已发送消息给: " + talkerId);
-
-                    // 随机延迟
-                    int delay = delayMin + new Random().nextInt(delayMax - delayMin + 1);
-                    log("等待 " + delay + " 毫秒");
-                    Thread.sleep(delay);
-                } catch (InterruptedException e) {
-                    log("发送中断: " + e.getMessage());
-                } catch (Exception e) {
-                    log("发送失败: " + e.getMessage());
-                }
-            }
-        }
-    }).start();
+        // 基础延迟 + 随机延迟
+        int randomDelay = delayMin + new Random().nextInt(delayMax - delayMin + 1);
+        long totalDelay = baseDelay + randomDelay;
+        
+        addMessageToQueue(talkerId, msg, totalDelay);
+        
+        // 为下一个消息增加3-5秒的随机延迟
+        baseDelay += 3000 + new Random().nextInt(2001); // 3000-5000ms
+    }
 }
 
 void start(int port) {
@@ -114,7 +193,7 @@ void start(int port) {
     new Thread(new Runnable() {
         public void run() {
             try {
-                ServerSocket serverSocket = new java.net.ServerSocket(port);
+                java.net.ServerSocket serverSocket = new java.net.ServerSocket(port);
                 isRunning = true;
                 log("简易 HTTP Server started at port " + port);
 
@@ -130,8 +209,9 @@ void start(int port) {
 }
 
 void startHttpServer() {
-    log("启动简易 HTTP Server");
     start(SERVER_PORT);
+    // 启动队列处理器
+    startQueueProcessor();
 }
 
 static {

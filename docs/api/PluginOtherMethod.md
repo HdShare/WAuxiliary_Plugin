@@ -4,10 +4,22 @@
 本文档适用于 WAuxiliary v1.2.4 版本
 :::
 
+## 执行
+
+```java
+void eval(String code);
+```
+
 ## 导入
 
 ```java
-void import(String path);
+void load(String path);
+```
+
+## 通知
+
+```java
+void notify(String title, String text);
 ```
 
 ## 日志

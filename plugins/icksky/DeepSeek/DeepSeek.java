@@ -186,8 +186,8 @@ boolean onHandleCommand(String text, String talkerId, boolean isSelf) {
 
     final String MODEL_SWITCH = "切换模型";
 
-    if (text.startsWith("角色设定: ") && (isSelf || checkPermission(SecurityPermissions.ROLE_SETTING))) {
-        addSystemMsg(talkerId, text.replace("角色设定: ", ""));
+    if (text.startsWith("角色设定：") && (isSelf || checkPermission(SecurityPermissions.ROLE_SETTING))) {
+        addSystemMsg(talkerId, text.replace("角色设定：", ""));
         showMessage(talkerId, "角色设定成功", isSelf);
         return true;
     }

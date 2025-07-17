@@ -103,7 +103,7 @@ features:
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/icksky/HttpSend
 
   - title: DeepSeek多角色智能体@icksky
-    details: 监听收到消息时通过DeepSeek AI自动聊天(需修改密钥)，不同的群和好友可设置不同的角色。选定对应对话框输入“角色设定: 你是一个逗逼”(不含引号)，长按发送按钮即可设定，重复设定可更新角色
+    details: 监听收到消息时通过DeepSeek AI自动聊天(需修改密钥)，不同的群和好友可设置不同的角色。选定对应对话框输入“角色设定：你是一个逗逼”(不含引号)，长按发送按钮即可设定，重复设定可更新角色
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/icksky/DeepSeek
 
   - title: 抖音视频解析下载@coderpwh

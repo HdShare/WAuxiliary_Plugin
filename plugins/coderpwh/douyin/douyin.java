@@ -29,8 +29,10 @@ boolean isOpenGroup = true;
 
 void sendDouyinVideo(String talker, String douyinUrl) {
     try {
-//基于deno的抖音视频无水印下，项目开源地址:https://github.com/pwh-pwh/douyinVd 可fork本项目，自行到deno deploy部署
-        String apiUrl = "https://douyinvd.deno.dev/?data&url=" + douyinUrl;
+//基于deno的抖音视频无水印下，项目开源地址:https://github.com/pwh-pwh/douyinVd 可fork本项目，自行到deno deploy,cf,vercel或者服务器部署
+        //https://cf.eval.qzz.io/
+        //"https://douyinvd.deno.dev
+        String apiUrl = "https://cf.eval.qzz.io/?data&url=" + douyinUrl;
 //        toast("要请求的地址"+apiUrl);
         get(apiUrl, null, new PluginCallBack.HttpCallback() {
             public void onSuccess(int respCode, String respContent) {

@@ -117,3 +117,11 @@ features:
   - title: AiChatbot@Aden
     details: 群聊艾特回复，私聊检测Bot回复，输入重置长按发送可清空记忆
     link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/Aden/AiChatbot
+
+  - title: 自动回复@yixin
+    details: 在任意聊天输入框输入「自动回复 XXXX」后，长按发送按钮即可开启，注意自动回复后面有空格
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/yixin/AutoReply
+
+  - title: 自动增加步数@yixin
+    details: 每次收发消息时自动增加微信步数
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/yixin/StepChange

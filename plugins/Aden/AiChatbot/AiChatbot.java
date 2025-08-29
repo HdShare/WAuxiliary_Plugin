@@ -9,8 +9,10 @@ import java.util.regex.Pattern;
 import me.hd.wauxv.plugin.api.callback.PluginCallBack;
 
 List msgList = new ArrayList();
-// 请替换为您的实际API密钥
-String API_KEY = "sk-"; 
+// 自定义部分
+String API_KEY = "yuor apikey"; 
+String AI_MODEL = "ai model name";
+String API_URL = "api url";
 
 // 初始化系统角色
 void initCompanionRole() {
@@ -64,7 +66,7 @@ initCompanionRole();
 // 构建API请求参数
 Map getBotParam(String content) {
     Map paramMap = new HashMap();
-    paramMap.put("model", "deepseek-ai/DeepSeek-V3");
+    paramMap.put("model", AI_MODEL);
     
     // 创建临时消息列表（兼容无泛型环境）
     List tempList = new ArrayList();
@@ -165,7 +167,7 @@ void sendBotResp(String talker, String content) {
     };
 
     // 发送请求
-    post("https://chat.openai.chat/v1/chat/completions",
+    post(API_URL,
          getBotParam(content),
          getBotHeader(),
          globalCallback

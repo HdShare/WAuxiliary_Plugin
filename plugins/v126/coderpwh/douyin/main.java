@@ -1,4 +1,3 @@
-
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.io.File;
@@ -44,10 +43,11 @@ void sendDouyinVideo(String talker, String douyinUrl) {
 
 
                 String vUrl = jsonObj.getString("video_url");
+                String awemeId = jsonObj.getString("aweme_id");
 //                 sendText(talker, vUrl);
 
                 if (vType.equals("video")) {
-                    download(vUrl, cacheDir + "/video.mp4", null, new PluginCallBack.DownloadCallback() {
+                    download(vUrl, cacheDir + "/" + awemeId + ".mp4", null, new PluginCallBack.DownloadCallback() {
                         public void onSuccess(File file) {
                             sendVideo(talker, file.getAbsolutePath());
                         }

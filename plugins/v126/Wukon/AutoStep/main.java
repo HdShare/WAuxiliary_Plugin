@@ -117,36 +117,46 @@ void startTimeStepTimer() {
         return;
     }
     
+    stopTimeStepTimer();
+    
     timer = new Timer();
     long initialDelay = getNext5MinuteDelay();
     
-    timer.schedule(() -> {
-        try {
-            if (isRestrictedTime()) {
-                log("当前时间为23:00-6:00，定时任务不增加步数");
-                return;
+    timer.schedule(new TimerTask() {
+        public void run() {
+            try {
+                if (isRestrictedTime()) {
+                    log("当前时间为23:00-6:00，定时任务不增加步数");
+                    return;
+                }
+                
+                currentStep = getLong("currentStep", 0);
+                currentDay = getInt("currentDay", 0);
+                
+                LocalDateTime now = LocalDateTime.now();
+                if (now.getDayOfYear() != currentDay) {
+                    currentStep = 0;
+                    currentDay = now.getDayOfYear();
+                    putInt("currentDay", currentDay);
+                }
+                
+                Random random = new Random();
+                int step = 20 + random.nextInt(21);
+                currentStep += step;
+                
+                if (currentStep > maxStep) {
+                    currentStep = maxStep;
+                }
+                
+                putLong("currentStep", currentStep);
+                uploadDeviceStep(currentStep);
+                log("定时增加步数: +" + step + "步，当前步数=" + currentStep);
+            } catch (Exception e) {
+                log("定时任务异常: " + e.getMessage());
+                if (timeStepEnabled && !isTimerRunning) {
+                    startTimeStepTimer();
+                }
             }
-            
-            currentStep = getLong("currentStep", 0);
-            currentDay = getInt("currentDay", 0);
-            
-            LocalDateTime now = LocalDateTime.now();
-            if (now.getDayOfYear() != currentDay) {
-                currentStep = 0;
-                currentDay = now.getDayOfYear();
-                putInt("currentDay", currentDay);
-            }
-            
-            Random random = new Random();
-            int step = 20 + random.nextInt(21);
-            currentStep += step;
-            currentStep = Math.min(currentStep, maxStep);
-            
-            putLong("currentStep", currentStep);
-            uploadDeviceStep(currentStep);
-            log("定时增加步数: +" + step + "步，当前步数=" + currentStep);
-        } catch (Exception e) {
-            log("定时任务异常: " + e.getMessage());
         }
     }, initialDelay, 5 * 60 * 1000);
     

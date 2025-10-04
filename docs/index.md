@@ -140,4 +140,4 @@ features:
 
   - title: 自动增加步数@Wukon
     details: 微信步数自动增加插件。提供两种方式：`时间步数`及`消息步数`
-    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg
+    link: https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep

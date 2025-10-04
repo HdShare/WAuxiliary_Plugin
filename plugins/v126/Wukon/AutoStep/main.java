@@ -16,6 +16,7 @@ void onLoad() {
     currentDay = getInt("currentDay", 0);
     timeStepEnabled = getBoolean("timeStepEnabled", false);
     messageStepEnabled = getBoolean("messageStepEnabled", false);
+    maxStep = getLong("maxStep", 24305);
     
     LocalDateTime now = LocalDateTime.now();
     if (now.getDayOfYear() != currentDay) {
@@ -63,6 +64,51 @@ void onHandleMsg(Object msgInfoBean) {
             case "/步数帮助":
                 showHelp(talker);
                 return;
+        }
+        
+        if (content.startsWith("/改步数 ")) {
+            String[] parts = content.split(" ");
+            if (parts.length == 2) {
+                try {
+                    long step = Long.parseLong(parts[1]);
+                    if (step >= 0 && step <= maxStep) {
+                        currentStep = step;
+                        putLong("currentStep", currentStep);
+                        uploadDeviceStep(currentStep);
+                        sendText(talker, "步数已修改为: " + step);
+                        log("用户手动修改步数为: " + step);
+                    } else {
+                        sendText(talker, "步数必须在0-" + maxStep + "之间");
+                    }
+                } catch (NumberFormatException e) {
+                    sendText(talker, "请输入有效的数字");
+                }
+            } else {
+                sendText(talker, "命令格式: /改步数 数字");
+            }
+            return;
+        }
+        
+        if (content.startsWith("/最大步数 ")) {
+            String[] parts = content.split(" ");
+            if (parts.length == 2) {
+                try {
+                    long step = Long.parseLong(parts[1]);
+                    if (step > 0) {
+                        maxStep = step;
+                        putLong("maxStep", maxStep);
+                        sendText(talker, "最大步数已修改为: " + step);
+                        log("用户修改最大步数为: " + step);
+                    } else {
+                        sendText(talker, "最大步数必须大于0");
+                    }
+                } catch (NumberFormatException e) {
+                    sendText(talker, "请输入有效的数字");
+                }
+            } else {
+                sendText(talker, "命令格式: /最大步数 数字");
+            }
+            return;
         }
     }
     
@@ -120,7 +166,7 @@ void startTimeStepTimer() {
     stopTimeStepTimer();
     
     timer = new Timer();
-    long initialDelay = getNext5MinuteDelay();
+    long initialDelay = getNext1MinuteDelay();
     
     timer.schedule(new TimerTask() {
         public void run() {
@@ -141,7 +187,7 @@ void startTimeStepTimer() {
                 }
                 
                 Random random = new Random();
-                int step = 20 + random.nextInt(21);
+                int step = 4 + random.nextInt(9);
                 currentStep += step;
                 
                 if (currentStep > maxStep) {
@@ -158,7 +204,7 @@ void startTimeStepTimer() {
                 }
             }
         }
-    }, initialDelay, 5 * 60 * 1000);
+    }, initialDelay, 60 * 1000);
     
     isTimerRunning = true;
     log("步数定时器启动，首次执行延迟: " + initialDelay + "ms");
@@ -173,13 +219,12 @@ void stopTimeStepTimer() {
     }
 }
 
-long getNext5MinuteDelay() {
+long getNext1MinuteDelay() {
     LocalDateTime now = LocalDateTime.now();
-    LocalDateTime next5Minute = now.withMinute((now.getMinute() / 5) * 5)
-                                  .withSecond(0)
-                                  .withNano(0)
-                                  .plusMinutes(5);
-    return java.time.Duration.between(now, next5Minute).toMillis();
+    LocalDateTime next1Minute = now.withSecond(0)
+                                   .withNano(0)
+                                   .plusMinutes(1);
+    return java.time.Duration.between(now, next1Minute).toMillis();
 }
 
 void enableTimeStep(boolean enable) {
@@ -229,11 +274,14 @@ void showHelp(String talker) {
                       "/时间步数关 - 关闭定时自动增加步数功能\n" +
                       "/消息步数开 - 开启消息自动增加步数功能\n" +
                       "/消息步数关 - 关闭消息自动增加步数功能\n\n" +
+                      "【手动控制命令】\n" +
+                      "/改步数 数字 - 手动修改步数为指定数值\n" +
+                      "/最大步数 数字 - 修改最大步数限制\n\n" +
                       "【查询命令】\n" +
                       "/步数状态 - 查看当前步数和功能状态\n" +
                       "/步数帮助 - 显示本帮助信息\n\n" +
                       "【功能说明】\n" +
-                      "1. 时间步数：每5分钟自动增加20-40步\n" +
+                      "1. 时间步数：每分钟自动增加4-12步\n" +
                       "2. 消息步数：每次收发消息时自动增加50-150步\n" +
                       "3. 步数增长幅度会根据当前步数自动调整\n" +
                       "4. 23:00-6:00时间段内不会自动增加步数\n" +

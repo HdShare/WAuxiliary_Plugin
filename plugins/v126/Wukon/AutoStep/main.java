@@ -10,6 +10,8 @@ Timer timer = null;
 boolean isTimerRunning = false;
 boolean timeStepEnabled = false;
 boolean messageStepEnabled = false;
+int minTimeStep = 6;
+int maxTimeStep = 18;
 
 void onLoad() {
     currentStep = getLong("currentStep", 0);
@@ -17,6 +19,8 @@ void onLoad() {
     timeStepEnabled = getBoolean("timeStepEnabled", false);
     messageStepEnabled = getBoolean("messageStepEnabled", false);
     maxStep = getLong("maxStep", 24305);
+    minTimeStep = getInt("minTimeStep", 6);
+    maxTimeStep = getInt("maxTimeStep", 18);
     
     LocalDateTime now = LocalDateTime.now();
     if (now.getDayOfYear() != currentDay) {
@@ -110,6 +114,43 @@ void onHandleMsg(Object msgInfoBean) {
             }
             return;
         }
+        
+        if (content.startsWith("/步数范围 ")) {
+            String[] parts = content.split(" ");
+            if (parts.length == 2) {
+                String[] rangeParts = parts[1].split("-");
+                if (rangeParts.length == 2) {
+                    try {
+                        int min = Integer.parseInt(rangeParts[0]);
+                        int max = Integer.parseInt(rangeParts[1]);
+                        if (min >= 0 && max > min) {
+                            minTimeStep = min;
+                            maxTimeStep = max;
+                            putInt("minTimeStep", minTimeStep);
+                            putInt("maxTimeStep", maxTimeStep);
+                            sendText(talker, "时间步数范围已修改为: " + min + "-" + max);
+                            
+                            // 计算并提示当日最大步数-最小步数范围
+                            int activeMinutes = calculateActiveMinutes();
+                            int dailyMin = minTimeStep * activeMinutes;
+                            int dailyMax = maxTimeStep * activeMinutes;
+                            sendText(talker, "当日最大步数范围: " + dailyMin + "-" + dailyMax);
+                            
+                            log("用户修改时间步数范围为: " + min + "-" + max);
+                        } else {
+                            sendText(talker, "范围无效，最小值必须大于等于0且最大值必须大于最小值");
+                        }
+                    } catch (NumberFormatException e) {
+                        sendText(talker, "请输入有效的数字范围");
+                    }
+                } else {
+                    sendText(talker, "命令格式: /步数范围 最小值-最大值");
+                }
+            } else {
+                sendText(talker, "命令格式: /步数范围 最小值-最大值");
+            }
+            return;
+        }
     }
     
     if (messageStepEnabled) {
@@ -187,7 +228,7 @@ void startTimeStepTimer() {
                 }
                 
                 Random random = new Random();
-                int step = 4 + random.nextInt(9);
+                int step = minTimeStep + random.nextInt(maxTimeStep - minTimeStep + 1);
                 currentStep += step;
                 
                 if (currentStep > maxStep) {
@@ -256,10 +297,12 @@ void enableMessageStep(boolean enable) {
 }
 
 void showStepStatus(String talker) {
-    String status = String.format("当前步数: %d\n时间步数: %s\n消息步数: %s\n今日目标: %d\n进度: %d%%",
+    String status = String.format("当前步数: %d\n时间步数: %s\n消息步数: %s\n步数范围: %d-%d\n今日目标: %d\n进度: %d%%",
                                  currentStep,
                                  timeStepEnabled ? "已开启" : "已关闭",
                                  messageStepEnabled ? "已开启" : "已关闭",
+                                 minTimeStep,
+                                 maxTimeStep,
                                  maxStep,
                                  currentStep * 100 / maxStep);
     
@@ -276,12 +319,13 @@ void showHelp(String talker) {
                       "/消息步数关 - 关闭消息自动增加步数功能\n\n" +
                       "【手动控制命令】\n" +
                       "/改步数 数字 - 手动修改步数为指定数值\n" +
-                      "/最大步数 数字 - 修改最大步数限制\n\n" +
+                      "/最大步数 数字 - 修改最大步数限制\n" +
+                      "/步数范围 最小值-最大值 - 修改时间步数随机范围\n\n" +
                       "【查询命令】\n" +
                       "/步数状态 - 查看当前步数和功能状态\n" +
                       "/步数帮助 - 显示本帮助信息\n\n" +
                       "【功能说明】\n" +
-                      "1. 时间步数：每分钟自动增加4-12步\n" +
+                      "1. 时间步数：每分钟自动增加" + minTimeStep + "-" + maxTimeStep + "步\n" +
                       "2. 消息步数：每次收发消息时自动增加50-150步\n" +
                       "3. 步数增长幅度会根据当前步数自动调整\n" +
                       "4. 23:00-6:00时间段内不会自动增加步数\n" +
@@ -295,6 +339,10 @@ boolean isRestrictedTime() {
     LocalDateTime now = LocalDateTime.now();
     int hour = now.getHour();
     return hour >= 23 || hour < 6;
+}
+
+int calculateActiveMinutes() {
+    return 24 * 60 - 60 - 6 * 60;
 }
 
 boolean onLongClickSendBtn(String text) {

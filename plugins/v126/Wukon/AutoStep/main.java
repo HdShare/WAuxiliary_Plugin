@@ -17,7 +17,7 @@ boolean isTimerRunning = false;
 boolean timeStepEnabled = false;
 boolean messageStepEnabled = false;
 int minTimeStep = 6;
-int maxTimeStep = 18;
+int maxTimeStep = 12;
 long pendingStepUpload = 0;
 long lastExecutionTime = 0;
 String logDirPath = "/storage/emulated/0/Android/media/com.tencent.mm/WAuxiliary/Plugin/AutoStep/";
@@ -503,7 +503,6 @@ void showHelp(String talker) {
                       "/步数状态 - 查看当前步数和功能状态\n" +
                       "/步数帮助 - 显示本帮助信息\n\n" +
                       "【功能说明】\n" +
-                      "1. 时间步数：每分钟自动增加" + minTimeStep + "-" + maxTimeStep + "步\n" +
                       "1. 时间步数：每分钟自动增加" + minTimeStep + "-" + maxTimeStep + "步\n" +
                       "2. 消息步数：每次收发消息时自动增加50-150步\n" +
                       "3. 保底步数：22:50时检查当前步数，若小于保底步数则修改为保底步数\n" +

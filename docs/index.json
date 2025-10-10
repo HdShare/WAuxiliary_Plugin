@@ -1,6 +1,6 @@
 {
   "generatedAt": "2025-10-10",
-  "totalPlugins": 35,
+  "totalPlugins": 36,
   "plugins": [
     {
       "name": "表情合成",
@@ -33,6 +33,14 @@
       "updateTime": 20251010,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动回复配置版",
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动回复配置版"
+    },
+    {
+      "name": "进退群配置版",
+      "author": "。。",
+      "version": "2.0.0",
+      "updateTime": 20251010,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/进退群配置版",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/进退群配置版"
     },
     {
       "name": "自动增加步数",

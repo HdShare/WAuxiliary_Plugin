@@ -1,6 +1,6 @@
 {
   "generatedAt": "2025-10-10",
-  "totalPlugins": 35,
+  "totalPlugins": 36,
   "plugins": [
     {
       "name": "表情合成",
@@ -9,6 +9,22 @@
       "updateTime": 20251010,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Kyo/EmojiKitchen",
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Kyo/EmojiKitchen"
+    },
+    {
+      "name": "自动增加步数",
+      "author": "Wukon",
+      "version": "1.0.4",
+      "updateTime": 20251010,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep"
+    },
+    {
+      "name": "每日新闻",
+      "author": "Wukon",
+      "version": "1.0.0",
+      "updateTime": 20251010,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/DailyNews",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/DailyNews"
     },
     {
       "name": "自动回复",
@@ -33,14 +49,6 @@
       "updateTime": 20251010,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动回复配置版",
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动回复配置版"
-    },
-    {
-      "name": "自动增加步数",
-      "author": "Wukon",
-      "version": "1.0.4",
-      "updateTime": 20251006,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep",
-      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep"
     },
     {
       "name": "AI作图",

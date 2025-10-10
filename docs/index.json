@@ -1,0 +1,286 @@
+{
+  "generatedAt": "2025-10-10",
+  "totalPlugins": 35,
+  "plugins": [
+    {
+      "name": "表情合成",
+      "author": "Kyo",
+      "version": "1.0.0",
+      "updateTime": 20251010,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Kyo/EmojiKitchen",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Kyo/EmojiKitchen"
+    },
+    {
+      "name": "自动回复",
+      "author": "yixin",
+      "version": "1.0.0",
+      "updateTime": 20251010,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/yixin/AutoReply",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/yixin/AutoReply"
+    },
+    {
+      "name": "自动增加步数",
+      "author": "yixin",
+      "version": "1.0.0",
+      "updateTime": 20251010,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/yixin/StepChange",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/yixin/StepChange"
+    },
+    {
+      "name": "自动回复配置版",
+      "author": "。。",
+      "version": "2.0.0",
+      "updateTime": 20251010,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动回复配置版",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动回复配置版"
+    },
+    {
+      "name": "自动增加步数",
+      "author": "Wukon",
+      "version": "1.0.4",
+      "updateTime": 20251006,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep"
+    },
+    {
+      "name": "AI作图",
+      "author": "vhukze",
+      "version": "1.0.0",
+      "updateTime": 20250928,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg"
+    },
+    {
+      "name": "自动同意好友",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/AutoAgreeFriend",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/AutoAgreeFriend"
+    },
+    {
+      "name": "自动艾特回复",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/AutoAtReply",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/AutoAtReply"
+    },
+    {
+      "name": "自动回复",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/AutoReply",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/AutoReply"
+    },
+    {
+      "name": "自动回复被拍",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/AutoReplyPat",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/AutoReplyPat"
+    },
+    {
+      "name": "摸头插件",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/Avatar-rua",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/Avatar-rua"
+    },
+    {
+      "name": "示例插件",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/DemoPlugin",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/DemoPlugin"
+    },
+    {
+      "name": "表情合成",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/EmojiMix",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/EmojiMix"
+    },
+    {
+      "name": "历史今天",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/HistoryToday",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/HistoryToday"
+    },
+    {
+      "name": "进退群提醒",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/JoinAndLeftGroupTips",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/JoinAndLeftGroupTips"
+    },
+    {
+      "name": "进群邀请",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/JoinGroupInvite",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/JoinGroupInvite"
+    },
+    {
+      "name": "点歌插件",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/MusicPlugin",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/MusicPlugin"
+    },
+    {
+      "name": "智能聊天",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/OpenAiChat",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/OpenAiChat"
+    },
+    {
+      "name": "文转图",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/TextToImg",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/TextToImg"
+    },
+    {
+      "name": "文转音",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/TextToSpeech",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/TextToSpeech"
+    },
+    {
+      "name": "视频插件",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/VideoPlugin",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/VideoPlugin"
+    },
+    {
+      "name": "语录插件",
+      "author": "Hd",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/msg-q",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/msg-q"
+    },
+    {
+      "name": "抖音视频图文解析",
+      "author": "coderpwh",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/coderpwh/douyin",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/coderpwh/douyin"
+    },
+    {
+      "name": "龙图",
+      "author": "yfishyon",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/yfishyon/long",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/yfishyon/long"
+    },
+    {
+      "name": "看看腿",
+      "author": "yfishyon",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/yfishyon/sese",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/yfishyon/sese"
+    },
+    {
+      "name": "举牌",
+      "author": "周芷越",
+      "version": "1.0.0",
+      "updateTime": 20250917,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/周芷越/jupai",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/周芷越/jupai"
+    },
+    {
+      "name": "AiChatbot",
+      "author": "Aden",
+      "version": "1.0.0",
+      "updateTime": 20250830,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Aden/AiChatbot",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Aden/AiChatbot"
+    },
+    {
+      "name": "定时发送助手",
+      "author": "冰块",
+      "version": "1.0.0",
+      "updateTime": 20250825,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/定时发送助手",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/定时发送助手"
+    },
+    {
+      "name": "艾特关键词自动回复",
+      "author": "冰块",
+      "version": "1.0.0",
+      "updateTime": 20250825,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/艾特关键词自动回复",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/艾特关键词自动回复"
+    },
+    {
+      "name": "Http主动发送",
+      "author": "icksky",
+      "version": "1.0.0",
+      "updateTime": 20250712,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/icksky/HttpSend",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/icksky/HttpSend"
+    },
+    {
+      "name": "DeepSeek多角色智能体",
+      "author": "icksky",
+      "version": "1.0.0",
+      "updateTime": 20250711,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/icksky/DeepSeek",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/icksky/DeepSeek"
+    },
+    {
+      "name": "微信自动管理",
+      "author": "C3604",
+      "version": "1.0.0",
+      "updateTime": 20250621,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/C3604/WeChatAutoManager",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/C3604/WeChatAutoManager"
+    },
+    {
+      "name": "点歌",
+      "author": "CkBcDD",
+      "version": "1.0.0",
+      "updateTime": 20250523,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/CkBcDD/Fetch-Music",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/CkBcDD/Fetch-Music"
+    },
+    {
+      "name": "群投票",
+      "author": "CkBcDD",
+      "version": "1.0.0",
+      "updateTime": 20250523,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/CkBcDD/Group-Poll",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/CkBcDD/Group-Poll"
+    },
+    {
+      "name": "文生图",
+      "author": "CkBcDD",
+      "version": "1.0.0",
+      "updateTime": 20250520,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/CkBcDD/TXT-to-IMG",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/CkBcDD/TXT-to-IMG"
+    }
+  ]
+}

@@ -6,17 +6,38 @@
 
 ## 变量说明
 
-- `context`  
-  上下文对象
+- `hostContext`  
+  宿主上下文
+
+- `hostVerName`  
+  宿主版本名
+
+- `hostVerCode`  
+  宿主版本号
+
+- `hostVerClient`  
+  宿主客户端
 
 - `moduleVer`  
   模块版本
 
 - `cacheDir`  
-  缓存路径
+  缓存目录
 
 - `pluginDir`  
-  插件路径
+  插件目录
 
 - `pluginId`  
   插件标识
+
+- `pluginName`  
+  插件名称
+
+- `pluginAuthor`  
+  插件作者
+
+- `pluginVersion`  
+  插件版本
+
+- `pluginUpdateTime`  
+  插件更新时间

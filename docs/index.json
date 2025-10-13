@@ -3,6 +3,14 @@
   "totalPlugins": 37,
   "plugins": [
     {
+      "name": "AI作图",
+      "author": "vhukze",
+      "version": "1.5.0",
+      "updateTime": 20251013,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg"
+    },
+    {
       "name": "表情合成",
       "author": "Kyo",
       "version": "1.0.0",
@@ -57,14 +65,6 @@
       "updateTime": 20251010,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/进退群配置版",
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/进退群配置版"
-    },
-    {
-      "name": "AI作图",
-      "author": "vhukze",
-      "version": "1.0.0",
-      "updateTime": 20250928,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg",
-      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg"
     },
     {
       "name": "自动同意好友",

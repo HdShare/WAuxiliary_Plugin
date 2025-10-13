@@ -47,8 +47,6 @@ void onHandleMsg(Object msgInfo) {
             content = getContentAfterSubstring(content);
         }
 
-        sendText(msgInfo.getTalker(), content);
-
         if ("".equals(content.trim())) {
             return;
         }

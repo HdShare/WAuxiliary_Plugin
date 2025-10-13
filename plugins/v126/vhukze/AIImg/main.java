@@ -36,10 +36,19 @@ Map<String, Object> params = new HashMap<>();
 void onHandleMsg(Object msgInfo) {
 
     String content = msgInfo.getContent();
-    if (content.startsWith(trigger[0]) || content.startsWith(trigger[1])
-            || (msgInfo.isAtMe() && (content.contains(trigger[0]) || content.contains(trigger[1])))) {
 
-        content = getContentAfterSubstring(content);
+    if (isDo(content, msgInfo) || (msgInfo.isQuote() &&
+            isDo(msgInfo.getQuoteMsg().getTitle(), msgInfo))) {
+
+        if (msgInfo.isQuote()) {
+            content = msgInfo.getQuoteMsg().getContent() + "。" +
+                    getContentAfterSubstring(msgInfo.getQuoteMsg().getTitle());
+        } else {
+            content = getContentAfterSubstring(content);
+        }
+
+        sendText(msgInfo.getTalker(), content);
+
         if ("".equals(content.trim())) {
             return;
         }
@@ -86,6 +95,12 @@ void onHandleMsg(Object msgInfo) {
 
         sendText(msgInfo.getTalker(), "小喵作画中……");
     }
+}
+
+
+boolean isDo(String content, Object msgInfo) {
+    return content.startsWith(trigger[0]) || content.startsWith(trigger[1])
+            || (msgInfo.isAtMe() && (content.contains(trigger[0]) || content.contains(trigger[1])));
 }
 
 String getContentAfterSubstring(String originalStr) {

@@ -1,8 +1,11 @@
-name: Deploy VitePress site to Pages
+name: Deploy VitePress Site
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
+    paths:
+      - '.vitepress/**'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -28,13 +31,17 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
-      - name: Install dependencies
+
+      - name: Install Dependencies
         run: npm ci
-      - name: Build with VitePress
+
+      - name: Build VitePress
         run: npm run docs:build
-      - name: Upload artifact
+
+      - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/.vitepress/dist

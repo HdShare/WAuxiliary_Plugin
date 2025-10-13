@@ -1,0 +1,50 @@
+name: Generate Plugins
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/generate.js'
+      - 'plugins/v126/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          npm install properties-reader
+
+      - name: Generate Plugins
+        run: |
+          node .github/workflows/generate.js
+          echo "Plugins generated"
+
+      - name: Commit Generated
+        if: success()
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/index.json docs/index.md
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "文档: 自动构建插件列表"
+            git push
+          fi

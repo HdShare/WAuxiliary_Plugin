@@ -1,7 +1,15 @@
 {
-  "generatedAt": "2025-10-10",
-  "totalPlugins": 35,
+  "generatedAt": "2025-10-29",
+  "totalPlugins": 37,
   "plugins": [
+    {
+      "name": "AI作图",
+      "author": "vhukze",
+      "version": "1.5.0",
+      "updateTime": 20251013,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg"
+    },
     {
       "name": "表情合成",
       "author": "Kyo",
@@ -9,6 +17,22 @@
       "updateTime": 20251010,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Kyo/EmojiKitchen",
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Kyo/EmojiKitchen"
+    },
+    {
+      "name": "自动增加步数",
+      "author": "Wukon",
+      "version": "1.0.4",
+      "updateTime": 20251010,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep"
+    },
+    {
+      "name": "每日新闻",
+      "author": "Wukon",
+      "version": "1.0.0",
+      "updateTime": 20251010,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/DailyNews",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/DailyNews"
     },
     {
       "name": "自动回复",
@@ -35,20 +59,12 @@
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动回复配置版"
     },
     {
-      "name": "自动增加步数",
-      "author": "Wukon",
-      "version": "1.0.4",
-      "updateTime": 20251006,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep",
-      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep"
-    },
-    {
-      "name": "AI作图",
-      "author": "vhukze",
-      "version": "1.0.0",
-      "updateTime": 20250928,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg",
-      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg"
+      "name": "进退群配置版",
+      "author": "。。",
+      "version": "2.0.0",
+      "updateTime": 20251010,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/进退群配置版",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/进退群配置版"
     },
     {
       "name": "自动同意好友",

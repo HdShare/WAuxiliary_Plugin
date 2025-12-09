@@ -6,9 +6,21 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: AI作图@vhukze
+    details: 版本 1.5.0 | 更新于 20251013
+    link: https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg
+
   - title: 表情合成@Kyo
     details: 版本 1.0.0 | 更新于 20251010
     link: https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Kyo/EmojiKitchen
+
+  - title: 自动增加步数@Wukon
+    details: 版本 1.0.4 | 更新于 20251010
+    link: https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep
+
+  - title: 每日新闻@Wukon
+    details: 版本 1.0.0 | 更新于 20251010
+    link: https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/DailyNews
 
   - title: 自动回复@yixin
     details: 版本 1.0.0 | 更新于 20251010
@@ -22,13 +34,9 @@ features:
     details: 版本 2.0.0 | 更新于 20251010
     link: https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动回复配置版
 
-  - title: 自动增加步数@Wukon
-    details: 版本 1.0.4 | 更新于 20251006
-    link: https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep
-
-  - title: AI作图@vhukze
-    details: 版本 1.0.0 | 更新于 20250928
-    link: https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AIImg
+  - title: 进退群配置版@。。
+    details: 版本 2.0.0 | 更新于 20251010
+    link: https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/进退群配置版
 
   - title: 自动同意好友@Hd
     details: 版本 1.0.0 | 更新于 20250917

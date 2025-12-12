@@ -1,4 +1,5 @@
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Random;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -26,28 +27,34 @@ SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 long minGuaranteedStep = 0;
 ScheduledExecutorService guaranteedStepExecutor = null;
 boolean isExecutingTask = false;
-boolean isTestMode = false; // 测试人员开关，默认为false
+boolean isTestMode = false;
+long MAX_LOG_FILE_SIZE = 1 * 1024 * 1024;
+boolean logOutputEnabled = false;
+long maxMessageStep = 10000;
+long maxTimeStepCalculated = 0;
 
 void onLoad() {
-    currentStep = getLong("currentStep", 0);
-    currentDay = getInt("currentDay", 0);
-    timeStepEnabled = getBoolean("timeStepEnabled", false);
-    messageStepEnabled = getBoolean("messageStepEnabled", false);
-    maxStep = getLong("maxStep", 24305);
-    minTimeStep = getInt("minTimeStep", 6);
-    maxTimeStep = getInt("maxTimeStep", 18);
-    pendingStepUpload = getLong("pendingStepUpload", 0);
-    lastExecutionTime = getLong("lastExecutionTime", 0);
-    minGuaranteedStep = getLong("minGuaranteedStep", 0);
+    synchronized(this) {
+        currentStep = getLong("currentStep", 0);
+        currentDay = getInt("currentDay", 0);
+        timeStepEnabled = getBoolean("timeStepEnabled", false);
+        messageStepEnabled = getBoolean("messageStepEnabled", false);
+        maxStep = getLong("maxStep", 24305);
+        minTimeStep = getInt("minTimeStep", 6);
+        maxTimeStep = getInt("maxTimeStep", 18);
+        maxMessageStep = getLong("maxMessageStep", 10000);
+        pendingStepUpload = getLong("pendingStepUpload", 0);
+        lastExecutionTime = getLong("lastExecutionTime", 0);
+        minGuaranteedStep = getLong("minGuaranteedStep", 0);
+    }
+    
+    maxTimeStepCalculated = maxTimeStep * calculateActiveMinutes();
     
     LocalDateTime now = LocalDateTime.now();
-    if (now.getDayOfYear() != currentDay) {
-        currentStep = 0;
-        currentDay = now.getDayOfYear();
-        putInt("currentDay", currentDay);
-        putLong("currentStep", currentStep);
-        putLong("pendingStepUpload", 0);
-        pendingStepUpload = 0;
+    synchronized(this) {
+        if (now.getDayOfYear() != currentDay) {
+            resetDay(now);
+        }
     }
     
     if (pendingStepUpload > 0) {
@@ -68,6 +75,17 @@ void onLoad() {
 void onUnLoad() {
     stopTimeStepTimer();
     stopGuaranteedStepTimer();
+}
+
+void resetDay(LocalDateTime now) {
+    synchronized(this) {
+        currentStep = 0;
+        currentDay = now.getDayOfYear();
+        putInt("currentDay", currentDay);
+        putLong("currentStep", currentStep);
+        pendingStepUpload = 0;
+        putLong("pendingStepUpload", 0);
+    }
 }
 
 void onHandleMsg(Object msgInfoBean) {
@@ -93,8 +111,8 @@ void onHandleMsg(Object msgInfoBean) {
             case "/步数状态":
                 showStepStatus(talker);
                 return;
-            case "/步数帮助":
-                showHelp(talker);
+            case "/步数状态all":
+                showStepStatusAll(talker);
                 return;
         }
         
@@ -103,14 +121,16 @@ void onHandleMsg(Object msgInfoBean) {
             if (parts.length == 2) {
                 try {
                     long step = Long.parseLong(parts[1].trim());
-                    if (step >= 0 && step <= maxStep) {
-                        currentStep = step;
-                        putLong("currentStep", currentStep);
-                        safeUploadDeviceStep(currentStep);
-                        sendText(talker, "步数已修改为: " + step);
-                        logToFile("手动修改步数: " + step);
-                    } else {
-                        sendText(talker, "步数必须在0-" + maxStep + "之间");
+                    synchronized(this) {
+                        if (step >= 0 && step <= maxStep) {
+                            currentStep = step;
+                            putLong("currentStep", currentStep);
+                            safeUploadDeviceStep(currentStep);
+                            sendText(talker, "步数已修改为: " + step);
+                            logToFile("手动修改步数: " + step);
+                        } else {
+                            sendText(talker, "步数必须在0-" + maxStep + "之间");
+                        }
                     }
                 } catch (NumberFormatException e) {
                     sendText(talker, "请输入有效的数字");
@@ -121,29 +141,31 @@ void onHandleMsg(Object msgInfoBean) {
             return;
         }
         
-        if (content.startsWith("/最大步数 ")) {
+        if (content.startsWith("/最大消息步数 ")) {
             String[] parts = content.split(" ", 2);
             if (parts.length == 2) {
                 try {
                     long step = Long.parseLong(parts[1].trim());
-                    if (step > 0) {
-                        maxStep = step;
-                        putLong("maxStep", maxStep);
-                        sendText(talker, "最大步数已修改为: " + step);
-                        logToFile("修改最大步数: " + step);
-                    } else {
-                        sendText(talker, "最大步数必须大于0");
+                    synchronized(this) {
+                        if (step >= 0) {
+                            maxMessageStep = step;
+                            putLong("maxMessageStep", maxMessageStep);
+                            sendText(talker, "最大消息步数已修改为: " + step);
+                            logToFile("修改最大消息步数: " + step);
+                        } else {
+                            sendText(talker, "最大消息步数必须大于等于0");
+                        }
                     }
                 } catch (NumberFormatException e) {
                     sendText(talker, "请输入有效的数字");
                 }
             } else {
-                sendText(talker, "命令格式: /最大步数 数字");
+                sendText(talker, "命令格式: /最大消息步数 数字");
             }
             return;
         }
         
-        if (content.startsWith("/步数范围 ")) {
+        if (content.startsWith("/分钟步数范围 ")) {
             String[] parts = content.split(" ", 2);
             if (parts.length == 2) {
                 String[] rangeParts = parts[1].trim().split("-");
@@ -151,30 +173,31 @@ void onHandleMsg(Object msgInfoBean) {
                     try {
                         int min = Integer.parseInt(rangeParts[0].trim());
                         int max = Integer.parseInt(rangeParts[1].trim());
-                        if (min >= 0 && max > min) {
-                            minTimeStep = min;
-                            maxTimeStep = max;
-                            putInt("minTimeStep", minTimeStep);
-                            putInt("maxTimeStep", maxTimeStep);
-                            sendText(talker, "时间步数范围已修改为: " + min + "-" + max);
-                            
-                            int activeMinutes = calculateActiveMinutes();
-                            int dailyMin = minTimeStep * activeMinutes;
-                            int dailyMax = maxTimeStep * activeMinutes;
-                            sendText(talker, "当日最大步数范围: " + dailyMin + "-" + dailyMax);
-                            
-                            logToFile("修改时间步数范围: " + min + "-" + max);
-                        } else {
-                            sendText(talker, "范围无效，最小值必须大于等于0且最大值必须大于最小值");
+                        synchronized(this) {
+                            if (min >= 0 && max > min) {
+                                minTimeStep = min;
+                                maxTimeStep = max;
+                                putInt("minTimeStep", minTimeStep);
+                                putInt("maxTimeStep", maxTimeStep);
+                                
+                                maxTimeStepCalculated = maxTimeStep * calculateActiveMinutes();
+                                
+                                sendText(talker, "每分钟步数范围已修改为: " + min + "-" + max);
+                                sendText(talker, "时间步数范围: " + (min * calculateActiveMinutes()) + "-" + (max * calculateActiveMinutes()));
+                                
+                                logToFile("修改每分钟步数范围: " + min + "-" + max);
+                            } else {
+                                sendText(talker, "范围无效，最小值必须大于等于0且最大值必须大于最小值");
+                            }
                         }
                     } catch (NumberFormatException e) {
                         sendText(talker, "请输入有效的数字范围");
                     }
                 } else {
-                    sendText(talker, "命令格式: /步数范围 最小值-最大值");
+                    sendText(talker, "命令格式: /分钟步数范围 最小值-最大值");
                 }
             } else {
-                sendText(talker, "命令格式: /步数范围 最小值-最大值");
+                sendText(talker, "命令格式: /分钟步数范围 最小值-最大值");
             }
             return;
         }
@@ -184,23 +207,28 @@ void onHandleMsg(Object msgInfoBean) {
             if (parts.length == 2) {
                 try {
                     long step = Long.parseLong(parts[1].trim());
-                    if (step >= 0) {
-                        minGuaranteedStep = step;
-                        putLong("minGuaranteedStep", minGuaranteedStep);
-                        sendText(talker, "保底步数已修改为: " + step);
-                        logToFile("修改保底步数: " + step);
-                        
-                        if (minGuaranteedStep > 0) {
-                            startGuaranteedStepTimer();
-                            toast("保底步数功能已开启");
-                            logToFile("保底步数功能已开启");
+                    synchronized(this) {
+                        if (step >= 0) {
+                            if (step > maxStep) {
+                                sendText(talker, "保底步数不能大于最大步数 " + maxStep);
+                                return;
+                            }
+                            minGuaranteedStep = step;
+                            putLong("minGuaranteedStep", minGuaranteedStep);
+                            sendText(talker, "保底步数已修改为: " + step);
+                            logToFile("修改保底步数: " + step);
                         } else {
-                            stopGuaranteedStepTimer();
-                            toast("保底步数功能已关闭");
-                            logToFile("保底步数功能已关闭");
+                            sendText(talker, "保底步数必须大于等于0");
                         }
+                    }
+                    if (minGuaranteedStep > 0) {
+                        startGuaranteedStepTimer();
+                        toast("保底步数功能已开启");
+                        logToFile("保底步数功能已开启");
                     } else {
-                        sendText(talker, "保底步数必须大于等于0");
+                        stopGuaranteedStepTimer();
+                        toast("保底步数功能已关闭");
+                        logToFile("保底步数功能已关闭");
                     }
                 } catch (NumberFormatException e) {
                     sendText(talker, "请输入有效的数字");
@@ -222,27 +250,30 @@ void updateStepOnMessage() {
         return;
     }
     
-    if (currentDay == 0) {
-        currentStep = getLong("currentStep", 0);
-        currentDay = getInt("currentDay", 0);
+    synchronized(this) {
+        if (currentDay == 0) {
+            currentStep = getLong("currentStep", 0);
+            currentDay = getInt("currentDay", 0);
+        }
     }
     
     LocalDateTime now = LocalDateTime.now();
-    if (now.getDayOfYear() != currentDay) {
-        currentStep = 0;
-        currentDay = now.getDayOfYear();
-        putInt("currentDay", currentDay);
-        putLong("pendingStepUpload", 0);
-        pendingStepUpload = 0;
+    synchronized(this) {
+        if (now.getDayOfYear() != currentDay) {
+            resetDay(now);
+        }
     }
     
     Random random = new Random();
     int step = 50 + random.nextInt(100);
     
-    currentStep += calculateStepIncrease(currentStep, step);
-    currentStep = Math.min(currentStep, maxStep);
+    synchronized(this) {
+        long inc = calculateStepIncrease(currentStep, step);
+        currentStep += inc;
+        currentStep = Math.min(currentStep, maxStep);
+        putLong("currentStep", currentStep);
+    }
     
-    putLong("currentStep", currentStep);
     safeUploadDeviceStep(currentStep);
     logToFile("消息步数: +" + step + " -> " + currentStep);
 }
@@ -260,81 +291,72 @@ long calculateStepIncrease(long currentStep, int baseStep) {
 }
 
 void startTimeStepTimer() {
-    if (isTimerRunning) {
-        return;
+    synchronized(this) {
+        if (isTimerRunning) {
+            return;
+        }
+        stopTimeStepTimer();
+        scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
+        isTimerRunning = true;
     }
     
-    stopTimeStepTimer();
-    
-    scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
     scheduledExecutor.scheduleAtFixedRate(new Runnable() {
         public void run() {
+            if (isExecutingTask) {
+                return;
+            }
+            isExecutingTask = true;
             try {
-                if (isExecutingTask) {
-                    return;
-                }
-                
-                isExecutingTask = true;
-                
                 if (isRestrictedTime()) {
-                    isExecutingTask = false;
                     return;
                 }
-                
+
                 LocalDateTime now = LocalDateTime.now();
-                if (now.getDayOfYear() != currentDay) {
-                    currentStep = 0;
-                    currentDay = now.getDayOfYear();
-                    putInt("currentDay", currentDay);
-                    putLong("currentStep", currentStep);
-                    putLong("pendingStepUpload", 0);
-                    pendingStepUpload = 0;
+                synchronized (this) {
+                    if (now.getDayOfYear() != currentDay) {
+                        resetDay(now);
+                    }
                 }
-                
+
                 long currentTime = System.currentTimeMillis();
-                
-                // 检查是否存在缺失步数
+
                 boolean hasMissedTasks = checkAndExecuteMissedTasks(currentTime);
-                
+
                 if (!hasMissedTasks) {
-                    // 没有缺失步数，正常增加步数
                     Random random = new Random();
                     int step = minTimeStep + random.nextInt(maxTimeStep - minTimeStep + 1);
-                    currentStep += step;
-                    
-                    if (currentStep > maxStep) {
-                        currentStep = maxStep;
+                    synchronized (this) {
+                        currentStep += step;
+                        if (currentStep > maxStep) {
+                            currentStep = maxStep;
+                        }
+                        putLong("currentStep", currentStep);
                     }
-                    
-                    putLong("currentStep", currentStep);
                     safeUploadDeviceStep(currentStep);
-                    
                     logToFile("时间步数: +" + step + " -> " + currentStep);
                 }
-                
-                // 更新最后执行时间
-                lastExecutionTime = currentTime;
-                putLong("lastExecutionTime", lastExecutionTime);
-                
-                isExecutingTask = false;
+
+                synchronized (this) {
+                    lastExecutionTime = currentTime;
+                    putLong("lastExecutionTime", lastExecutionTime);
+                }
             } catch (Exception e) {
                 logToFile("定时任务异常: " + e.getMessage());
+            } finally {
                 isExecutingTask = false;
             }
         }
     }, 0, 1, TimeUnit.MINUTES);
-    
-    isTimerRunning = true;
-    logToFile("时间步数定时器启动");
 }
 
 void stopTimeStepTimer() {
-    if (scheduledExecutor != null) {
-        scheduledExecutor.shutdownNow();
-        scheduledExecutor = null;
+    synchronized(this) {
+        if (scheduledExecutor != null) {
+            scheduledExecutor.shutdownNow();
+            scheduledExecutor = null;
+        }
+        isTimerRunning = false;
     }
-    
-    isTimerRunning = false;
     logToFile("时间步数定时器停止");
 }
 
@@ -344,7 +366,6 @@ void startGuaranteedStepTimer() {
     guaranteedStepExecutor = Executors.newSingleThreadScheduledExecutor();
     
     LocalDateTime now = LocalDateTime.now();
-    // 修改保底步数检查时间为22:50
     LocalDateTime targetTime = now.withHour(22).withMinute(50).withSecond(0).withNano(0);
     
     if (now.isAfter(targetTime)) {
@@ -352,6 +373,7 @@ void startGuaranteedStepTimer() {
     }
     
     long initialDelay = java.time.Duration.between(now, targetTime).toMillis();
+    long period = 24 * 60 * 60 * 1000L;
     
     guaranteedStepExecutor.scheduleAtFixedRate(new Runnable() {
         public void run() {
@@ -361,7 +383,7 @@ void startGuaranteedStepTimer() {
                 logToFile("保底步数检查异常: " + e.getMessage());
             }
         }
-    }, initialDelay, 24 * 60 * 60 * 1000, TimeUnit.MILLISECONDS);
+    }, initialDelay, period, TimeUnit.MILLISECONDS);
     
     logToFile("保底步数定时器启动");
 }
@@ -371,81 +393,84 @@ void stopGuaranteedStepTimer() {
         guaranteedStepExecutor.shutdownNow();
         guaranteedStepExecutor = null;
     }
-    
     logToFile("保底步数定时器停止");
 }
 
 void executeGuaranteedStepCheck() {
-    try {
-        LocalDateTime now = LocalDateTime.now();
+    LocalDateTime now = LocalDateTime.now();
+    synchronized(this) {
         if (now.getDayOfYear() != currentDay) {
-            currentStep = 0;
-            currentDay = now.getDayOfYear();
-            putInt("currentDay", currentDay);
-            putLong("currentStep", currentStep);
+            resetDay(now);
         }
         
         Random random = new Random();
         long guaranteedStep = minGuaranteedStep + random.nextInt(1000);
+        if (guaranteedStep > maxStep) {
+            guaranteedStep = maxStep;
+        }
         
         if (currentStep < guaranteedStep) {
             currentStep = guaranteedStep;
-            if (currentStep > maxStep) {
-                currentStep = maxStep;
-            }
-            
             putLong("currentStep", currentStep);
             safeUploadDeviceStep(currentStep);
             logToFile("保底步数生效: " + currentStep);
         }
-    } catch (Exception e) {
-        logToFile("保底步数检查异常: " + e.getMessage());
     }
 }
 
 boolean checkAndExecuteMissedTasks(long currentTime) {
-    if (lastExecutionTime == 0) {
+    long last;
+    synchronized (this) {
+        last = lastExecutionTime;
+    }
+
+    if (last == 0) {
         return false;
     }
-    
-    long timeDiff = currentTime - lastExecutionTime;
-    
-    if (timeDiff > 61 * 1000) {
-        int missedMinutes = (int) (timeDiff / (60 * 1000));
-        
-        int maxMissedMinutes = 12 * 60;
-        missedMinutes = Math.min(missedMinutes, maxMissedMinutes);
-        
-        Random random = new Random();
-        int totalAddedSteps = 0;
-        for (int i = 0; i < missedMinutes; i++) {
-            if (isRestrictedTime()) {
-                break;
-            }
-            
-            int step = minTimeStep + random.nextInt(maxTimeStep - minTimeStep + 1);
+
+    long timeDiff = currentTime - last;
+    if (timeDiff <= 61 * 1000) {
+        return false;
+    }
+
+    int missedMinutes = (int) (timeDiff / (60 * 1000));
+    int maxMissedMinutes = 12 * 60;
+    missedMinutes = Math.min(missedMinutes, maxMissedMinutes);
+
+    Random random = new Random();
+    int totalAddedSteps = 0;
+
+    for (int i = 0; i < missedMinutes; i++) {
+        if (isRestrictedTime()) {
+            break;
+        }
+        int step = minTimeStep + random.nextInt(maxTimeStep - minTimeStep + 1);
+        synchronized (this) {
             currentStep += step;
             totalAddedSteps += step;
-            
             if (currentStep > maxStep) {
                 currentStep = maxStep;
                 break;
             }
         }
-        
-        putLong("currentStep", currentStep);
+    }
+
+    if (totalAddedSteps > 0) {
+        synchronized (this) {
+            putLong("currentStep", currentStep);
+        }
         safeUploadDeviceStep(currentStep);
         logToFile("补充缺失: " + missedMinutes + "分钟 +" + totalAddedSteps + " -> " + currentStep);
-        
         return true;
     }
-    
     return false;
 }
 
 void enableTimeStep(boolean enable) {
-    timeStepEnabled = enable;
-    putBoolean("timeStepEnabled", timeStepEnabled);
+    synchronized(this) {
+        timeStepEnabled = enable;
+        putBoolean("timeStepEnabled", timeStepEnabled);
+    }
     
     if (enable) {
         startTimeStepTimer();
@@ -459,8 +484,10 @@ void enableTimeStep(boolean enable) {
 }
 
 void enableMessageStep(boolean enable) {
-    messageStepEnabled = enable;
-    putBoolean("messageStepEnabled", messageStepEnabled);
+    synchronized(this) {
+        messageStepEnabled = enable;
+        putBoolean("messageStepEnabled", messageStepEnabled);
+    }
     
     if (enable) {
         toast("消息自动增加步数功能已开启");
@@ -472,101 +499,154 @@ void enableMessageStep(boolean enable) {
 }
 
 void showStepStatus(String talker) {
-    String status = String.format("当前步数: %d\n时间步数: %s\n消息步数: %s\n保底步数: %s\n步数范围: %d-%d\n保底步数: %d\n今日目标: %d\n进度: %d%%",
-                                 currentStep,
-                                 timeStepEnabled ? "已开启" : "已关闭",
-                                 messageStepEnabled ? "已开启" : "已关闭",
-                                 minGuaranteedStep > 0 ? "已开启" : "已关闭",
-                                 minTimeStep,
-                                 maxTimeStep,
-                                 minGuaranteedStep,
-                                 maxStep,
-                                 currentStep * 100 / maxStep);
+    long curStep;
+    long curMinG;
+    boolean tEnabled;
+    boolean mEnabled;
+    int minTs;
+    int maxTs;
+    long curMaxMessageStep;
+    long curMaxTimeStep;
+
+    synchronized (this) {
+        curStep = currentStep;
+        curMinG = minGuaranteedStep;
+        tEnabled = timeStepEnabled;
+        mEnabled = messageStepEnabled;
+        minTs = minTimeStep;
+        maxTs = maxTimeStep;
+        curMaxMessageStep = maxMessageStep;
+        curMaxTimeStep = maxTimeStepCalculated;
+    }
+
+    if (!tEnabled && !mEnabled) {
+        String status = "步数增加功能未启用，请启用时间步数或消息步数功能。";
+        sendText(talker, status);
+    } else if (mEnabled) {
+        long progress = (curMaxMessageStep == 0) ? 0 : (curStep * 100 / curMaxMessageStep);
+        String status = "当前步数: " + curStep + "\n" +
+                "今日目标: " + curMaxMessageStep + "\n" +
+                "进度: " + progress + "%\n" +
+                "保底步数: " + curMinG + "\n" +
+                "最大消息步数: " + curMaxMessageStep;
+        sendText(talker, status);
+    } else if (tEnabled) {
+        String status = "当前步数: " + curStep + "\n" +
+                "保底步数: " + curMinG + "\n" +
+                "时间步数范围: " + (minTs * calculateActiveMinutes()) + "-" + (maxTs * calculateActiveMinutes()) + "\n" +
+                "每分钟步数范围: " + minTs + "-" + maxTs;
+        sendText(talker, status);
+    }
     
-    sendText(talker, status);
     logToFile("查询步数状态");
 }
 
-void showHelp(String talker) {
-    String helpText = "微信步数插件使用说明：\n\n" +
-                      "【功能控制命令】\n" +
-                      "/时间步数开 - 开启定时自动增加步数功能\n" +
-                      "/时间步数关 - 关闭定时自动增加步数功能\n" +
-                      "/消息步数开 - 开启消息自动增加步数功能\n" +
-                      "/消息步数关 - 关闭消息自动增加步数功能\n\n" +
-                      "【手动控制命令】\n" +
-                      "/改步数 数字 - 手动修改步数为指定数值\n" +
-                      "/最大步数 数字 - 修改最大步数限制\n" +
-                      "/步数范围 最小值-最大值 - 修改时间步数随机范围\n" +
-                      "/保底步数 数字 - 修改保底步数（0表示关闭保底功能）\n\n" +
-                      "【查询命令】\n" +
-                      "/步数状态 - 查看当前步数和功能状态\n" +
-                      "/步数帮助 - 显示本帮助信息\n\n" +
-                      "【功能说明】\n" +
-                      "1. 时间步数：每分钟自动增加" + minTimeStep + "-" + maxTimeStep + "步\n" +
-                      "2. 消息步数：每次收发消息时自动增加50-150步\n" +
-                      "3. 保底步数：22:50时检查当前步数，若小于保底步数则修改为保底步数\n" +
-                      "4. 步数增长幅度会根据当前步数自动调整\n" +
-                      "5. 23:00-6:00时间段内不会自动增加步数\n" +
-                      "6. 每日0点会自动重置步数\n" +
-                      "7. 无网络时步数仍会增加并存储，网络恢复后自动上传";
-    
-    sendText(talker, helpText);
-    logToFile("查询帮助信息");
+void showStepStatusAll(String talker) {
+    long curStep;
+    long curMaxStep;
+    long curMinG;
+    boolean tEnabled;
+    boolean mEnabled;
+    int minTs;
+    int maxTs;
+    long curMaxMessageStep;
+    long curMaxTimeStep;
+
+    synchronized (this) {
+        curStep = currentStep;
+        curMaxStep = maxStep;
+        curMinG = minGuaranteedStep;
+        tEnabled = timeStepEnabled;
+        mEnabled = messageStepEnabled;
+        minTs = minTimeStep;
+        maxTs = maxTimeStep;
+        curMaxMessageStep = maxMessageStep;
+        curMaxTimeStep = maxTimeStepCalculated;
+    }
+
+    long progress = curMaxStep == 0 ? 0 : (curStep * 100 / curMaxStep);
+
+    String status = "当前步数: " + curStep + "\n" +
+            "时间步数: " + (tEnabled ? "已开启" : "已关闭") + "\n" +
+            "消息步数: " + (mEnabled ? "已开启" : "已关闭") + "\n" +
+            "保底步数状态: " + (curMinG > 0 ? "已开启" : "已关闭") + "\n" +
+            "步数范围: " + minTs + "-" + maxTs + "\n" +
+            "保底步数: " + curMinG + "\n" +
+            "今日目标: " + curMaxStep + "\n" +
+            "进度: " + progress + "%";
+
+    if (tEnabled) {
+        status += "\n时间步数范围: " + (minTs * calculateActiveMinutes()) + "-" + (maxTs * calculateActiveMinutes());
+        status += "\n每分钟步数范围: " + minTs + "-" + maxTs;
+    }
+    if (mEnabled) {
+        status += "\n消息步数最大值: " + curMaxMessageStep;
+    }
+
+    sendText(talker, status);
+    logToFile("查询步数状态all");
 }
 
 boolean isRestrictedTime() {
     if (isTestMode) {
-        return false; // 测试模式下，不限制时间
+        return false;
     }
     
     LocalDateTime now = LocalDateTime.now();
-    int hour = now.getHour();
-    return hour >= 23 || hour < 6;
+    LocalTime time = now.toLocalTime();
+    
+    LocalTime startTime = LocalTime.of(7, 0);
+    LocalTime endTime = LocalTime.of(22, 50);
+    
+    return time.isBefore(startTime) || !time.isBefore(endTime);
 }
 
 int calculateActiveMinutes() {
-    return 24 * 60 - 60 - 6 * 60;
+    return 15 * 60 + 50;
 }
 
 void safeUploadDeviceStep(long step) {
     try {
         uploadDeviceStep(step);
-        
-        if (pendingStepUpload > 0 && pendingStepUpload != step) {
-            uploadPendingSteps();
+        synchronized(this) {
+            if (pendingStepUpload > 0 && pendingStepUpload != step) {
+                uploadPendingSteps();
+                pendingStepUpload = 0;
+                putLong("pendingStepUpload", 0);
+            }
         }
     } catch (Exception e) {
-        logToFile("步数上传失败: " + e.getMessage());
-        pendingStepUpload = step;
-        putLong("pendingStepUpload", pendingStepUpload);
-        logToFile("记录待上传步数: " + pendingStepUpload);
-    }
-}
-
-void uploadPendingSteps() {
-    if (pendingStepUpload > 0) {
-        try {
-            uploadDeviceStep(pendingStepUpload);
-            logToFile("待上传步数上传成功: " + pendingStepUpload);
-            pendingStepUpload = 0;
-            putLong("pendingStepUpload", 0);
-        } catch (Exception e) {
-            logToFile("待上传步数上传失败: " + e.getMessage());
+        synchronized(this) {
+            logToFile("步数上传失败: " + e.getMessage());
+            pendingStepUpload = step;
+            putLong("pendingStepUpload", pendingStepUpload);
+            logToFile("记录待上传步数: " + pendingStepUpload);
         }
     }
 }
 
 void logToFile(String message) {
-    if (!isTestMode) {
+    // 检查日志输出开关
+    if (!logOutputEnabled) {
         return;
     }
     
     try {
+        if (!logDir.exists()) {
+            logDir.mkdirs();
+        }
+
+        File logFile = new File(logDirPath + "autostep_log.txt");
+
+        if (logFile.exists() && logFile.length() > MAX_LOG_FILE_SIZE) {
+            FileWriter clearWriter = new FileWriter(logFile, false);
+            clearWriter.write("");
+            clearWriter.close();
+        }
+
         String timestamp = dateFormat.format(new Date());
         String logMessage = "[" + timestamp + "] " + message + "\n";
-        
-        File logFile = new File(logDirPath + "autostep_log.txt");
+
         FileWriter writer = new FileWriter(logFile, true);
         writer.append(logMessage);
         writer.close();

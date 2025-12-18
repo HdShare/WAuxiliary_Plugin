@@ -11,6 +11,14 @@
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动收款"
     },
     {
+      "name": "音频转换",
+      "author": "。。",
+      "version": "1.0.0",
+      "updateTime": 20251218,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/音频转换",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/音频转换"
+    },
+    {
       "name": "自动增加步数",
       "author": "Wukon",
       "version": "1.0.5",
@@ -305,14 +313,6 @@
       "updateTime": 20250520,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/CkBcDD/TXT-to-IMG",
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/CkBcDD/TXT-to-IMG"
-    },
-    {
-      "name": null,
-      "author": null,
-      "version": null,
-      "updateTime": null,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/音频转换",
-      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/音频转换"
     }
   ]
 }

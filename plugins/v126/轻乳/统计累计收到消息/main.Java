@@ -13,8 +13,8 @@ import java.util.HashMap;
 
 // ========== 固定配置（焊死） ==========
 // 每天自动发送的好友wxid和消息内容（请根据实际情况修改）
-String NIGHT_FRIEND_WXID = "wxid_11t9pia2zt5322";
-String NIGHT_MESSAGE = "宝宝我好想你";
+String NIGHT_FRIEND_WXID = "your_friend_wxid_here";
+String NIGHT_MESSAGE = "我好想你";
 
 // 时区设置（中国用户请勿修改）
 String TIMEZONE = "Asia/Shanghai";

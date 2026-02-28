@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   generate-plugins:
+    if: ${{ github.repository == 'HdShare/WAuxiliary_Plugin' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

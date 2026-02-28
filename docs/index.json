@@ -1,7 +1,23 @@
 {
-  "generatedAt": "2026-02-28",
-  "totalPlugins": 37,
+  "generatedAt": "2025-12-26",
+  "totalPlugins": 39,
   "plugins": [
+    {
+      "name": "自动收款",
+      "author": "。。",
+      "version": "1.1.0",
+      "updateTime": 20251226,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动收款",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动收款"
+    },
+    {
+      "name": "音频转换",
+      "author": "。。",
+      "version": "1.0.0",
+      "updateTime": 20251218,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/音频转换",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/音频转换"
+    },
     {
       "name": "自动增加步数",
       "author": "Wukon",

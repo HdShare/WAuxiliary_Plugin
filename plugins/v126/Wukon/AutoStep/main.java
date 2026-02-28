@@ -682,6 +682,7 @@ void startGuaranteedStepTimer() {
     
     long initialDelay = java.time.Duration.between(now, targetTime).toMillis();
     long period = 24 * 60 * 60 * 1000L;
+    long period = 24 * 60 * 60 * 1000L;
     
     guaranteedStepExecutor.scheduleAtFixedRate(new Runnable() {
         public void run() {
@@ -691,6 +692,7 @@ void startGuaranteedStepTimer() {
                 logToFile("保底步数检查异常: " + e.getMessage());
             }
         }
+    }, initialDelay, period, TimeUnit.MILLISECONDS);
     }, initialDelay, period, TimeUnit.MILLISECONDS);
     
     logToFile("保底步数定时器启动");

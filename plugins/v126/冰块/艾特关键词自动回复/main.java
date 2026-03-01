@@ -452,7 +452,7 @@ public void onHandleMsg(Object data) {
 }
 
 /** ================= Long-press commands ================= */
-public boolean onLongClickSendBtn(String text) {
+public boolean onClickSendBtn(String text) {
     if (!__protect_ok()) return false;
     String roomId = "" + getTargetTalker();
     if (roomId == null || roomId.length() == 0) return false;

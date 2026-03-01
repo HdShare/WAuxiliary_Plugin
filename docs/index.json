@@ -1,12 +1,36 @@
 {
-  "generatedAt": "2025-12-21",
-  "totalPlugins": 39,
+  "generatedAt": "2026-03-01",
+  "totalPlugins": 40,
   "plugins": [
+    {
+      "name": "自动增加步数",
+      "author": "Wukon",
+      "version": "1.0.6",
+      "updateTime": 20260228,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep"
+    },
+    {
+      "name": "统计",
+      "author": "轻乳",
+      "version": "1.0.0",
+      "updateTime": 20260222,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/轻乳/统计累计收到消息",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/轻乳/统计累计收到消息"
+    },
+    {
+      "name": "记事本",
+      "author": "轻乳",
+      "version": "1.0.0",
+      "updateTime": 20260222,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/轻乳/记事本插件",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/轻乳/记事本插件"
+    },
     {
       "name": "自动收款",
       "author": "。。",
-      "version": "1.0.0",
-      "updateTime": 20251218,
+      "version": "1.1.0",
+      "updateTime": 20251226,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动收款",
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/自动收款"
     },
@@ -17,14 +41,6 @@
       "updateTime": 20251218,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/音频转换",
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/音频转换"
-    },
-    {
-      "name": "自动增加步数",
-      "author": "Wukon",
-      "version": "1.0.5",
-      "updateTime": 20251211,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep",
-      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Wukon/AutoStep"
     },
     {
       "name": "AI作图",
@@ -121,14 +137,6 @@
       "updateTime": 20250917,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/Avatar-rua",
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/Avatar-rua"
-    },
-    {
-      "name": "示例插件",
-      "author": "Hd",
-      "version": "1.0.0",
-      "updateTime": 20250917,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/DemoPlugin",
-      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Hd/DemoPlugin"
     },
     {
       "name": "表情合成",

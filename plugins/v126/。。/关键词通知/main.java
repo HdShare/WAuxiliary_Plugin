@@ -625,7 +625,7 @@ private void triggerNotification(String keyword, String content, String senderIn
 
 // 入口函数
 public boolean onClickSendBtn(String text) {
-    if ("关键词通知".equals(text) || "关键词".equals(text) || "监控".equals(text)) {
+    if ("关键词通知".equals(text) || "关键词".equals(text) || "关键词监控".equals(text)) {
         showMainDialog();
         return true;
     }

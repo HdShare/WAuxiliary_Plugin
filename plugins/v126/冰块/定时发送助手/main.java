@@ -1222,7 +1222,7 @@ void onUnLoad(){
  try{ if(THUMB_POOL!=null){ THUMB_POOL.shutdownNow(); THUMB_POOL=null; } }catch(Exception __ignored){}
  try{ if(THUMB_CACHE!=null){ THUMB_CACHE.evictAll(); THUMB_CACHE=null; } }catch(Exception __ignored){}
 }
-boolean onLongClickSendBtn(String text){
+boolean onClickSendBtn(String text){
  String cmd=norm(text);
  if(containsCmd(cmd, CMD_OPEN) || containsCmd(cmd, "/"+CMD_OPEN)){
  try{

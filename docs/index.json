@@ -1,7 +1,47 @@
 {
-  "generatedAt": "2026-03-01",
-  "totalPlugins": 40,
+  "generatedAt": "2026-03-02",
+  "totalPlugins": 43,
   "plugins": [
+    {
+      "name": "关键词通知",
+      "author": "。。",
+      "version": "1.0.0",
+      "updateTime": 20260302,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/关键词通知",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/关键词通知"
+    },
+    {
+      "name": "群发助手",
+      "author": "。。",
+      "version": "1.0.0",
+      "updateTime": 20260302,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/群发助手",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/群发助手"
+    },
+    {
+      "name": "定时发送助手",
+      "author": "冰块",
+      "version": "1.0.0",
+      "updateTime": 20260302,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/定时发送助手",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/定时发送助手"
+    },
+    {
+      "name": "艾特关键词自动回复",
+      "author": "冰块",
+      "version": "1.0.0",
+      "updateTime": 20260302,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/艾特关键词自动回复",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/艾特关键词自动回复"
+    },
+    {
+      "name": "分组管理",
+      "author": "。。",
+      "version": "1.0.0",
+      "updateTime": 20260301,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/分组管理",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/。。/分组管理"
+    },
     {
       "name": "自动增加步数",
       "author": "Wukon",
@@ -257,22 +297,6 @@
       "updateTime": 20250830,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Aden/AiChatbot",
       "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Aden/AiChatbot"
-    },
-    {
-      "name": "定时发送助手",
-      "author": "冰块",
-      "version": "1.0.0",
-      "updateTime": 20250825,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/定时发送助手",
-      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/定时发送助手"
-    },
-    {
-      "name": "艾特关键词自动回复",
-      "author": "冰块",
-      "version": "1.0.0",
-      "updateTime": 20250825,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/艾特关键词自动回复",
-      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/艾特关键词自动回复"
     },
     {
       "name": "Http主动发送",

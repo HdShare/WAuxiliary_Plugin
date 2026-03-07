@@ -1,7 +1,15 @@
 {
-  "generatedAt": "2026-03-03",
-  "totalPlugins": 44,
+  "generatedAt": "2026-03-07",
+  "totalPlugins": 45,
   "plugins": [
+    {
+      "name": "微信AI回复插件@Alan-qwq",
+      "author": "Alan",
+      "version": 1.9,
+      "updateTime": 20260307,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Alan-qwq/微信AI回复插件",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Alan-qwq/微信AI回复插件"
+    },
     {
       "name": "AI文字转语音",
       "author": "vhukze",

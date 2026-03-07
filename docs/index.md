@@ -6,6 +6,10 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: 微信AI回复插件@Alan-qwq@Alan
+    details: 版本 1.9 | 更新于 20260307
+    link: https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/Alan-qwq/微信AI回复插件
+
   - title: AI文字转语音@vhukze
     details: 版本 1.0.0 | 更新于 20260303
     link: https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/vhukze/AITextToVoice

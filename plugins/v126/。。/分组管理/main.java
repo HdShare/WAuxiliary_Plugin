@@ -36,6 +36,8 @@ import me.hd.wauxv.data.bean.info.GroupInfo;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONArray;
+// 【新增导入】用于 JSON 格式化输出
+import com.alibaba.fastjson2.JSONWriter; 
 
 
 // 全局变量缓存
@@ -47,14 +49,14 @@ private List sCachedGroupList = null;
  */
 private String getGroupFilePath() {
     String basePath = Environment.getExternalStorageDirectory().getAbsolutePath();
-    String defaultPath = basePath + "/Android/media/com.tencent.mm/WAuxiliary/Resource/Group/groupItems.json";
+    String defaultPath = basePath + "/Android/media/com.tencent.mm/WAuxiliary/Resource/Group/groupItemsV2.json";
     
     File defaultFile = new File(defaultPath);
     if (defaultFile.exists()) {
         return defaultPath;
     }
     
-    String clonePath = "/storage/emulated/999/Android/media/com.tencent.mm/WAuxiliary/Resource/Group/groupItems.json";
+    String clonePath = "/storage/emulated/999/Android/media/com.tencent.mm/WAuxiliary/Resource/Group/groupItemsV2.json";
     if (new File(clonePath).exists()) {
         return clonePath;
     }
@@ -124,7 +126,8 @@ private void saveGroupConfig(JSONArray array) {
             parent.mkdirs();
         }
         FileOutputStream fos = new FileOutputStream(file);
-        String jsonOutput = JSON.toJSONString(array);
+        // 【修改核心】：增加 JSONWriter.Feature.PrettyFormat 实现格式化输出（缩进与换行）
+        String jsonOutput = JSON.toJSONString(array, JSONWriter.Feature.PrettyFormat);
         fos.write(jsonOutput.getBytes("UTF-8"));
         fos.flush();
         fos.close();
@@ -555,7 +558,7 @@ private void showCreateGroupDialog(final JSONArray groupArray, final ArrayAdapte
             JSONObject newGroup = new JSONObject();
             newGroup.put("title", name);
             newGroup.put("order", maxOrder + 1);
-            newGroup.put("icon", "ic_group.png");
+            newGroup.put("type", "custom");
             newGroup.put("enable", true);
             newGroup.put("idList", new JSONArray());
             
@@ -998,5 +1001,6 @@ private void setupListViewTouchForScroll(ListView listView) {
         }
     });
 }
+
 
 

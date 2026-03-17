@@ -91,6 +91,102 @@ interface MediaSelectionCallback {
     void onSelected(ArrayList<String> selectedFiles);
 }
 
+// 自动回复配置相关的key
+private final String AUTO_REPLY_RULES_KEY = "auto_reply_rules";
+private final String ENABLE_LOG_KEY = "enable_app_debug_log"; // 新增：日志开关KEY
+
+// 自动同意好友请求相关的key
+private final String AUTO_ACCEPT_FRIEND_ENABLED_KEY = "auto_accept_friend_enabled";
+private final String AUTO_ACCEPT_DELAY_KEY = "auto_accept_delay";
+private final String AUTO_ACCEPT_REPLY_ITEMS_KEY = "auto_accept_reply_items_v2";
+
+// 我添加好友被通过后，自动回复相关的key
+private final String GREET_ON_ACCEPTED_ENABLED_KEY = "greet_on_accepted_enabled";
+private final String GREET_ON_ACCEPTED_DELAY_KEY = "greet_on_accepted_delay";
+private final String GREET_ON_ACCEPTED_REPLY_ITEMS_KEY = "greet_on_accepted_reply_items_v2";
+private final String FRIEND_ADD_SUCCESS_KEYWORD = "我通过了你的朋友验证请求，现在我们可以开始聊天了";
+
+// 小智AI 配置相关的key
+private final String XIAOZHI_CONFIG_KEY = "xiaozhi_ai_config";
+private final String XIAOZHI_SERVE_KEY = "xiaozhi_serve_url";
+private final String XIAOZHI_OTA_KEY = "xiaozhi_ota_url";
+private final String XIAOZHI_CONSOLE_KEY = "xiaozhi_console_url";
+
+// 智聊AI 配置相关的key (移植自旧脚本)
+private final String ZHILIA_AI_API_KEY = "zhilia_ai_api_key";
+private final String ZHILIA_AI_API_URL = "zhilia_ai_api_url";
+private final String ZHILIA_AI_MODEL_NAME = "zhilia_ai_model_name";
+private final String ZHILIA_AI_SYSTEM_PROMPT = "zhilia_ai_system_prompt";
+private final String ZHILIA_AI_CONTEXT_LIMIT = "zhilia_ai_context_limit";
+
+// 匹配类型常量
+private final static int MATCH_TYPE_FUZZY = 0;      // 模糊匹配
+private final static int MATCH_TYPE_EXACT = 1;      // 全字匹配
+private final static int MATCH_TYPE_REGEX = 2;      // 正则匹配
+private final static int MATCH_TYPE_ANY = 3;        // 任何消息都匹配
+
+// @触发类型常量
+private final static int AT_TRIGGER_NONE = 0;       // 不限@触发
+private final static int AT_TRIGGER_ME = 1;         // @我触发
+private final static int AT_TRIGGER_ALL = 2;        // @全体触发
+
+// 拍一拍触发类型常量
+private final static int PAT_TRIGGER_NONE = 0;      // 不限拍一拍触发
+private final static int PAT_TRIGGER_ME = 1;        // 被拍一拍触发
+
+// 规则生效目标类型常量
+private final static int TARGET_TYPE_NONE = 0;      // 不指定
+private final static int TARGET_TYPE_FRIEND = 1;    // 指定好友
+private final static int TARGET_TYPE_GROUP = 2;     // 指定群聊
+private final static int TARGET_TYPE_BOTH = 3;      // 同时指定好友和群聊
+
+// 消息回复类型常量
+private final static int REPLY_TYPE_TEXT = 0;       // 文本回复
+private final static int REPLY_TYPE_IMAGE = 1;      // 图片回复
+private final static int REPLY_TYPE_VOICE_FILE_LIST = 2; // 语音回复 (从文件列表随机)
+private final static int REPLY_TYPE_VOICE_FOLDER = 3; // 语音回复 (从文件夹随机)
+private final static int REPLY_TYPE_EMOJI = 4;      // 表情回复
+private final static int REPLY_TYPE_XIAOZHI_AI = 5; // 小智AI自动回复
+private final static int REPLY_TYPE_VIDEO = 6;      // 视频回复
+private final static int REPLY_TYPE_CARD = 7;       // 名片回复 (支持多选)
+private final static int REPLY_TYPE_FILE = 8;       // 文件分享
+private final static int REPLY_TYPE_ZHILIA_AI = 9;  // 智聊AI自动回复 (共存)
+private final static int REPLY_TYPE_INVITE_GROUP = 10; // 邀请群聊
+
+// 自动同意好友/被通过的回复类型常量
+private final static int ACCEPT_REPLY_TYPE_TEXT = 0;
+private final static int ACCEPT_REPLY_TYPE_IMAGE = 1;
+private final static int ACCEPT_REPLY_TYPE_VOICE_FIXED = 2;
+private final static int ACCEPT_REPLY_TYPE_VOICE_RANDOM = 3;
+private final static int ACCEPT_REPLY_TYPE_EMOJI = 4;
+private final static int ACCEPT_REPLY_TYPE_VIDEO = 5; 
+private final static int ACCEPT_REPLY_TYPE_CARD = 6;  
+private final static int ACCEPT_REPLY_TYPE_FILE = 7;  
+private final static int ACCEPT_REPLY_TYPE_INVITE_GROUP = 8; 
+
+// 用于分隔列表项的特殊字符串
+private final String LIST_SEPARATOR = "_#ITEM#_";
+
+// 缓存列表，避免重复获取
+private List sCachedFriendList = null;
+private List sCachedGroupList = null;
+private java.util.Map sCachedGroupMemberCounts = null; // 缓存群成员数量
+
+// 小智AI 功能相关变量
+private final OkHttpClient aiClient = new OkHttpClient.Builder().build();
+private final java.util.concurrent.ConcurrentMap<String, WebSocket> aiWebSockets = new java.util.concurrent.ConcurrentHashMap<String, WebSocket>();
+
+// 智聊AI 功能相关变量
+private Map<String, List> zhiliaConversationHistories = new HashMap<>();
+
+// =================== START: 新增统一日志打印控制 ===================
+private void debugLog(String msg) {
+    if (getBoolean(ENABLE_LOG_KEY, true)) {
+        log(msg);
+    }
+}
+// =================== END: 新增统一日志打印控制 ===================
+
 void browseFolderForSelectionAuto(final File startFolder, final String wantedExtFilter, final String currentSelection, final MediaSelectionCallback callback, final boolean allowFolderSelect) {
     putString(DEFAULT_LAST_FOLDER_SP_AUTO, startFolder.getAbsolutePath());
     ArrayList<String> names = new ArrayList<String>();
@@ -241,7 +337,6 @@ private String joinMediaPaths(ArrayList<String> paths, boolean isMultiList) {
     return TextUtils.join(";;;", paths);
 }
 
-// 判断是否需要全选的辅助方法
 private boolean shouldSelectAll(List currentFilteredIds, Set selectedIds) {
     int selectableCount = currentFilteredIds.size();
     int checkedCount = 0;
@@ -254,7 +349,6 @@ private boolean shouldSelectAll(List currentFilteredIds, Set selectedIds) {
     return selectableCount > 0 && checkedCount < selectableCount;
 }
 
-// 更新全选按钮文本的辅助方法
 private void updateSelectAllButton(AlertDialog dialog, List currentFilteredIds, Set selectedIds) {
     Button neutralButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
     if (neutralButton != null) {
@@ -266,135 +360,38 @@ private void updateSelectAllButton(AlertDialog dialog, List currentFilteredIds, 
     }
 }
 
-// 【新增】动态调整ListView高度的辅助方法（最小50dp/项，最大300dp）
 private void adjustListViewHeight(ListView listView, int itemCount) {
     if (itemCount <= 0) {
-        listView.getLayoutParams().height = dpToPx(50); // 最小高度，避免完全隐藏
+        listView.getLayoutParams().height = dpToPx(50);
     } else {
-        int itemHeight = dpToPx(50); // 假设每个项约50dp
+        int itemHeight = dpToPx(50);
         int calculatedHeight = Math.min(itemCount * itemHeight, dpToPx(300));
         listView.getLayoutParams().height = calculatedHeight;
     }
     listView.requestLayout();
 }
 
-// 【优化】改进ListView触摸事件处理，确保直接触摸即可滚动（在ACTION_DOWN时拦截ScrollView）
 private void setupListViewTouchForScroll(ListView listView) {
     listView.setOnTouchListener(new View.OnTouchListener() {
         public boolean onTouch(View v, MotionEvent event) {
             switch (event.getAction()) {
                 case MotionEvent.ACTION_DOWN:
-                    // 触摸开始时，请求父容器（ScrollView）不要拦截事件
                     v.getParent().requestDisallowInterceptTouchEvent(true);
                     break;
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
-                    // 触摸结束时，允许父容器恢复拦截
                     v.getParent().requestDisallowInterceptTouchEvent(false);
                     break;
             }
-            return false; // 让ListView处理事件
+            return false;
         }
     });
 }
-
-// 自动回复配置相关的key
-private final String AUTO_REPLY_RULES_KEY = "auto_reply_rules";
-private final String AUTO_REPLY_FRIEND_ENABLED_KEY = "auto_reply_friend_enabled";
-private final String AUTO_REPLY_GROUP_ENABLED_KEY = "auto_reply_group_enabled";
-private final String AUTO_REPLY_ENABLED_FRIENDS_KEY = "auto_reply_enabled_friends";
-private final String AUTO_REPLY_ENABLED_GROUPS_KEY = "auto_reply_enabled_groups";
-
-// 自动同意好友请求相关的key
-private final String AUTO_ACCEPT_FRIEND_ENABLED_KEY = "auto_accept_friend_enabled";
-private final String AUTO_ACCEPT_DELAY_KEY = "auto_accept_delay";
-private final String AUTO_ACCEPT_REPLY_ITEMS_KEY = "auto_accept_reply_items_v2";
-
-// 我添加好友被通过后，自动回复相关的key
-private final String GREET_ON_ACCEPTED_ENABLED_KEY = "greet_on_accepted_enabled";
-private final String GREET_ON_ACCEPTED_DELAY_KEY = "greet_on_accepted_delay";
-private final String GREET_ON_ACCEPTED_REPLY_ITEMS_KEY = "greet_on_accepted_reply_items_v2";
-private final String FRIEND_ADD_SUCCESS_KEYWORD = "我通过了你的朋友验证请求，现在我们可以开始聊天了";
-
-// 小智AI 配置相关的key
-private final String XIAOZHI_CONFIG_KEY = "xiaozhi_ai_config";
-private final String XIAOZHI_SERVE_KEY = "xiaozhi_serve_url";
-private final String XIAOZHI_OTA_KEY = "xiaozhi_ota_url";
-private final String XIAOZHI_CONSOLE_KEY = "xiaozhi_console_url";
-
-// 智聊AI 配置相关的key (移植自旧脚本)
-private final String ZHILIA_AI_API_KEY = "zhilia_ai_api_key";
-private final String ZHILIA_AI_API_URL = "zhilia_ai_api_url";
-private final String ZHILIA_AI_MODEL_NAME = "zhilia_ai_model_name";
-private final String ZHILIA_AI_SYSTEM_PROMPT = "zhilia_ai_system_prompt";
-private final String ZHILIA_AI_CONTEXT_LIMIT = "zhilia_ai_context_limit";
-
-// 匹配类型常量
-private final static int MATCH_TYPE_FUZZY = 0;      // 模糊匹配
-private final static int MATCH_TYPE_EXACT = 1;      // 全字匹配
-private final static int MATCH_TYPE_REGEX = 2;      // 正则匹配
-private final static int MATCH_TYPE_ANY = 3;        // 任何消息都匹配
-
-// @触发类型常量
-private final static int AT_TRIGGER_NONE = 0;       // 不限@触发
-private final static int AT_TRIGGER_ME = 1;         // @我触发
-private final static int AT_TRIGGER_ALL = 2;        // @全体触发
-
-// 【新增】拍一拍触发类型常量
-private final static int PAT_TRIGGER_NONE = 0;      // 不限拍一拍触发
-private final static int PAT_TRIGGER_ME = 1;        // 被拍一拍触发
-
-// 规则生效目标类型常量
-private final static int TARGET_TYPE_NONE = 0;      // 不指定
-private final static int TARGET_TYPE_FRIEND = 1;    // 指定好友
-private final static int TARGET_TYPE_GROUP = 2;     // 指定群聊
-private final static int TARGET_TYPE_BOTH = 3;      // 同时指定好友和群聊
-
-// 消息回复类型常量
-private final static int REPLY_TYPE_TEXT = 0;       // 文本回复
-private final static int REPLY_TYPE_IMAGE = 1;      // 图片回复
-private final static int REPLY_TYPE_VOICE_FILE_LIST = 2; // 语音回复 (从文件列表随机)
-private final static int REPLY_TYPE_VOICE_FOLDER = 3; // 语音回复 (从文件夹随机)
-private final static int REPLY_TYPE_EMOJI = 4;      // 表情回复
-private final static int REPLY_TYPE_XIAOZHI_AI = 5; // 小智AI自动回复
-private final static int REPLY_TYPE_VIDEO = 6;      // 视频回复 (新增)
-private final static int REPLY_TYPE_CARD = 7;       // 名片回复 (新增，支持多选)
-private final static int REPLY_TYPE_FILE = 8;       // 文件分享 (新增)
-private final static int REPLY_TYPE_ZHILIA_AI = 9;  // 智聊AI自动回复 (新增，共存)
-
-// 自动同意好友/被通过的回复类型常量
-private final static int ACCEPT_REPLY_TYPE_TEXT = 0;
-private final static int ACCEPT_REPLY_TYPE_IMAGE = 1;
-private final static int ACCEPT_REPLY_TYPE_VOICE_FIXED = 2;
-private final static int ACCEPT_REPLY_TYPE_VOICE_RANDOM = 3;
-private final static int ACCEPT_REPLY_TYPE_EMOJI = 4;
-private final static int ACCEPT_REPLY_TYPE_VIDEO = 5; // 新增
-private final static int ACCEPT_REPLY_TYPE_CARD = 6;  // 名片 (新增，支持多选)
-private final static int ACCEPT_REPLY_TYPE_FILE = 7;  // 文件分享 (新增)
-
-// 用于分隔列表项的特殊字符串
-private final String LIST_SEPARATOR = "_#ITEM#_";
-
-// 缓存列表，避免重复获取
-private List sCachedFriendList = null;
-private List sCachedGroupList = null;
-private java.util.Map sCachedGroupMemberCounts = null; // 缓存群成员数量
-
-// 小智AI 功能相关变量
-// OkHttp 客户端实例，用于发起网络请求
-private final OkHttpClient aiClient = new OkHttpClient.Builder().build();
-// 【修改】使用 ConcurrentHashMap 来确保线程安全地管理每个聊天会話的 WebSocket 连接
-// Key 是聊天对象 wxid (talker)，Value 是对应的 WebSocket 连接实例
-private final java.util.concurrent.ConcurrentMap<String, WebSocket> aiWebSockets = new java.util.concurrent.ConcurrentHashMap<String, WebSocket>();
-
-// 智聊AI 功能相关变量 (移植自旧脚本)
-private Map<String, List> zhiliaConversationHistories = new HashMap<>();
 
 // =================================================================================
 // =================== START: 小智bot 核心功能代码移植 ===================
 // =================================================================================
 
-// --- 设备信息工具方法 ---
 private String getDeviceUUID(Context ctx) {
     if (ctx == null) return "unknown-uuid-due-to-null-context";
     String androidId = Settings.Secure.getString(ctx.getContentResolver(), Settings.Secure.ANDROID_ID);
@@ -431,12 +428,11 @@ private String getDeviceMac(Context ctx) {
         }
         return macBuilder.toString();
     } catch (Exception e) {
-        log("Error generating MAC: " + e.getMessage());
+        debugLog("[异常] 生成MAC地址错误: " + e.getMessage());
         return "00:00:00:00:00:00";
     }
 }
 
-// --- 网络请求工具 ---
 private void addHeaders(Request.Builder builder, Map header) {
     if (header != null) {
         for (Object key : header.keySet()) {
@@ -453,7 +449,7 @@ private String executeRequest(Request.Builder builder) {
         }
         return null;
     } catch (IOException e) {
-        log("AI Request failed: " + e.getMessage());
+        debugLog("[异常] AI 网络请求失败: " + e.getMessage());
         return null;
     }
 }
@@ -473,98 +469,59 @@ private String httpPost(String url, String data, Map header) {
     return executeRequest(builder);
 }
 
-// --- 小智AI 核心处理逻辑 ---
-// 【修改】重写AI处理逻辑，以支持多会话并确保线程安全
 private void processAIResponse(final Object msgInfoBean) {
-    if (msgInfoBean == null) {
-        log("processAIResponse: msgInfoBean is null");
-        return;
-    }
-    
+    if (msgInfoBean == null) return;
     try {
-        String content = invokeStringMethod(msgInfoBean, "getContent");
-        if (TextUtils.isEmpty(content)) {
-            log("processAIResponse: Empty content");
-            return;
-        }
+        String content = getFieldString(msgInfoBean, "originContent");
+        final String talker = getFieldString(msgInfoBean, "talker");
+        if (TextUtils.isEmpty(content) || TextUtils.isEmpty(talker)) return;
 
-        final String talker = invokeStringMethod(msgInfoBean, "getTalker");
-        if (TextUtils.isEmpty(talker)) {
-            log("processAIResponse: Empty talker");
-            return;
-        }
-
-        // 检查是否在群聊中，如果是，需要特殊处理@消息
-        boolean isGroupChat = invokeBooleanMethod(msgInfoBean, "isGroupChat");
+        boolean isGroupChat = talker.contains("@chatroom");
         if (isGroupChat) {
-           // boolean isAtMe = invokeBooleanMethod(msgInfoBean, "isAtMe");
-           // if (!isAtMe) {
-              //  log("processAIResponse: Not @ me in group chat, ignoring");
-            //    return;
-        //    }怕骚扰别人就把这几行代码取消注释
-            
-            // 移除@信息
             content = content.replaceAll("@[^\\s]+\\s+", "").trim();
-            if (TextUtils.isEmpty(content)) {
-                log("processAIResponse: Empty content after removing @");
-                return;
-            }
+            if (TextUtils.isEmpty(content)) return;
         }
 
-        // 处理断开连接命令
         if ("#断开".equals(content) || "#断连".equals(content) || "#断线".equals(content)) {
             WebSocket webSocket = aiWebSockets.get(talker);
             if (webSocket != null) {
                 webSocket.close(1000, "手动断开");
-                // onClosing/onFailure 回调会自动从Map中移除连接
+                debugLog("[小智AI] 已手动断开 WebSocket 连接");
             }
             return;
         }
 
         final String finalText = content;
-        
-        // 在后台线程处理AI请求
         new Thread(new Runnable() {
             public void run() {
                 try {
-                    // 检查当前 talker 是否已有连接
                     WebSocket currentSocket = aiWebSockets.get(talker);
                     if (currentSocket == null) {
-                        // 没有连接，则初始化一个新的
                         initializeWebSocketConnection(talker, finalText);
                     } else {
-                        // 已有连接，直接发送消息
                         sendMessageToWebSocket(talker, finalText);
                     }
                 } catch (Exception e) {
-                    log("Error in AI response thread: " + e.getMessage());
-                    insertSystemMsg(talker, "小智AI 处理消息时出错: " + e.getMessage(), System.currentTimeMillis());
+                    debugLog("[异常] 小智AI 处理线程错误: " + e.getMessage());
+                    insertSystemMsg(talker, "小智AI出错: " + e.getMessage(), System.currentTimeMillis());
                 }
             }
         }).start();
     } catch (Exception e) {
-        log("processAIResponse error: " + e.getMessage());
+        debugLog("[异常] 处理小智AI过程出错: " + e.getMessage());
     }
 }
 
-// 【修改】初始化WebSocket连接，为指定的 talker 创建
 private void initializeWebSocketConnection(final String talker, final String text) {
     try {
-        // 使用 ConcurrentHashMap 的 putIfAbsent 可以原子性地检查并放入，防止重复创建连接
-        // 但由于 listener 的创建和 newWebSocket 的调用不是原子操作，这里还是先检查
-        if (aiWebSockets.containsKey(talker)) {
-            log("WebSocket for " + talker + " is already connecting or connected.");
-            return;
-        }
+        if (aiWebSockets.containsKey(talker)) return;
 
         WebSocketListener listener = new WebSocketListener() {
             public void onOpen(WebSocket webSocket, Response response) {
-                // 连接成功后，将其存入 Map
                 aiWebSockets.put(talker, webSocket);
-                log("WebSocket opened for talker: " + talker);
+                debugLog("[小智AI] WebSocket 连接建立成功 -> " + talker);
                 insertSystemMsg(talker, "小智AI 已连接", System.currentTimeMillis());
                 
-                // 发送初始化消息
                 try {
                     JSONObject helloMsg = new JSONObject();
                     helloMsg.put("type", "hello");
@@ -579,11 +536,9 @@ private void initializeWebSocketConnection(final String talker, final String tex
                     helloMsg.put("audio_params", audioParams);
                     
                     webSocket.send(helloMsg.toString());
-                    
-                    // 发送实际的第一个消息
                     sendMessageToWebSocket(talker, text);
                 } catch (Exception e) {
-                    log("Error sending initial WebSocket messages for " + talker + ": " + e.getMessage());
+                    debugLog("[异常] 小智AI 初始化消息发送失败: " + e.getMessage());
                 }
             }
 
@@ -596,30 +551,24 @@ private void initializeWebSocketConnection(final String talker, final String tex
                         if (resultObj.containsKey("text")) {
                             String replyText = resultObj.getString("text");
                             sendText(talker, replyText);
+                            debugLog("[小智AI] 发送回复 -> " + replyText);
                         }
                     }
                 } catch (Exception e) {
-                    insertSystemMsg(talker, "小智AI 解析响应数据异常\n" + e.getMessage(), System.currentTimeMillis());
+                    debugLog("[异常] 小智AI 数据解析失败: " + e.getMessage());
                 }
             }
 
             public void onClosing(WebSocket webSocket, int code, String reason) {
-                // 连接关闭时，从 Map 中移除
                 aiWebSockets.remove(talker);
-                log("WebSocket closing for talker: " + talker + ". Reason: " + reason);
-                insertSystemMsg(talker, "小智AI 连接已关闭\n" + reason, System.currentTimeMillis());
+                debugLog("[小智AI] WebSocket 连接关闭 -> " + reason);
+                insertSystemMsg(talker, "小智AI 连接已关闭: " + reason, System.currentTimeMillis());
             }
 
             public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-                // 连接失败时，从 Map 中移除
                 aiWebSockets.remove(talker);
-                log("WebSocket failure for talker: " + talker + ". Error: " + t.getMessage());
-                StringBuilder errorInfo = new StringBuilder();
-                errorInfo.append("Exception: ").append(t.getClass().getName()).append("\n");
-                if (t.getMessage() != null) {
-                    errorInfo.append("Message: ").append(t.getMessage()).append("\n");
-                }
-                insertSystemMsg(talker, "小智AI 连接中断\n" + errorInfo.toString(), System.currentTimeMillis());
+                debugLog("[异常] 小智AI WebSocket 异常断开: " + t.getMessage());
+                insertSystemMsg(talker, "小智AI 连接中断: " + t.getMessage(), System.currentTimeMillis());
             }
         };
 
@@ -630,53 +579,41 @@ private void initializeWebSocketConnection(final String talker, final String tex
         header.put("Protocol-Version", "1");
         
         String serveUrl = getString(XIAOZHI_CONFIG_KEY, XIAOZHI_SERVE_KEY, "wss://api.tenclass.net/xiaozhi/v1/");
-        
         Request.Builder requestBuilder = new Request.Builder().url(serveUrl);
         addHeaders(requestBuilder, header);
         
-        log("Attempting to create new WebSocket for talker: " + talker);
-        // 异步发起连接，结果会在 listener 的 onOpen 或 onFailure 中回调
+        debugLog("[小智AI] 正在创建新的 WebSocket 连接...");
         aiClient.newWebSocket(requestBuilder.build(), listener);
 
     } catch (Exception e) {
-        log("initializeWebSocketConnection error for " + talker + ": " + e.getMessage());
+        debugLog("[异常] 初始化 WebSocket 失败: " + e.getMessage());
         insertSystemMsg(talker, "小智AI 连接失败: " + e.getMessage(), System.currentTimeMillis());
     }
 }
 
-// 【修改】发送消息到指定 talker 的 WebSocket
 private void sendMessageToWebSocket(final String talker, String text) {
     try {
         WebSocket webSocket = aiWebSockets.get(talker);
         if (webSocket != null) {
             JSONObject socketMsg = new JSONObject();
-            // 【重要】为每个会话使用独立的 session_id，避免后端混淆上下文
             socketMsg.put("session_id", "session_for_" + talker);
             socketMsg.put("type", "listen");
             socketMsg.put("state", "detect");
             socketMsg.put("text", text);
             webSocket.send(socketMsg.toString());
-            log("Message sent to WebSocket for talker: " + talker);
+            debugLog("[小智AI] 消息已投递至服务器: " + text);
         } else {
-            // 如果连接不存在（可能意外断开），尝试重新连接
-            log("sendMessageToWebSocket: WebSocket for " + talker + " is null, attempting to reconnect.");
+            debugLog("[小智AI] 连接丢失，尝试重连...");
             initializeWebSocketConnection(talker, text);
         }
     } catch (Exception e) {
-        log("sendMessageToWebSocket error for " + talker + ": " + e.getMessage());
+        debugLog("[异常] 小智AI 消息发送失败: " + e.getMessage());
     }
 }
 
-// ===============================================================================
-// =================== END: 小智bot 核心功能代码移植 ===================
-// ===============================================================================
-
-// ========== 智聊AI 功能模块 (移植自旧脚本) ==========
+// ========== 智聊AI 功能模块 ==========
 
 private void sendZhiliaAiReply(final String talker, String userContent) {
-    // 日志入口
-    log("=== 智聊AI触发: talker=" + talker + ", content=" + userContent + " ===");
-    
     String apiKey = getString(ZHILIA_AI_API_KEY, "");
     String apiUrl = getString(ZHILIA_AI_API_URL, "https://api.siliconflow.cn/v1/chat/completions");
     String modelName = getString(ZHILIA_AI_MODEL_NAME, "deepseek-ai/DeepSeek-V3");
@@ -684,17 +621,13 @@ private void sendZhiliaAiReply(final String talker, String userContent) {
     int contextLimit = getInt(ZHILIA_AI_CONTEXT_LIMIT, 10);
 
     if (TextUtils.isEmpty(apiKey)) {
-        log("智聊AI: API Key 为空，跳过");
         toast("请先在智聊AI参数设置中配置API Key");
         return;
     }
-    log("智聊AI: 配置OK - URL=" + apiUrl + ", Model=" + modelName);
 
-    // 获取/创建历史
     List history = zhiliaConversationHistories.get(talker);
     if (history == null) {
         history = new ArrayList();
-        log("智聊AI: 新建对话历史 for " + talker);
         if (!TextUtils.isEmpty(systemPrompt)) {
             Map systemMsg = new HashMap();
             systemMsg.put("role", "system");
@@ -704,146 +637,87 @@ private void sendZhiliaAiReply(final String talker, String userContent) {
         zhiliaConversationHistories.put(talker, history);
     }
 
-    // 添加用户消息（移除@，统一小智逻辑）
     userContent = userContent.replaceAll("@[^\\s]+\\s+", "").trim();
-    if (TextUtils.isEmpty(userContent)) {
-        log("智聊AI: 用户内容为空后跳过");
-        return;
-    }
+    if (TextUtils.isEmpty(userContent)) return;
+    
     Map userMsg = new HashMap();
     userMsg.put("role", "user");
     userMsg.put("content", userContent);
     history.add(userMsg);
-    log("智聊AI: 添加用户消息，历史长度=" + history.size());
+    
+    debugLog("[智聊AI] 触发提问 -> 内容: " + userContent + " (历史长度:" + history.size() + ")");
 
-    // 限制上下文
     while (history.size() > contextLimit * 2 + 1) {
-        history.remove(1); // 最旧用户
-        if (history.size() > 1) history.remove(1); // 最旧AI
+        history.remove(1); 
+        if (history.size() > 1) history.remove(1); 
     }
 
-    // 构建请求体（JSON）
     JSONObject jsonBody = new JSONObject();
     jsonBody.put("model", modelName);
     jsonBody.put("messages", history);
     jsonBody.put("temperature", 0.7);
-    jsonBody.put("stream", false); // 非流式
+    jsonBody.put("stream", false); 
     String requestData = jsonBody.toString();
-    log("智聊AI: 请求体预览: " + requestData.substring(0, Math.min(200, requestData.length())) + "...");
 
-    // 构建请求头
     Map headerMap = new HashMap();
     headerMap.put("Content-Type", "application/json");
     headerMap.put("Authorization", "Bearer " + apiKey);
 
-    // 【核心修复】用 OkHttp 异步发送（绕过插件 post）
     RequestBody body = RequestBody.create(MediaType.parse("application/json"), requestData);
     Request.Builder reqBuilder = new Request.Builder().url(apiUrl).post(body);
-    addHeaders(reqBuilder, headerMap); // 用现有工具添加头
+    addHeaders(reqBuilder, headerMap); 
 
-    final Request request = reqBuilder.build();
-    aiClient.newCall(request).enqueue(new okhttp3.Callback() {
+    aiClient.newCall(reqBuilder.build()).enqueue(new okhttp3.Callback() {
         public void onFailure(okhttp3.Call call, IOException e) {
-            log("智聊AI: OkHttp onFailure - " + e.getMessage());
+            debugLog("[异常] 智聊AI 网络请求失败: " + e.getMessage());
             insertSystemMsg(talker, "智聊AI网络错误: " + e.getMessage(), System.currentTimeMillis());
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                public void run() {
-                    toast("智聊AI请求失败: " + e.getMessage());
-                }
-            });
         }
 
         public void onResponse(okhttp3.Call call, Response response) throws IOException {
             String responseContent = response.body() != null ? response.body().string() : null;
-            log("智聊AI: OkHttp onResponse (code=" + response.code() + "): " + responseContent);
 
             if (responseContent == null || !responseContent.trim().startsWith("{")) {
-                log("智聊AI: 非JSON响应");
+                debugLog("[异常] 智聊AI 返回了非JSON格式响应");
                 insertSystemMsg(talker, "智聊AI响应无效", System.currentTimeMillis());
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    public void run() {
-                        toast("智聊AI响应格式错误(非JSON)");
-                    }
-                });
                 return;
             }
 
             try {
                 JSONObject jsonObj = JSON.parseObject(responseContent);
-
                 if (jsonObj.containsKey("error")) {
-                    JSONObject errorObj = jsonObj.getJSONObject("error");
-                    String errorMessage = errorObj.getString("message");
-                    if (TextUtils.isEmpty(errorMessage)) errorMessage = "未知API错误";
-                    log("智聊AI: API错误 - " + errorMessage);
+                    String errorMessage = jsonObj.getJSONObject("error").getString("message");
+                    debugLog("[异常] 智聊AI 接口报错: " + errorMessage);
                     insertSystemMsg(talker, "智聊AI API错误: " + errorMessage, System.currentTimeMillis());
-                    new Handler(Looper.getMainLooper()).post(new Runnable() {
-                        public void run() {
-                            toast("智聊AI请求失败: " + errorMessage);
-                        }
-                    });
                     return;
                 }
 
-                if (!jsonObj.containsKey("choices")) {
-                    log("智聊AI: 缺少choices字段");
-                    new Handler(Looper.getMainLooper()).post(new Runnable() {
-                        public void run() {
-                            toast("智聊AI响应格式不正确");
-                        }
-                    });
-                    return;
-                }
+                if (!jsonObj.containsKey("choices")) return;
 
                 JSONArray choices = jsonObj.getJSONArray("choices");
                 if (choices.size() > 0) {
-                    JSONObject firstChoice = choices.getJSONObject(0);
-                    JSONObject message = firstChoice.getJSONObject("message");
-                    String msgContent = message.getString("content");
-                    log("智聊AI: 解析成功，内容: " + msgContent);
+                    String msgContent = choices.getJSONObject(0).getJSONObject("message").getString("content");
+                    debugLog("[智聊AI] 获取回复成功 -> " + msgContent);
 
                     if (!TextUtils.isEmpty(msgContent)) {
                         sendText(talker, msgContent);
-                        log("智聊AI: 已发送回复到 " + talker);
                     } else {
-                        log("智聊AI: 内容为空，fallback");
                         sendText(talker, "抱歉，我暂时无法回复。");
                     }
 
-                    // 更新历史
                     Map assistantMsg = new HashMap();
                     assistantMsg.put("role", "assistant");
                     assistantMsg.put("content", msgContent != null ? msgContent : "默认回复");
                     history.add(assistantMsg);
                     zhiliaConversationHistories.put(talker, history);
-                } else {
-                    log("智聊AI: choices为空");
-                    new Handler(Looper.getMainLooper()).post(new Runnable() {
-                        public void run() {
-                            toast("智聊AI这次好像没想好怎么说。");
-                        }
-                    });
-                    sendText(talker, "（AI思考中...）");
                 }
             } catch (JSONException e) {
-                log("智聊AI: JSON解析失败 - " + e.getMessage());
-                insertSystemMsg(talker, "智聊AI解析错误: " + e.getMessage(), System.currentTimeMillis());
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    public void run() {
-                        toast("无法解析智聊AI回复");
-                    }
-                });
+                debugLog("[异常] 智聊AI JSON解析失败: " + e.getMessage());
+                insertSystemMsg(talker, "智聊AI解析错误", System.currentTimeMillis());
             }
         }
     });
-    log("=== 智聊AI OkHttp请求已发送 ===");
 }
 
-// ===============================================================================
-// =================== END: 智聊AI 核心功能代码移植 ===================
-// ===============================================================================
-
-// 【修复】将AutoReplyRule改为Map<String, Object>结构，避免BeanShell类定义问题
 private Map<String, Object> createAutoReplyRuleMap(String keyword, String reply, boolean enabled, int matchType, Set targetWxids, int targetType, int atTriggerType, long delaySeconds, boolean replyAsQuote, int replyType, List mediaPaths, String startTime, String endTime, Set excludedWxids, long mediaDelaySeconds, int patTriggerType) {
     Map<String, Object> rule = new HashMap<String, Object>();
     rule.put("keyword", keyword);
@@ -862,7 +736,7 @@ private Map<String, Object> createAutoReplyRuleMap(String keyword, String reply,
     rule.put("excludedWxids", excludedWxids != null ? excludedWxids : new HashSet());
     rule.put("mediaDelaySeconds", mediaDelaySeconds);
     rule.put("patTriggerType", patTriggerType);
-    rule.put("compiledPattern", null); // Pattern对象，稍后编译
+    rule.put("compiledPattern", null); 
     return rule;
 }
 
@@ -878,7 +752,7 @@ private void compileRegexPatternForRule(Map<String, Object> rule) {
             Pattern pattern = Pattern.compile(keyword);
             rule.put("compiledPattern", pattern);
         } catch (Exception e) {
-            log("Error compiling regex pattern for keyword: " + keyword + " - " + e.getMessage());
+            debugLog("[异常] 编译正则关键词出错: " + keyword + " -> " + e.getMessage());
             rule.put("compiledPattern", null);
         }
     } else {
@@ -986,7 +860,7 @@ private Map<String, Object> ruleFromString(String str) {
         int patTriggerType = parts.length > 15 ? Integer.parseInt(parts[15]) : PAT_TRIGGER_NONE;
         rule = createAutoReplyRuleMap(keyword, reply, enabled, matchType, wxids, targetType, atTriggerType, delaySeconds, replyAsQuote, replyType, parsedMediaPaths, startTime, endTime, excludedWxids, mediaDelaySeconds, patTriggerType);
     } catch (Exception e) {
-        log("Error parsing rule from string: '" + str + "' - " + e.getMessage());
+        debugLog("[异常] 从字符串解析规则失败: '" + str + "' -> " + e.getMessage());
         return null;
     }
     if (rule != null) {
@@ -995,11 +869,10 @@ private Map<String, Object> ruleFromString(String str) {
     return rule;
 }
 
-// 好友回复项数据结构 (通用)
 private class AcceptReplyItem {
     public int type;
     public String content;
-    public long mediaDelaySeconds;  // 【新增】媒体发送间隔（秒）
+    public long mediaDelaySeconds;  
     public AcceptReplyItem(int type, String content, long mediaDelaySeconds) {
         this.type = type;
         this.content = content;
@@ -1036,124 +909,223 @@ private class AcceptReplyItem {
     }
 }
 
-// 反射工具类
-// 完全重写反射工具方法，避免使用BeanShell
-private String invokeStringMethod(Object obj, String methodName) {
-    if (obj == null) {
-        log("invokeStringMethod: obj is null for method: " + methodName);
-        return "";
-    }
-    
-    try {
-        // 使用更安全的反射方式
-        Class<?> clazz = obj.getClass();
-        Method method = clazz.getMethod(methodName);
-        Object result = method.invoke(obj);
-        return result != null ? result.toString() : "";
-    } catch (NoSuchMethodException e) {
-        log("Method not found: " + methodName + " in class: " + obj.getClass().getName());
-        // 尝试使用getField作为备选方案
-        try {
-            java.lang.reflect.Field field = obj.getClass().getField(methodName);
-            Object result = field.get(obj);
-            return result != null ? result.toString() : "";
-        } catch (Exception ex) {
-            log("Field also not found: " + methodName);
-            return "";
-        }
-    } catch (Exception e) {
-        log("Error invoking method: " + methodName + " - " + e.getMessage());
-        return "";
-    }
-}
-
-private boolean invokeBooleanMethod(Object obj, String methodName) {
-    if (obj == null) {
-        log("invokeBooleanMethod: obj is null for method: " + methodName);
-        return false;
-    }
-    
-    try {
-        Method method = obj.getClass().getMethod(methodName);
-        Object result = method.invoke(obj);
-        return result != null && Boolean.parseBoolean(result.toString());
-    } catch (Exception e) {
-        log("Error invoking boolean method: " + methodName + " - " + e.getMessage());
-        return false;
-    }
-}
-
-private long invokeLongMethod(Object obj, String methodName) {
-    if (obj == null) {
-        log("invokeLongMethod: obj is null for method: " + methodName);
-        return 0L;
-    }
-    
-    try {
-        Method method = obj.getClass().getMethod(methodName);
-        Object result = method.invoke(obj);
-        if (result instanceof Long) {
-            return (Long) result;
-        } else if (result instanceof Integer) {
-            return (Integer) result;
-        } else if (result != null) {
-            try {
-                return Long.parseLong(result.toString());
-            } catch (NumberFormatException e) {
-                return 0L;
-            }
-        }
-        return 0L;
-    } catch (Exception e) {
-        log("Error invoking long method: " + methodName + " - " + e.getMessage());
-        return 0L;
-    }
-}
-
 public boolean onClickSendBtn(String text) {
-    if ("自动回复设置".equals(text)) {
-        showAutoReplySettingDialog();
-        return true;
+    if ("自动回复设置".equals(text) || "自动回复".equals(text) || "回复设置".equals(text)) {
+        try {
+            showAutoReplySettingDialog();
+            return true;
+        } catch (Exception e) {
+            debugLog("[异常] 打开自动回复设置菜单失败: " + e.getMessage());
+            return false;
+        }
+    }
+    if ("好友请求设置".equals(text) || "自动通过".equals(text)) {
+        try {
+            showAutoAcceptFriendDialog();
+            return true;
+        } catch (Exception e) {
+            debugLog("[异常] 打开好友请求设置菜单失败: " + e.getMessage());
+            return false;
+        }
+    }
+    if ("添加好友回复".equals(text) || "好友通过回复".equals(text)) {
+        try {
+            showGreetOnAcceptedDialog();
+            return true;
+        } catch (Exception e) {
+            debugLog("[异常] 打开好友通过回复菜单失败: " + e.getMessage());
+            return false;
+        }
+    }
+    if ("回复规则".equals(text) || "规则管理".equals(text)) {
+        try {
+            showAutoReplyRulesDialog();
+            return true;
+        } catch (Exception e) {
+            debugLog("[异常] 打开回复规则菜单失败: " + e.getMessage());
+            return false;
+        }
+    }
+    if ("AI配置".equals(text) || "智聊配置".equals(text) || "小智配置".equals(text)) {
+        try {
+            showAIChoiceDialog();
+            return true;
+        } catch (Exception e) {
+            debugLog("[异常] 打开AI配置菜单失败: " + e.getMessage());
+            return false;
+        }
     }
     return false;
 }
 
-// ========== 核心功能：处理好友请求 ==========
-public void onNewFriend(String wxid, String ticket, int scene) {
-    if (!getBoolean(AUTO_ACCEPT_FRIEND_ENABLED_KEY, false)) {
-        return;
+private final static int MSG_TYPE_TEXT = 1;
+private final static int MSG_TYPE_IMAGE = 3;
+private final static int MSG_TYPE_VOICE = 34;
+private final static int MSG_TYPE_EMOJI = 47;
+private final static int MSG_TYPE_VIDEO = 43;
+private final static int MSG_TYPE_SYSTEM = 10000;
+private final static int MSG_TYPE_PAT = 10007;
+private final static int MSG_TYPE_LOCATION = 48;
+private final static int MSG_TYPE_SHARE_CARD = 42;
+private final static int MSG_TYPE_FILE = 87;
+private final static int MSG_TYPE_APP = 49;
+
+private String getFieldString(Object obj, String fieldName) {
+    if (obj == null) return "";
+    try {
+        java.lang.reflect.Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        Object result = field.get(obj);
+        return result != null ? result.toString() : "";
+    } catch (Exception e) {
+        return "";
     }
+}
 
-    verifyUser(wxid, ticket, scene);
+private int getFieldInt(Object obj, String fieldName, int defaultValue) {
+    if (obj == null) return defaultValue;
+    try {
+        java.lang.reflect.Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        Object result = field.get(obj);
+        if (result instanceof Integer) return (Integer) result;
+        if (result instanceof Long) return ((Long) result).intValue();
+        return defaultValue;
+    } catch (Exception e) {
+        return defaultValue;
+    }
+}
 
-    final String finalWxid = wxid;
+private long getFieldLong(Object obj, String fieldName, long defaultValue) {
+    if (obj == null) return defaultValue;
+    try {
+        java.lang.reflect.Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        Object result = field.get(obj);
+        if (result instanceof Long) return (Long) result;
+        if (result instanceof Integer) return ((Integer) result).longValue();
+        return defaultValue;
+    } catch (Exception e) {
+        return defaultValue;
+    }
+}
+
+private boolean getFieldBoolean(Object obj, String fieldName, boolean defaultValue) {
+    if (obj == null) return defaultValue;
+    try {
+        java.lang.reflect.Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        Object result = field.get(obj);
+        if (result instanceof Boolean) return (Boolean) result;
+        return defaultValue;
+    } catch (Exception e) {
+        return defaultValue;
+    }
+}
+
+private Object getFieldObject(Object obj, String fieldName) {
+    if (obj == null) return null;
+    try {
+        java.lang.reflect.Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.get(obj);
+    } catch (Exception e) {
+        return null;
+    }
+}
+
+private boolean isTextMessage(Object msgInfoBean) {
+    int msgType = getFieldInt(msgInfoBean, "type", -1);
+    if (msgType == MSG_TYPE_TEXT) return true;
+    String content = getFieldString(msgInfoBean, "originContent");
+    return msgType == -1 && !TextUtils.isEmpty(content);
+}
+
+private boolean isPatMessage(Object msgInfoBean) {
+    int msgType = getFieldInt(msgInfoBean, "type", -1);
+    if (msgType == MSG_TYPE_PAT) return true;
+    return false;
+}
+
+private boolean isPrivateChat(Object msgInfoBean) {
+    String talker = getFieldString(msgInfoBean, "talker");
+    if (!TextUtils.isEmpty(talker) && talker.contains("@chatroom")) return false;
+    return true;
+}
+
+private boolean isGroupChat(Object msgInfoBean) {
+    String talker = getFieldString(msgInfoBean, "talker");
+    return !TextUtils.isEmpty(talker) && talker.contains("@chatroom");
+}
+
+private boolean isSelfMessage(Object msgInfoBean) {
+    String talker = getFieldString(msgInfoBean, "talker");
+    String senderWxid = getFieldString(msgInfoBean, "sendTalker");
+    String selfWxid = getLoginWxid();
+    if (!TextUtils.isEmpty(selfWxid)) {
+        boolean equalsTalker = selfWxid.equals(talker);
+        boolean equalsSender = !TextUtils.isEmpty(senderWxid) && selfWxid.equals(senderWxid);
+        return equalsTalker || equalsSender;
+    }
+    return false;
+}
+
+private boolean isSystemMessage(Object msgInfoBean) {
+    int msgType = getFieldInt(msgInfoBean, "type", -1);
+    if (msgType >= 10000) {
+        if (msgType == MSG_TYPE_FILE || msgType == MSG_TYPE_LOCATION || 
+            msgType == MSG_TYPE_SHARE_CARD || msgType == MSG_TYPE_APP) {
+            return false;
+        }
+        return true;
+    }
+    return msgType < 0;
+}
+
+private boolean isAtMe(Object msgInfoBean) {
+    String content = getFieldString(msgInfoBean, "originContent");
+    if (!TextUtils.isEmpty(content) && content.startsWith("@")) {
+        String myWxid = getLoginWxid();
+        String myAlias = getLoginAlias();
+        return content.contains(myWxid) || (!TextUtils.isEmpty(myAlias) && content.contains("@" + myAlias));
+    }
+    return false;
+}
+
+private boolean isNotifyAll(Object msgInfoBean) {
+    String content = getFieldString(msgInfoBean, "originContent");
+    return content != null && content.contains("@全体成员");
+}
+
+private String getPattedUser(Object msgInfoBean) {
+    Object patMsg = getFieldObject(msgInfoBean, "patMsg");
+    if (patMsg != null) {
+        return getFieldString(patMsg, "pattedUser");
+    }
+    return "";
+}
+
+// 统一提取的回复序列执行器（供好友通过/被通过调用）
+private void executeReplySequence(final String targetWxid, final List replyItems, final long initialDelay) {
     new Thread(new Runnable() {
         public void run() {
             try {
-                long delay = getLong(AUTO_ACCEPT_DELAY_KEY, 2L);
-                Thread.sleep(delay * 1000);
-
-                List replyItems = getAutoAcceptReplyItems();
+                if (initialDelay > 0) Thread.sleep(initialDelay * 1000);
 
                 for (int i = 0; i < replyItems.size(); i++) {
                     AcceptReplyItem item = (AcceptReplyItem) replyItems.get(i);
                     switch (item.type) {
                         case ACCEPT_REPLY_TYPE_TEXT:
-                            String friendName = getFriendName(finalWxid);
-                            if (friendName == null || friendName.isEmpty()) {
-                                friendName = "朋友";
-                            }
+                            String friendName = getFriendName(targetWxid);
+                            if (friendName == null || friendName.isEmpty()) friendName = "朋友";
                             String finalText = item.content.replace("%friendName%", friendName);
-                            if (!TextUtils.isEmpty(finalText)) {
-                                sendText(finalWxid, finalText);
-                            }
+                            if (!TextUtils.isEmpty(finalText)) sendText(targetWxid, finalText);
                             break;
                         case ACCEPT_REPLY_TYPE_IMAGE:
                         case ACCEPT_REPLY_TYPE_VIDEO:
                         case ACCEPT_REPLY_TYPE_EMOJI:
                         case ACCEPT_REPLY_TYPE_FILE:
                             if (!TextUtils.isEmpty(item.content)) {
-                                // 【修改】支持多媒体顺序发送，使用自定义延迟
                                 String[] paths = item.content.split(";;;");
                                 for (int j = 0; j < paths.length; j++) {
                                     String path = paths[j].trim();
@@ -1162,22 +1134,12 @@ public void onNewFriend(String wxid, String ticket, int scene) {
                                         if (file.exists() && file.isFile()) {
                                             String fileName = file.getName();
                                             switch (item.type) {
-                                                case ACCEPT_REPLY_TYPE_IMAGE:
-                                                    sendImage(finalWxid, path);
-                                                    break;
-                                                case ACCEPT_REPLY_TYPE_VIDEO:
-                                                    sendVideo(finalWxid, path);
-                                                    break;
-                                                case ACCEPT_REPLY_TYPE_EMOJI:
-                                                    sendEmoji(finalWxid, path);
-                                                    break;
-                                                case ACCEPT_REPLY_TYPE_FILE:
-                                                    shareFile(finalWxid, fileName, path, "");
-                                                    break;
+                                                case ACCEPT_REPLY_TYPE_IMAGE: sendImage(targetWxid, path); break;
+                                                case ACCEPT_REPLY_TYPE_VIDEO: sendVideo(targetWxid, path); break;
+                                                case ACCEPT_REPLY_TYPE_EMOJI: sendEmoji(targetWxid, path); break;
+                                                case ACCEPT_REPLY_TYPE_FILE: shareFile(targetWxid, fileName, path, ""); break;
                                             }
-                                            if (j < paths.length - 1) {
-                                                Thread.sleep(item.mediaDelaySeconds * 1000); // 【新增】使用自定义延迟
-                                            }
+                                            if (j < paths.length - 1) Thread.sleep(item.mediaDelaySeconds * 1000); 
                                         }
                                     }
                                 }
@@ -1185,15 +1147,12 @@ public void onNewFriend(String wxid, String ticket, int scene) {
                             break;
                         case ACCEPT_REPLY_TYPE_VOICE_FIXED:
                             if (!TextUtils.isEmpty(item.content)) {
-                                // 【修改】支持多语音顺序发送，使用自定义延迟
                                 String[] voicePaths = item.content.split(";;;");
                                 for (int j = 0; j < voicePaths.length; j++) {
                                     String voicePath = voicePaths[j].trim();
                                     if (!TextUtils.isEmpty(voicePath)) {
-                                        sendVoice(finalWxid, voicePath);
-                                        if (j < voicePaths.length - 1) {
-                                            Thread.sleep(item.mediaDelaySeconds * 1000); // 【新增】使用自定义延迟
-                                        }
+                                        sendVoice(targetWxid, voicePath);
+                                        if (j < voicePaths.length - 1) Thread.sleep(item.mediaDelaySeconds * 1000); 
                                     }
                                 }
                             }
@@ -1203,272 +1162,137 @@ public void onNewFriend(String wxid, String ticket, int scene) {
                                 List voiceFiles = getVoiceFilesFromFolder(item.content);
                                 if (voiceFiles != null && !voiceFiles.isEmpty()) {
                                     String randomVoicePath = (String) voiceFiles.get(new Random().nextInt(voiceFiles.size()));
-                                    sendVoice(finalWxid, randomVoicePath);
+                                    sendVoice(targetWxid, randomVoicePath);
                                 }
                             }
                             break;
                         case ACCEPT_REPLY_TYPE_CARD:
                             if (!TextUtils.isEmpty(item.content)) {
-                                // 【修改】支持多名片顺序发送，使用自定义延迟
                                 String[] wxids = item.content.split(";;;");
                                 for (int j = 0; j < wxids.length; j++) {
                                     String wxidToShare = wxids[j].trim();
                                     if (!TextUtils.isEmpty(wxidToShare)) {
-                                        sendShareCard(finalWxid, wxidToShare);
-                                        if (j < wxids.length - 1) {
-                                            Thread.sleep(item.mediaDelaySeconds * 1000); // 【新增】使用自定义延迟
-                                        }
+                                        sendShareCard(targetWxid, wxidToShare);
+                                        if (j < wxids.length - 1) Thread.sleep(item.mediaDelaySeconds * 1000); 
+                                    }
+                                }
+                            }
+                            break;
+                        case ACCEPT_REPLY_TYPE_INVITE_GROUP:
+                            if (!TextUtils.isEmpty(item.content)) {
+                                String[] groupIds = item.content.split(";;;");
+                                for (int j = 0; j < groupIds.length; j++) {
+                                    String groupId = groupIds[j].trim();
+                                    if (!TextUtils.isEmpty(groupId)) {
+                                        inviteChatroomMember(groupId, targetWxid);
+                                        if (j < groupIds.length - 1) Thread.sleep(item.mediaDelaySeconds * 1000); 
                                     }
                                 }
                             }
                             break;
                     }
-
-                    if (i < replyItems.size() - 1) {
-                        Thread.sleep(1000);
-                    }
+                    if (i < replyItems.size() - 1) Thread.sleep(1000);
                 }
+                debugLog("[动作完毕] 回复序列已执行完毕。");
             } catch (Exception e) {
-                log("发送好友欢迎消息失败：" + e.toString());
+                debugLog("[异常] 发送序列消息失败：" + e.toString());
             }
         }
     }).start();
 }
 
-// 通用保存回复列表的方法
-private void saveReplyItems(List items, String key) {
-    StringBuilder sb = new StringBuilder();
-    for (int i = 0; i < items.size(); i++) {
-        if (i > 0) {
-            sb.append(LIST_SEPARATOR);
-        }
-        sb.append(((AcceptReplyItem)items.get(i)).toString());
-    }
-    putString(key, sb.toString());
-}
-
-// 通用读取回复列表的方法
-private List getReplyItems(String key, String defaultReplyText) {
-    List items = new ArrayList();
-    String savedItemsStr = getString(key, "");
-
-    if (TextUtils.isEmpty(savedItemsStr)) {
-        items.add(new AcceptReplyItem(ACCEPT_REPLY_TYPE_TEXT, defaultReplyText));
-    } else {
-        String[] itemsArray = savedItemsStr.split(LIST_SEPARATOR);
-        for (int i = 0; i < itemsArray.length; i++) {
-            AcceptReplyItem item = AcceptReplyItem.fromString(itemsArray[i]);
-            if (item != null) {
-                items.add(item);
+public void onNewFriend(String wxid, String ticket, int scene) {
+    try {
+        if (getBoolean(AUTO_ACCEPT_FRIEND_ENABLED_KEY, false)) {
+            debugLog("[新好友申请] 自动同意已开启，正在同意请求: " + wxid);
+            verifyUser(wxid, ticket, scene);
+            
+            long delay = getLong(AUTO_ACCEPT_DELAY_KEY, 2L);
+            List replyItems = getReplyItems(AUTO_ACCEPT_REPLY_ITEMS_KEY, "");
+            if (replyItems != null && !replyItems.isEmpty()) {
+                executeReplySequence(wxid, replyItems, delay);
             }
         }
+    } catch (Exception e) {
+        debugLog("[异常] 处理新好友申请失败: " + e.getMessage());
     }
-    return items;
-}
-
-// 获取自动通过好友的回复项列表
-private List getAutoAcceptReplyItems() {
-    return getReplyItems(AUTO_ACCEPT_REPLY_ITEMS_KEY, "%friendName%✨ 你好，很高兴认识你！");
-}
-
-// 保存自动通过好友的回复项列表
-private void saveAutoAcceptReplyItems(List items) {
-    saveReplyItems(items, AUTO_ACCEPT_REPLY_ITEMS_KEY);
-}
-
-// 获取被通过后自动回复的列表
-private List getGreetOnAcceptedReplyItems() {
-    return getReplyItems(GREET_ON_ACCEPTED_REPLY_ITEMS_KEY, "哈喽，%friendName%！感谢通过好友请求，以后请多指教啦！");
-}
-
-// 保存被通过后自动回复的列表
-private void saveGreetOnAcceptedReplyItems(List items) {
-    saveReplyItems(items, GREET_ON_ACCEPTED_REPLY_ITEMS_KEY);
 }
 
 public void onHandleMsg(final Object msgInfoBean) {
-    log("onHandleMsg: Start processing message.");
     try {
-        // --- 处理“我添加好友被通过”的逻辑 ---
-        if (getBoolean(GREET_ON_ACCEPTED_ENABLED_KEY, false)
-            && invokeBooleanMethod(msgInfoBean, "isText")
-            && !invokeBooleanMethod(msgInfoBean, "isSend")) {
-
-            String content = invokeStringMethod(msgInfoBean, "getContent");
-            log("onHandleMsg: Received text message. Content: " + content);
-
+        if (isSelfMessage(msgInfoBean)) return; // 忽略自己的消息，不打印日志
+        
+        int msgType = getFieldInt(msgInfoBean, "type", -1);
+        boolean isTextMsg = (msgType == 1);
+        boolean isSendMsg = getFieldBoolean(msgInfoBean, "isSend", false);
+        String content = getFieldString(msgInfoBean, "originContent");
+        
+        if (getBoolean(GREET_ON_ACCEPTED_ENABLED_KEY, false) && isTextMsg && !isSendMsg) {
             if (FRIEND_ADD_SUCCESS_KEYWORD.equals(content)) {
-                log("onHandleMsg: Matched friend acceptance keyword. Processing auto-reply.");
-                final String newFriendWxid = invokeStringMethod(msgInfoBean, "getTalker");
-
-                new Thread(new Runnable() {
-                    public void run() {
-                        try {
-                            long delay = getLong(GREET_ON_ACCEPTED_DELAY_KEY, 2L);
-                            Thread.sleep(delay * 1000);
-
-                            List replyItems = getGreetOnAcceptedReplyItems();
-
-                            for (int i = 0; i < replyItems.size(); i++) {
-                                AcceptReplyItem item = (AcceptReplyItem) replyItems.get(i);
-                                switch (item.type) {
-                                    case ACCEPT_REPLY_TYPE_TEXT:
-                                        String friendName = getFriendName(newFriendWxid);
-                                        if (friendName == null || friendName.isEmpty()) {
-                                            friendName = "朋友";
-                                        }
-                                        String finalText = item.content.replace("%friendName%", friendName);
-                                        if (!TextUtils.isEmpty(finalText)) {
-                                            sendText(newFriendWxid, finalText);
-                                        }
-                                        break;
-                                    case ACCEPT_REPLY_TYPE_IMAGE:
-                                    case ACCEPT_REPLY_TYPE_VIDEO:
-                                    case ACCEPT_REPLY_TYPE_EMOJI:
-                                    case ACCEPT_REPLY_TYPE_FILE:
-                                        if (!TextUtils.isEmpty(item.content)) {
-                                            // 【修改】支持多媒体顺序发送，使用自定义延迟
-                                            String[] paths = item.content.split(";;;");
-                                            for (int j = 0; j < paths.length; j++) {
-                                                String path = paths[j].trim();
-                                                if (!TextUtils.isEmpty(path)) {
-                                                    File file = new File(path);
-                                                    if (file.exists() && file.isFile()) {
-                                                        String fileName = file.getName();
-                                                        switch (item.type) {
-                                                            case ACCEPT_REPLY_TYPE_IMAGE:
-                                                                sendImage(newFriendWxid, path);
-                                                                break;
-                                                            case ACCEPT_REPLY_TYPE_VIDEO:
-                                                                sendVideo(newFriendWxid, path);
-                                                                break;
-                                                            case ACCEPT_REPLY_TYPE_EMOJI:
-                                                                sendEmoji(newFriendWxid, path);
-                                                                break;
-                                                            case ACCEPT_REPLY_TYPE_FILE:
-                                                                shareFile(newFriendWxid, fileName, path, "");
-                                                                break;
-                                                        }
-                                                        if (j < paths.length - 1) {
-                                                            Thread.sleep(item.mediaDelaySeconds * 1000); // 【新增】使用自定义延迟
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        break;
-                                    case ACCEPT_REPLY_TYPE_VOICE_FIXED:
-                                        if (!TextUtils.isEmpty(item.content)) {
-                                            // 【修改】支持多语音顺序发送，使用自定义延迟
-                                            String[] voicePaths = item.content.split(";;;");
-                                            for (int j = 0; j < voicePaths.length; j++) {
-                                                String voicePath = voicePaths[j].trim();
-                                                if (!TextUtils.isEmpty(voicePath)) {
-                                                    sendVoice(newFriendWxid, voicePath);
-                                                    if (j < voicePaths.length - 1) {
-                                                        Thread.sleep(item.mediaDelaySeconds * 1000); // 【新增】使用自定义延迟
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        break;
-                                    case ACCEPT_REPLY_TYPE_VOICE_RANDOM:
-                                        if (!TextUtils.isEmpty(item.content)) {
-                                            List voiceFiles = getVoiceFilesFromFolder(item.content);
-                                            if (voiceFiles != null && !voiceFiles.isEmpty()) {
-                                                String randomVoicePath = (String) voiceFiles.get(new Random().nextInt(voiceFiles.size()));
-                                                sendVoice(newFriendWxid, randomVoicePath);
-                                            }
-                                        }
-                                        break;
-                                    case ACCEPT_REPLY_TYPE_CARD:
-                                        if (!TextUtils.isEmpty(item.content)) {
-                                            // 【修改】支持多名片顺序发送，使用自定义延迟
-                                            String[] wxids = item.content.split(";;;");
-                                            for (int j = 0; j < wxids.length; j++) {
-                                                String wxidToShare = wxids[j].trim();
-                                                if (!TextUtils.isEmpty(wxidToShare)) {
-                                                    sendShareCard(newFriendWxid, wxidToShare);
-                                                    if (j < wxids.length - 1) {
-                                                        Thread.sleep(item.mediaDelaySeconds * 1000); // 【新增】使用自定义延迟
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        break;
-                                }
-
-                                if (i < replyItems.size() - 1) {
-                                    Thread.sleep(1000);
-                                }
-                            }
-                            log("onHandleMsg: Successfully sent all welcome messages to new friend.");
-                        } catch (Exception e) {
-                            log("发送好友通过欢迎消息失败：" + e.toString());
-                        }
-                    }
-                }).start();
+                debugLog("[对方通过验证] 检测到好友通过了验证，准备发送欢迎序列...");
+                final String newFriendWxid = getFieldString(msgInfoBean, "talker");
+                long delay = getLong(GREET_ON_ACCEPTED_DELAY_KEY, 2L);
+                List replyItems = getGreetOnAcceptedReplyItems();
+                if (replyItems != null && !replyItems.isEmpty()) {
+                    executeReplySequence(newFriendWxid, replyItems, delay);
+                }
                 return;
             }
         }
-        // --- 常规关键词自动回复逻辑 ---
-        // 【修复】修改过滤条件，允许拍一拍消息通过（即使是系统消息）
-        boolean isTextMsg = invokeBooleanMethod(msgInfoBean, "isText");
-        boolean isPatMsg = invokeBooleanMethod(msgInfoBean, "isPat");
-        if ((!isTextMsg && !isPatMsg) || invokeBooleanMethod(msgInfoBean, "isSend") || invokeBooleanMethod(msgInfoBean, "isSystem")) {
-            log("onHandleMsg: Message is not a text or pat, is sent by self, or is a system message. Skipping auto-reply.");
-            return;
+        
+        String talker = getFieldString(msgInfoBean, "talker");
+        String senderWxid = getFieldString(msgInfoBean, "sendTalker");
+        String selfWxid = getLoginWxid();
+        
+        boolean isPatMsg = content != null && (content.contains("拍了拍") || content.contains("patted"));
+        int isSendIntValue = getFieldInt(msgInfoBean, "isSendInt", 0);
+        boolean isSelfMsg = (isSendIntValue > 0);
+        if (!isSelfMsg && !TextUtils.isEmpty(senderWxid) && !TextUtils.isEmpty(selfWxid)) {
+            isSelfMsg = selfWxid.equals(senderWxid);
         }
+        
+        boolean isSystemMsg = (msgType < 0) || (msgType >= 10000 && !isPatMsg);
+        
+        // 核心拦截：非文本且非拍一拍、自己发的、系统消息、空消息均直接放行，不留痕迹
+        if (!isTextMsg && !isPatMsg) return;
+        if (isSelfMsg) return;
+        if (isSystemMsg) return;
+        if (TextUtils.isEmpty(content) && !isPatMsg) return;
+        if (TextUtils.isEmpty(talker)) return;
+        
+        if (TextUtils.isEmpty(senderWxid)) senderWxid = talker;
 
-        String content = invokeStringMethod(msgInfoBean, "getContent");
-        String talker = invokeStringMethod(msgInfoBean, "getTalker");
-        String senderWxid = invokeStringMethod(msgInfoBean, "getSendTalker");
-
-        log("onHandleMsg: Processing regular auto-reply logic. Content: " + content + ", Talker: " + talker + ", Sender: " + senderWxid);
-
-        if (TextUtils.isEmpty(content) && !isPatMsg) {  // 【新增】对于拍一拍，content可能为空，但允许通过
-            log("onHandleMsg: Content is empty and not pat message. Skipping auto-reply.");
-            return;
-        }
-        if (TextUtils.isEmpty(talker) || TextUtils.isEmpty(senderWxid)) {
-            log("onHandleMsg: talker or sender is empty. Skipping auto-reply.");
-            return;
-        }
-
-        if (shouldAutoReply(msgInfoBean)) {
-            log("onHandleMsg: shouldAutoReply returned true. Processing reply.");
+        // 通过核心拦截后，打印一行简要日志
+        boolean isGroupChat = talker.contains("@chatroom");
+        debugLog("[收到消息] 来自: " + senderWxid + (isGroupChat ? " (群聊)" : " (私聊)") + " -> " + content);
+        
+        if (shouldAutoReply(msgInfoBean, talker, senderWxid)) {
             processAutoReply(msgInfoBean);
-            log("onHandleMsg: Auto-reply process completed.");
-        } else {
-            log("onHandleMsg: shouldAutoReply returned false. No auto-reply needed.");
         }
     } catch (Exception e) {
-        log("自动回复消息处理异常: " + e.getMessage());
-        e.printStackTrace();
+        debugLog("[异常] 消息处理主流程出错: " + e.getMessage());
     }
-    log("onHandleMsg: End of message processing.");
 }
 
-private boolean shouldAutoReply(Object msgInfoBean) {
+private boolean shouldAutoReply(Object msgInfoBean, String talker, String senderWxid) {
     try {
-        boolean isPrivateChat = invokeBooleanMethod(msgInfoBean, "isPrivateChat");
-        boolean isGroupChat = invokeBooleanMethod(msgInfoBean, "isGroupChat");
-        if (isPrivateChat) {
-            if (!getBoolean(AUTO_REPLY_FRIEND_ENABLED_KEY, false)) return false;
-            Set enabledFriends = getStringSet(AUTO_REPLY_ENABLED_FRIENDS_KEY, new HashSet());
-            String senderWxid = invokeStringMethod(msgInfoBean, "getSendTalker");
-            if (!enabledFriends.contains(senderWxid)) return false;
-        } else if (isGroupChat) {
-            if (!getBoolean(AUTO_REPLY_GROUP_ENABLED_KEY, false)) return false;
-            Set enabledGroups = getStringSet(AUTO_REPLY_ENABLED_GROUPS_KEY, new HashSet());
-            String talker = invokeStringMethod(msgInfoBean, "getTalker");
-            if (!enabledGroups.contains(talker)) return false;
-        } else {
-            return false;
+        String selfWxid = getLoginWxid();
+        if (!TextUtils.isEmpty(selfWxid)) {
+            if (selfWxid.equals(talker) || selfWxid.equals(senderWxid)) return false;
         }
-        return true;
+        boolean isGroupChat = false;
+        if (!TextUtils.isEmpty(talker) && talker.contains("@chatroom")) {
+            isGroupChat = true;
+        } else {
+            String content = getFieldString(msgInfoBean, "originContent");
+            if (!TextUtils.isEmpty(content) && content.startsWith("@") && talker != null && talker.length() > 20) {
+                isGroupChat = true;
+            }
+        }
+        boolean isPrivateChat = !isGroupChat;
+        if (isPrivateChat || isGroupChat) return true;
+        return false;
     } catch (Exception e) {
-        log("判断自动回复条件异常: " + e.getMessage());
         return false;
     }
 }
@@ -1498,36 +1322,36 @@ private boolean isCurrentTimeInRuleRange(Map<String, Object> rule) {
             return currentTimeInMinutes >= startTimeInMinutes && currentTimeInMinutes < endTimeInMinutes;
         }
     } catch (Exception e) {
-        log("解析或比较时间范围时出错: " + e.getMessage());
         return true;
     }
 }
 
 private void processAutoReply(final Object msgInfoBean) {
     try {
-        final String content = invokeStringMethod(msgInfoBean, "getContent");
-        final String senderWxid = invokeStringMethod(msgInfoBean, "getSendTalker");
-        final String talker = invokeStringMethod(msgInfoBean, "getTalker");
-        final boolean isPrivateChat = invokeBooleanMethod(msgInfoBean, "isPrivateChat");
-        final boolean isGroupChat = invokeBooleanMethod(msgInfoBean, "isGroupChat");
-        final long msgId = invokeLongMethod(msgInfoBean, "getMsgId");
+        final String content = getFieldString(msgInfoBean, "originContent");
+        final String senderWxid = getFieldString(msgInfoBean, "sendTalker");
+        final String talker = getFieldString(msgInfoBean, "talker");
+        final long msgId = getFieldLong(msgInfoBean, "msgId", 0L);
+        
+        final String effectiveSenderWxid = TextUtils.isEmpty(senderWxid) ? talker : senderWxid;
+        final boolean isGroupChat = !TextUtils.isEmpty(talker) && talker.contains("@chatroom");
+        final boolean isPrivateChat = !isGroupChat;
         
         boolean isAtMe = false;
         boolean isNotifyAll = false;
         if (isGroupChat) {
-            isAtMe = invokeBooleanMethod(msgInfoBean, "isAtMe");
-            isNotifyAll = invokeBooleanMethod(msgInfoBean, "isNotifyAll");
+            isAtMe = content != null && content.startsWith("@");
+            isNotifyAll = content != null && content.contains("@全体成员");
         }
-
-        // 【新增】检查是否被拍一拍
+        
         boolean isPatMe = false;
         String myWxid = getLoginWxid();
-        boolean isPatMsg = invokeBooleanMethod(msgInfoBean, "isPat");
+        boolean isPatMsg = content != null && (content.contains("拍了拍") || content.contains("patted"));
         if (isPatMsg) {
-            Object patMsgObj = invokeObjectMethod(msgInfoBean, "getPatMsg"); // 假设有getPatMsg方法，需要反射获取
+            Object patMsgObj = getFieldObject(msgInfoBean, "patMsg");
             if (patMsgObj != null) {
-                String fromUser = invokeStringMethod(patMsgObj, "getFromUser");
-                String pattedUser = invokeStringMethod(patMsgObj, "getPattedUser");
+                String fromUser = getFieldString(patMsgObj, "fromUser");
+                String pattedUser = getFieldString(patMsgObj, "pattedUser");
                 if (!TextUtils.isEmpty(fromUser) && !TextUtils.isEmpty(pattedUser) && !fromUser.equals(myWxid) && pattedUser.equals(myWxid)) {
                     isPatMe = true;
                 }
@@ -1548,18 +1372,18 @@ private void processAutoReply(final Object msgInfoBean) {
                 boolean targetMatch = false;
                 Set targetWxids = (Set) rule.get("targetWxids");
                 if (targetType == TARGET_TYPE_FRIEND) {
-                    if (isPrivateChat && targetWxids.contains(senderWxid)) targetMatch = true;
+                    if (isPrivateChat && targetWxids.contains(effectiveSenderWxid)) targetMatch = true;
                 } else if (targetType == TARGET_TYPE_GROUP) {
                     if (isGroupChat && targetWxids.contains(talker)) targetMatch = true;
                 } else if (targetType == TARGET_TYPE_BOTH) {
-                    if ((isPrivateChat && targetWxids.contains(senderWxid)) || (isGroupChat && targetWxids.contains(talker))) targetMatch = true;
+                    if ((isPrivateChat && targetWxids.contains(effectiveSenderWxid)) || (isGroupChat && targetWxids.contains(talker))) targetMatch = true;
                 }
                 if (!targetMatch) continue;
             }
 
             Set excludedWxids = (Set) rule.get("excludedWxids");
             if (excludedWxids != null && !excludedWxids.isEmpty()) {
-                if (isPrivateChat && excludedWxids.contains(senderWxid)) continue;
+                if (isPrivateChat && excludedWxids.contains(effectiveSenderWxid)) continue;
                 if (isGroupChat && excludedWxids.contains(talker)) continue;
             }
 
@@ -1573,18 +1397,15 @@ private void processAutoReply(final Object msgInfoBean) {
                 if (atTriggerType != AT_TRIGGER_NONE) continue;
             }
 
-            // 【修复】拍一拍触发检查：如果规则指定被拍一拍，则继续（后续匹配中强制true）
             int patTriggerType = (Integer) rule.get("patTriggerType");
             if (patTriggerType == PAT_TRIGGER_ME && !isPatMe) {
                 continue;
             }
 
             boolean isMatch = false;
-            // 【修复】特殊处理拍一拍：如果规则指定被拍一拍触发，则强制匹配（忽略content匹配）
             if (isPatMsg && patTriggerType == PAT_TRIGGER_ME) {
                 isMatch = true;
             } else {
-                // 原有content匹配逻辑
                 int matchType = (Integer) rule.get("matchType");
                 String keyword = (String) rule.get("keyword");
                 switch (matchType) {
@@ -1604,120 +1425,144 @@ private void processAutoReply(final Object msgInfoBean) {
             }
         }
 
-        if (matchedRules.isEmpty()) return;
+        if (matchedRules.isEmpty()) return; // 没命中规则就不说话
 
+        debugLog("[规则匹配] 命中 " + matchedRules.size() + " 条规则，准备执行。");
+        
         for (int i = 0; i < matchedRules.size(); i++) {
             final Map<String, Object> finalRule = (Map<String, Object>) matchedRules.get(i);
-            
-            Runnable sendReplyTask = new Runnable() {
-                public void run() {
-                    String replyContent = buildReplyContent((String) finalRule.get("reply"), msgInfoBean);
-                    int replyType = (Integer) finalRule.get("replyType");
-                    switch (replyType) {
-                        case REPLY_TYPE_XIAOZHI_AI:
-                            processAIResponse(msgInfoBean);
-                            break;
-                        case REPLY_TYPE_ZHILIA_AI:
-                            sendZhiliaAiReply(talker, content);
-                            break;
-                        case REPLY_TYPE_IMAGE:
-                        case REPLY_TYPE_VIDEO:
-                        case REPLY_TYPE_EMOJI:
-                        case REPLY_TYPE_FILE:
-                            List mediaPaths = (List) finalRule.get("mediaPaths");
-                            if (mediaPaths != null && !mediaPaths.isEmpty()) {
-                                // 【修改】支持多媒体顺序发送，使用自定义延迟
-                                long mediaDelaySeconds = (Long) finalRule.get("mediaDelaySeconds");
-                                for (int j = 0; j < mediaPaths.size(); j++) {
-                                    String path = (String) mediaPaths.get(j);
-                                    File file = new File(path);
-                                    if (file.exists() && file.isFile()) {
-                                        String fileName = file.getName();
-                                        switch (replyType) {
-                                            case REPLY_TYPE_IMAGE:
-                                                sendImage(talker, path);
-                                                break;
-                                            case REPLY_TYPE_VIDEO:
-                                                sendVideo(talker, path);
-                                                break;
-                                            case REPLY_TYPE_EMOJI:
-                                                sendEmoji(talker, path);
-                                                break;
-                                            case REPLY_TYPE_FILE:
-                                                shareFile(talker, fileName, path, "");
-                                                break;
-                                        }
-                                        if (j < mediaPaths.size() - 1) {
-                                            try { Thread.sleep(mediaDelaySeconds * 1000); } catch (Exception e) {} // 【新增】使用自定义延迟
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-                        case REPLY_TYPE_VOICE_FILE_LIST:
-                            List mediaPaths2 = (List) finalRule.get("mediaPaths");
-                            if (mediaPaths2 != null && !mediaPaths2.isEmpty()) {
-                                // 【修改】支持多语音顺序发送（原随机改为顺序），使用自定义延迟
-                                long mediaDelaySeconds = (Long) finalRule.get("mediaDelaySeconds");
-                                for (int j = 0; j < mediaPaths2.size(); j++) {
-                                    String voicePath = (String) mediaPaths2.get(j);
-                                    sendVoice(talker, voicePath);
-                                    if (j < mediaPaths2.size() - 1) {
-                                        try { Thread.sleep(mediaDelaySeconds * 1000); } catch (Exception e) {} // 【新增】使用自定义延迟
-                                    }
-                                }
-                            }
-                            break;
-                        case REPLY_TYPE_VOICE_FOLDER:
-                            List mediaPaths3 = (List) finalRule.get("mediaPaths");
-                            if (mediaPaths3 != null && !mediaPaths3.isEmpty()) {
-                                String folderPath = (String) mediaPaths3.get(0);
-                                List voiceFiles = getVoiceFilesFromFolder(folderPath);
-                                if (voiceFiles != null && !voiceFiles.isEmpty()) {
-                                    // 【修改】随机发送一个语音文件
-                                    String randomVoicePath = (String) voiceFiles.get(new Random().nextInt(voiceFiles.size()));
-                                    sendVoice(talker, randomVoicePath);
-                                }
-                            }
-                            break;
-                        case REPLY_TYPE_CARD:
-                             if (!TextUtils.isEmpty(replyContent)) {
-                                // 【修改】支持多名片顺序发送，使用自定义延迟
-                                long mediaDelaySeconds = (Long) finalRule.get("mediaDelaySeconds");
-                                String[] wxids = replyContent.split(";;;");
-                                for (int j = 0; j < wxids.length; j++) {
-                                    String wxidToShare = wxids[j].trim();
-                                    if (!TextUtils.isEmpty(wxidToShare)) {
-                                        sendShareCard(talker, wxidToShare);
-                                        if (j < wxids.length - 1) {
-                                            try { Thread.sleep(mediaDelaySeconds * 1000); } catch (Exception e) {} // 【新增】使用自定义延迟
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-                        case REPLY_TYPE_TEXT: default:
-                            boolean replyAsQuote = (Boolean) finalRule.get("replyAsQuote");
-                            if (replyAsQuote) {
-                                sendQuoteMsg(talker, msgId, replyContent);
-                            } else {
-                                sendText(talker, replyContent);
-                            }
-                            break;
-                    }
-                }
-            };
-
             long delaySeconds = (Long) finalRule.get("delaySeconds");
+            String replyContent = buildReplyContent((String) finalRule.get("reply"), msgInfoBean);
+            int replyType = (Integer) finalRule.get("replyType");
+            boolean replyAsQuote = (Boolean) finalRule.get("replyAsQuote");
+            List mediaPaths = (List) finalRule.get("mediaPaths");
+            
             if (delaySeconds > 0) {
-                new Handler(Looper.getMainLooper()).postDelayed(sendReplyTask, delaySeconds * 1000L);
+                debugLog("[动作计划] 规则延迟 " + delaySeconds + " 秒后执行...");
+                final String finalReplyContent = replyContent;
+                final int finalReplyType = replyType;
+                final boolean finalReplyAsQuote_flag = replyAsQuote;
+                final List finalMediaPaths = mediaPaths;
+                final Object finalMsgInfoBean = msgInfoBean;
+                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                    public void run() {
+                        sendReplyDirectly(finalRule, finalReplyContent, finalReplyType, finalReplyAsQuote_flag, finalMediaPaths, talker, content, msgId, finalMsgInfoBean);
+                    }
+                }, delaySeconds * 1000L);
             } else {
-                sendReplyTask.run();
+                sendReplyDirectly(finalRule, replyContent, replyType, replyAsQuote, mediaPaths, talker, content, msgId, msgInfoBean);
             }
         }
     } catch (Exception e) {
-        log("处理自动回复异常: " + e.getMessage());
-        e.printStackTrace();
+        debugLog("[异常] 规则匹配/执行时出错: " + e.getMessage());
+    }
+}
+
+private void sendReplyDirectly(Map<String, Object> finalRule, String replyContent, int replyType, boolean replyAsQuote, List mediaPaths, String talker, String content, long msgId, Object msgInfoBean) {
+    try {
+        switch (replyType) {
+            case REPLY_TYPE_XIAOZHI_AI:
+                debugLog("[执行回复] 动作: 调用小智AI, 目标: " + talker);
+                processAIResponse(msgInfoBean);
+                break;
+            case REPLY_TYPE_ZHILIA_AI:
+                debugLog("[执行回复] 动作: 调用智聊AI, 目标: " + talker);
+                sendZhiliaAiReply(talker, content);
+                break;
+            case REPLY_TYPE_IMAGE:
+            case REPLY_TYPE_VIDEO:
+            case REPLY_TYPE_EMOJI:
+            case REPLY_TYPE_FILE:
+                debugLog("[执行回复] 动作: 发送多媒体文件, 目标: " + talker);
+                if (mediaPaths != null && !mediaPaths.isEmpty()) {
+                    long mediaDelaySeconds = (Long) finalRule.get("mediaDelaySeconds");
+                    for (int j = 0; j < mediaPaths.size(); j++) {
+                        String path = (String) mediaPaths.get(j);
+                        File file = new File(path);
+                        if (file.exists() && file.isFile()) {
+                            String fileName = file.getName();
+                            switch (replyType) {
+                                case REPLY_TYPE_IMAGE: sendImage(talker, path); break;
+                                case REPLY_TYPE_VIDEO: sendVideo(talker, path); break;
+                                case REPLY_TYPE_EMOJI: sendEmoji(talker, path); break;
+                                case REPLY_TYPE_FILE: shareFile(talker, fileName, path, ""); break;
+                            }
+                            if (j < mediaPaths.size() - 1) {
+                                try { Thread.sleep(mediaDelaySeconds * 1000); } catch (Exception e) {}
+                            }
+                        }
+                    }
+                }
+                break;
+            case REPLY_TYPE_VOICE_FILE_LIST:
+                debugLog("[执行回复] 动作: 按列表发送语音, 目标: " + talker);
+                if (mediaPaths != null && !mediaPaths.isEmpty()) {
+                    long mediaDelaySeconds = (Long) finalRule.get("mediaDelaySeconds");
+                    for (int j = 0; j < mediaPaths.size(); j++) {
+                        String voicePath = (String) mediaPaths.get(j);
+                        sendVoice(talker, voicePath);
+                        if (j < mediaPaths.size() - 1) {
+                            try { Thread.sleep(mediaDelaySeconds * 1000); } catch (Exception e) {}
+                        }
+                    }
+                }
+                break;
+            case REPLY_TYPE_VOICE_FOLDER:
+                debugLog("[执行回复] 动作: 随机发送文件夹内语音, 目标: " + talker);
+                if (mediaPaths != null && !mediaPaths.isEmpty()) {
+                    String folderPath = (String) mediaPaths.get(0);
+                    List voiceFiles = getVoiceFilesFromFolder(folderPath);
+                    if (voiceFiles != null && !voiceFiles.isEmpty()) {
+                        String randomVoicePath = (String) voiceFiles.get(new Random().nextInt(voiceFiles.size()));
+                        sendVoice(talker, randomVoicePath);
+                    }
+                }
+                break;
+            case REPLY_TYPE_CARD:
+                debugLog("[执行回复] 动作: 发送名片, 目标: " + talker);
+                if (!TextUtils.isEmpty(replyContent)) {
+                    long mediaDelaySeconds = (Long) finalRule.get("mediaDelaySeconds");
+                    String[] wxids = replyContent.split(";;;");
+                    for (int j = 0; j < wxids.length; j++) {
+                        String wxidToShare = wxids[j].trim();
+                        if (!TextUtils.isEmpty(wxidToShare)) {
+                            sendShareCard(talker, wxidToShare);
+                            if (j < wxids.length - 1) {
+                                try { Thread.sleep(mediaDelaySeconds * 1000); } catch (Exception e) {}
+                            }
+                        }
+                    }
+                }
+                break;
+            case REPLY_TYPE_INVITE_GROUP:
+                debugLog("[执行回复] 动作: 邀请加入群聊, 目标: " + talker);
+                if (!TextUtils.isEmpty(replyContent)) {
+                    long mediaDelaySeconds = (Long) finalRule.get("mediaDelaySeconds");
+                    String[] groupIds = replyContent.split(";;;");
+                    String effectiveSenderWxid = getFieldString(msgInfoBean, "sendTalker");
+                    if (TextUtils.isEmpty(effectiveSenderWxid)) effectiveSenderWxid = talker;
+                    for (int j = 0; j < groupIds.length; j++) {
+                        String groupId = groupIds[j].trim();
+                        if (!TextUtils.isEmpty(groupId)) {
+                            inviteChatroomMember(groupId, effectiveSenderWxid);
+                            if (j < groupIds.length - 1) {
+                                try { Thread.sleep(mediaDelaySeconds * 1000); } catch (Exception e) {}
+                            }
+                        }
+                    }
+                }
+                break;
+            case REPLY_TYPE_TEXT: default:
+                debugLog("[执行回复] 动作: " + (replyAsQuote ? "引用发送文本" : "发送文本") + " -> " + replyContent);
+                if (replyAsQuote) {
+                    sendQuoteMsg(talker, msgId, replyContent);
+                } else {
+                    sendText(talker, replyContent);
+                }
+                break;
+        }
+    } catch (Exception e) {
+        debugLog("[异常] 实际发出回复时出错: " + e.getMessage());
     }
 }
 
@@ -1740,6 +1585,19 @@ private List getVoiceFilesFromFolder(String folderPath) {
     return voiceFiles;
 }
 
+private String getGroupName(String groupWxid) {
+    try {
+        if (sCachedGroupList == null) sCachedGroupList = getGroupList();
+        if (sCachedGroupList != null) {
+            for (int i = 0; i < sCachedGroupList.size(); i++) {
+                GroupInfo groupInfo = (GroupInfo) sCachedGroupList.get(i);
+                if (groupWxid.equals(groupInfo.getRoomId())) return groupInfo.getName();
+            }
+        }
+    } catch (Exception e) {}
+    return "未知群聊";
+}
+
 private String getFriendDisplayName(String friendWxid) {
     try {
         if (sCachedFriendList == null) sCachedFriendList = getFriendList();
@@ -1755,63 +1613,61 @@ private String getFriendDisplayName(String friendWxid) {
             }
         }
     } catch (Exception e) {
-        log("获取好友显示名称异常: " + e.getMessage());
+        return friendWxid;
     }
-    return getFriendName(friendWxid);
+    return friendWxid;
+}
+
+// 统一解析 Wxid 为展示名称（智能区分群聊/好友）
+private String getDisplayNameForWxid(String wxid) {
+    if (TextUtils.isEmpty(wxid)) return "";
+    if (wxid.endsWith("@chatroom")) {
+        String groupName = getGroupName(wxid);
+        return (TextUtils.isEmpty(groupName) || "未知群聊".equals(groupName)) ? wxid : groupName;
+    } else {
+        String friendName = getFriendDisplayName(wxid);
+        return (TextUtils.isEmpty(friendName) || friendName.equals(wxid)) ? wxid : friendName;
+    }
 }
 
 private String buildReplyContent(String template, Object msgInfoBean) {
     try {
         String result = template;
-        String senderWxid = invokeStringMethod(msgInfoBean, "getSendTalker");
+        String senderWxid = getFieldString(msgInfoBean, "sendTalker");
+        String talker = getFieldString(msgInfoBean, "talker");
+        if (TextUtils.isEmpty(senderWxid)) {
+            senderWxid = talker;
+        }
+        
         String senderName = "";
-        boolean isPrivateChat = invokeBooleanMethod(msgInfoBean, "isPrivateChat");
-        boolean isGroupChat = invokeBooleanMethod(msgInfoBean, "isGroupChat");
+        boolean isGroupChat = !TextUtils.isEmpty(talker) && talker.contains("@chatroom");
+        boolean isPrivateChat = !isGroupChat;
         if (isPrivateChat) {
             senderName = getFriendDisplayName(senderWxid);
         } else if (isGroupChat) {
-            String talker = invokeStringMethod(msgInfoBean, "getTalker");
             senderName = getFriendName(senderWxid, talker);
         }
         if (TextUtils.isEmpty(senderName)) senderName = "未知用户";
         result = result.replace("%senderName%", senderName).replace("%senderWxid%", senderWxid);
         
-        // 【新增】%atSender% 变量：实际@发送者（仅群聊有效，替换为 [AtWx=%senderWxid%]）
         if (isGroupChat) {
             result = result.replace("%atSender%", "[AtWx=" + senderWxid + "]");
         } else {
-            result = result.replace("%atSender%", ""); // 私聊时替换为空，避免无效语法
+            result = result.replace("%atSender%", ""); 
         }
         
         if (isGroupChat) {
-            String talker = invokeStringMethod(msgInfoBean, "getTalker");
             String groupName = getGroupName(talker);
             result = result.replace("%groupName%", TextUtils.isEmpty(groupName) ? "未知群聊" : groupName);
         } else {
             result = result.replace("%groupName%", "");
         }
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-        result = result.replace("%time%", sdf.format(new Date()));
+        result = result.replace("%time%", new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
         return result;
     } catch (Exception e) {
-        log("构建回复内容异常: " + e.getMessage());
+        debugLog("[异常] 构建回复模板内容时出错: " + e.getMessage());
         return template;
     }
-}
-
-private String getGroupName(String groupWxid) {
-    try {
-        if (sCachedGroupList == null) sCachedGroupList = getGroupList();
-        if (sCachedGroupList != null) {
-            for (int i = 0; i < sCachedGroupList.size(); i++) {
-                GroupInfo groupInfo = (GroupInfo) sCachedGroupList.get(i);
-                if (groupWxid.equals(groupInfo.getRoomId())) return groupInfo.getName();
-            }
-        }
-    } catch (Exception e) {
-        log("获取群聊名称异常: " + e.getMessage());
-    }
-    return "未知群聊";
 }
 
 // === UI 美化与布局构建 ===
@@ -1958,6 +1814,40 @@ private TextView createPromptText(String text) {
     return tv;
 }
 
+// 【新增】创建点击插入变量的小标签
+private TextView createVariableChip(final String text, final String desc, final EditText targetEdit) {
+    TextView chip = new TextView(getTopActivity());
+    chip.setText(text + " (" + desc + ")");
+    chip.setTextSize(12);
+    chip.setTextColor(Color.parseColor("#4A90E2"));
+    chip.setPadding(20, 12, 20, 12);
+    
+    GradientDrawable bg = new GradientDrawable();
+    bg.setColor(Color.parseColor("#EAF2FA"));
+    bg.setCornerRadius(16);
+    chip.setBackground(bg);
+    
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+    lp.setMargins(0, 0, 16, 16);
+    chip.setLayoutParams(lp);
+
+    chip.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            if (targetEdit != null && targetEdit.getVisibility() == View.VISIBLE) {
+                int start = Math.max(targetEdit.getSelectionStart(), 0);
+                int end = Math.max(targetEdit.getSelectionEnd(), 0);
+                targetEdit.getText().replace(Math.min(start, end), Math.max(start, end), text, 0, text.length());
+                targetEdit.requestFocus();
+                toast("已插入变量: " + text);
+            } else {
+                toast("当前输入模式不支持插入变量");
+            }
+        }
+    });
+    return chip;
+}
+
 // --- UI 辅助方法 ---
 private LinearLayout createLinearLayout(Context context, int orientation, int padding) {
     LinearLayout layout = new LinearLayout(context);
@@ -1990,7 +1880,6 @@ private Button createButton(Context context, String text, View.OnClickListener l
     return button;
 }
 
-// 【修改】创建开关：方框+√样式，左侧添加说明文本（颜色更明显：选中#4A90E2，未选中方框更明显）
 private LinearLayout createSwitchRow(Context context, String labelText, boolean isChecked, View.OnClickListener listener) {
     LinearLayout row = new LinearLayout(context);
     row.setOrientation(LinearLayout.HORIZONTAL);
@@ -2006,19 +1895,18 @@ private LinearLayout createSwitchRow(Context context, String labelText, boolean 
 
     CheckBox checkBox = new CheckBox(context);
     checkBox.setChecked(isChecked);
+    // Bind the listener directly to the checkbox state changes if preferred, or keep as OnClickListener
     checkBox.setOnClickListener(listener);
     LinearLayout.LayoutParams checkParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
     checkParams.setMargins(16, 0, 0, 0);
     checkBox.setLayoutParams(checkParams);
 
-    // 【修改】点击左侧说明文本也可以切换开关
     label.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             checkBox.toggle();
         }
     });
 
-    // 【新增】点击整个行（任何位置）也可以切换开关
     row.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             checkBox.toggle();
@@ -2063,7 +1951,6 @@ private int dpToPx(int dp) {
     return (int) (dp * getTopActivity().getResources().getDisplayMetrics().density);
 }
 
-// 【新增】通用多选列表对话框
 private void showMultiSelectDialog(String title, List allItems, List idList, Set selectedIds, String searchHint, final Runnable onConfirm, final Runnable updateList) {
     try {
         final Set tempSelected = new HashSet(selectedIds);
@@ -2220,19 +2107,20 @@ private void showAutoReplySettingDialog() {
         aiButton.setText("🧠 AI 配置");
         styleUtilityButton(aiButton);
         managementCard.addView(aiButton);
-        Button friendSwitchButton = new Button(getTopActivity());
-        friendSwitchButton.setText("👥 好友消息自动回复开关");
-        styleUtilityButton(friendSwitchButton);
-        managementCard.addView(friendSwitchButton);
-        Button groupSwitchButton = new Button(getTopActivity());
-        groupSwitchButton.setText("🏠 群聊消息自动回复开关");
-        styleUtilityButton(groupSwitchButton);
-        managementCard.addView(groupSwitchButton);
+        
+        // 【新增】日志总开关
+        final LinearLayout logSwitchRow = createSwitchRow(getTopActivity(), "📝 开启运行日志 (便于排错)", getBoolean(ENABLE_LOG_KEY, true), new View.OnClickListener() {
+            public void onClick(View v) {}
+        });
+        final CheckBox logCheckBox = (CheckBox) logSwitchRow.getChildAt(1);
+        managementCard.addView(logSwitchRow);
+        
         rootLayout.addView(managementCard);
 
         // --- 对话框构建 ---
         final AlertDialog dialog = buildCommonAlertDialog(getTopActivity(), "✨ 自动回复统一设置 ✨", scrollView, null, null, "❌ 关闭", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
+                putBoolean(ENABLE_LOG_KEY, logCheckBox.isChecked()); // 保存日志开关状态
                 dialog.dismiss();
             }
         }, null, null);
@@ -2261,18 +2149,6 @@ private void showAutoReplySettingDialog() {
             }
         });
 
-        friendSwitchButton.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                showFriendSwitchDialog();
-            }
-        });
-
-        groupSwitchButton.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                showGroupSwitchDialog();
-            }
-        });
-
         dialog.show();
 
     } catch (Exception e) {
@@ -2280,7 +2156,6 @@ private void showAutoReplySettingDialog() {
     }
 }
 
-// 新增：AI选择对话框
 private void showAIChoiceDialog() {
     LinearLayout layout = new LinearLayout(getTopActivity());
     layout.setOrientation(LinearLayout.VERTICAL);
@@ -2316,12 +2191,10 @@ private void showAIChoiceDialog() {
     choiceDialog.show();
 }
 
-// 小智AI配置 (原有)
 private void showXiaozhiAIConfigDialog() {
     showAIConfigDialog();
 }
 
-// 智聊AI配置 (移植自旧脚本，调整UI风格)
 private void showZhiliaAIConfigDialog() {
     try {
         ScrollView scrollView = new ScrollView(getTopActivity());
@@ -2331,7 +2204,6 @@ private void showZhiliaAIConfigDialog() {
         layout.setBackgroundColor(Color.parseColor("#FAFBF9"));
         scrollView.addView(layout);
 
-        // --- 卡片1: API配置 ---
         LinearLayout apiCard = createCardLayout();
         apiCard.addView(createSectionTitle("智聊AI 参数设置"));
         apiCard.addView(createTextView(getTopActivity(), "API Key:", 14, 0));
@@ -2345,7 +2217,6 @@ private void showZhiliaAIConfigDialog() {
         apiCard.addView(modelNameEdit);
         layout.addView(apiCard);
 
-        // --- 卡片2: 高级设置 ---
         LinearLayout advancedCard = createCardLayout();
         advancedCard.addView(createSectionTitle("高级设置"));
         advancedCard.addView(createTextView(getTopActivity(), "上下文轮次 (建议5-10):", 14, 0));
@@ -2373,7 +2244,7 @@ private void showZhiliaAIConfigDialog() {
                 try {
                     putInt(ZHILIA_AI_CONTEXT_LIMIT, Integer.parseInt(contextLimitEdit.getText().toString().trim()));
                 } catch (Exception e) {
-                    putInt(ZHILIA_AI_CONTEXT_LIMIT, 10); // Default value on error
+                    putInt(ZHILIA_AI_CONTEXT_LIMIT, 10); 
                 }
                 toast("智聊AI 设置已保存");
                 dialog.dismiss();
@@ -2388,7 +2259,6 @@ private void showZhiliaAIConfigDialog() {
     }
 }
 
-// ========== 通用回复序列设置对话框 ==========
 private void showReplySequenceDialog(String title, String enabledKey, String delayKey, String itemsKey, String defaultText, String promptText, String featureName) {
     try {
         ScrollView scrollView = new ScrollView(getTopActivity());
@@ -2398,7 +2268,6 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
         rootLayout.setBackgroundColor(Color.parseColor("#FAFBF9"));
         scrollView.addView(rootLayout);
 
-        // --- 卡片1: 核心设置 ---
         LinearLayout coreSettingsCard = createCardLayout();
         coreSettingsCard.addView(createSectionTitle(featureName));
         final LinearLayout enabledSwitchRow = createSwitchRow(getTopActivity(), "启用" + featureName, getBoolean(enabledKey, false), new View.OnClickListener() {
@@ -2409,14 +2278,11 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
         coreSettingsCard.addView(prompt);
         rootLayout.addView(coreSettingsCard);
 
-        // --- 卡片2: 回复序列 ---
         LinearLayout replyCard = createCardLayout();
         replyCard.addView(createSectionTitle("回复消息序列"));
         final ListView replyItemsListView = new ListView(getTopActivity());
-        // 【优化】设置触摸事件，确保直接滚动
         setupListViewTouchForScroll(replyItemsListView);
         replyItemsListView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        // 【V11】初始高度设为最小，避免空旷，后续动态调整
         LinearLayout.LayoutParams replyListParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(50));
         replyItemsListView.setLayoutParams(replyListParams);
         final ArrayAdapter replyItemsAdapter = new ArrayAdapter(getTopActivity(), android.R.layout.simple_list_item_multiple_choice);
@@ -2446,7 +2312,6 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
         replyCard.addView(buttonsLayout);
         rootLayout.addView(replyCard);
 
-        // --- 卡片3: 延迟设置 ---
         LinearLayout delayCard = createCardLayout();
         delayCard.addView(createSectionTitle("延迟发送消息 (秒)"));
         final EditText delayEdit = createStyledEditText("默认为2秒", String.valueOf(getLong(delayKey, 2L)));
@@ -2462,8 +2327,28 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
                 for (int i = 0; i < replyItems.size(); i++) {
                     AcceptReplyItem item = (AcceptReplyItem) replyItems.get(i);
                     String typeStr = getReplyTypeStr(item.type);
-                    String contentPreview = item.content.length() > 20 ? 
-                        item.content.substring(0, 20) + "..." : item.content;
+                    String contentPreview = item.content;
+                    
+                    if (item.type == ACCEPT_REPLY_TYPE_CARD || item.type == ACCEPT_REPLY_TYPE_INVITE_GROUP) {
+                        if (!TextUtils.isEmpty(item.content)) {
+                            String[] items = item.content.split(";;;");
+                            StringBuilder previewNames = new StringBuilder();
+                            for(int j=0; j<Math.min(2, items.length); j++) {
+                                if(j>0) previewNames.append(",");
+                                previewNames.append(getDisplayNameForWxid(items[j].trim()));
+                            }
+                            if(items.length > 2) previewNames.append("...");
+                            contentPreview = previewNames.toString();
+                        }
+                    } else if (item.type != ACCEPT_REPLY_TYPE_TEXT) {
+                        if (!TextUtils.isEmpty(item.content)) {
+                            String[] paths = item.content.split(";;;");
+                            if(paths.length > 0) contentPreview = new File(paths[0]).getName();
+                            if(paths.length > 1) contentPreview += " 等" + paths.length + "个文件";
+                        }
+                    }
+                    
+                    if (contentPreview.length() > 20) contentPreview = contentPreview.substring(0, 20) + "...";
                     replyItemsAdapter.add((i + 1) + ". [" + typeStr + "] " + contentPreview);
                 }
                 replyItemsAdapter.notifyDataSetChanged();
@@ -2474,7 +2359,6 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
                         replyItemsListView.setItemChecked(i, true);
                     }
                 }
-                // 【V11】动态调整高度
                 adjustListViewHeight(replyItemsListView, replyItems.size());
                 updateReplyButtonsVisibility(editButton, delButton, selectedItems.size());
             }
@@ -2526,7 +2410,6 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
         
         final CheckBox enabledCheckBox = (CheckBox) enabledSwitchRow.getChildAt(1);
         
-        // --- 对话框构建 ---
         final AlertDialog dialog = buildCommonAlertDialog(getTopActivity(), title, scrollView, "✅ 保存", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
                 try {
@@ -2563,19 +2446,16 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
     }
 }
 
-// ========== UI：自动同意好友设置 ==========
 private void showAutoAcceptFriendDialog() {
     showReplySequenceDialog("✨ 好友请求自动处理设置 ✨", AUTO_ACCEPT_FRIEND_ENABLED_KEY, AUTO_ACCEPT_DELAY_KEY, AUTO_ACCEPT_REPLY_ITEMS_KEY, 
                             "%friendName%✨ 你好，很高兴认识你！", "⚠️ 勾选后将自动通过所有好友请求，并发送欢迎消息", "自动同意好友");
 }
 
-// ========== UI：我添加好友被通过后，自动回复设置 ==========
 private void showGreetOnAcceptedDialog() {
     showReplySequenceDialog("✨ 添加好友自动回复设置 ✨", GREET_ON_ACCEPTED_ENABLED_KEY, GREET_ON_ACCEPTED_DELAY_KEY, GREET_ON_ACCEPTED_REPLY_ITEMS_KEY, 
                             "哈喽，%friendName%！感谢通过好友请求，以后请多指教啦！", "⚠️ 勾选后，当好友通过你的请求时，将自动发送欢迎消息", "添加好友回复");
 }
 
-// 【新增】更新回复按钮可见性
 private void updateReplyButtonsVisibility(Button editButton, Button delButton, int selectedCount) {
     if (selectedCount == 1) {
         editButton.setVisibility(View.VISIBLE);
@@ -2589,7 +2469,6 @@ private void updateReplyButtonsVisibility(Button editButton, Button delButton, i
     }
 }
 
-// 【新增】获取回复类型字符串
 private String getReplyTypeStr(int type) {
     switch (type) {
         case ACCEPT_REPLY_TYPE_TEXT: return "文本";
@@ -2598,17 +2477,16 @@ private String getReplyTypeStr(int type) {
         case ACCEPT_REPLY_TYPE_VOICE_RANDOM: return "随机语音";
         case ACCEPT_REPLY_TYPE_EMOJI: return "表情";
         case ACCEPT_REPLY_TYPE_VIDEO: return "视频";
-        case ACCEPT_REPLY_TYPE_CARD: return "名片"; // 支持多选
+        case ACCEPT_REPLY_TYPE_CARD: return "名片"; 
         case ACCEPT_REPLY_TYPE_FILE: return "文件";
+        case ACCEPT_REPLY_TYPE_INVITE_GROUP: return "邀请群聊";
         default: return "未知";
     }
 }
 
-// 通用：编辑回复项对话框（修复编辑逻辑，确保content更新）
 private void showEditReplyItemDialog(final AcceptReplyItem item, final List itemsList, 
                                     final Runnable refreshCallback, final int editPosition, String featureName) {
     try {
-        // 【修复】为编辑创建可变副本，但直接使用原item引用
         final AtomicReference<AcceptReplyItem> editableItemRef = new AtomicReference<AcceptReplyItem>(item);
         
         ScrollView scrollView = new ScrollView(getTopActivity());
@@ -2618,7 +2496,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
         layout.setBackgroundColor(Color.parseColor("#FAFBF9"));
         scrollView.addView(layout);
 
-        // --- 卡片1: 回复类型 ---
         LinearLayout typeCard = createCardLayout();
         typeCard.addView(createSectionTitle("回复类型"));
         final RadioGroup replyTypeGroup = createRadioGroup(getTopActivity(), LinearLayout.VERTICAL);
@@ -2628,8 +2505,9 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
         final RadioButton typeVoiceRandomRadio = createRadioButton(getTopActivity(), "🔀🎤随机语音");
         final RadioButton typeEmojiRadio = createRadioButton(getTopActivity(), "😊表情");
         final RadioButton typeVideoRadio = createRadioButton(getTopActivity(), "🎬视频");
-        final RadioButton typeCardRadio = createRadioButton(getTopActivity(), "📇名片"); // 支持多选
-        final RadioButton typeFileRadio = createRadioButton(getTopActivity(), "📁文件"); // 新增文件选项
+        final RadioButton typeCardRadio = createRadioButton(getTopActivity(), "📇名片"); 
+        final RadioButton typeFileRadio = createRadioButton(getTopActivity(), "📁文件"); 
+        final RadioButton typeInviteGroupRadio = createRadioButton(getTopActivity(), "💌邀请群聊"); 
         replyTypeGroup.addView(typeTextRadio);
         replyTypeGroup.addView(typeImageRadio);
         replyTypeGroup.addView(typeVoiceFixedRadio);
@@ -2637,7 +2515,8 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
         replyTypeGroup.addView(typeEmojiRadio);
         replyTypeGroup.addView(typeVideoRadio);
         replyTypeGroup.addView(typeCardRadio);
-        replyTypeGroup.addView(typeFileRadio); // 新增
+        replyTypeGroup.addView(typeFileRadio); 
+        replyTypeGroup.addView(typeInviteGroupRadio);
         typeCard.addView(replyTypeGroup);
         layout.addView(typeCard);
         
@@ -2652,7 +2531,15 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
         layout.addView(contentLabel);
         layout.addView(contentEdit);
         
-        // 【新增】媒体发送延迟设置
+        // 【新增】快捷点击插入变量卡片
+        final LinearLayout helpCard = createCardLayout();
+        helpCard.addView(createSectionTitle("点击变量快捷插入"));
+        LinearLayout row1 = new LinearLayout(getTopActivity());
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.addView(createVariableChip("%friendName%", "好友昵称", contentEdit));
+        helpCard.addView(row1);
+        layout.addView(helpCard);
+        
         final TextView mediaDelayLabel = new TextView(getTopActivity());
         mediaDelayLabel.setText("媒体发送间隔 (秒):");
         mediaDelayLabel.setTextSize(14);
@@ -2661,12 +2548,10 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
         final EditText mediaDelayEdit = createStyledEditText("默认为1秒", String.valueOf(editableItemRef.get().mediaDelaySeconds));
         mediaDelayEdit.setInputType(InputType.TYPE_CLASS_NUMBER);
         
-        // 媒体选择布局
         final LinearLayout mediaLayout = new LinearLayout(getTopActivity());
         mediaLayout.setOrientation(LinearLayout.VERTICAL);
         mediaLayout.setPadding(0, 0, 0, 16);
         final TextView currentPathTv = new TextView(getTopActivity());
-        // 【修复】初始显示具体路径列表（\n分隔），而非content的;;;格式
         StringBuilder initialPathDisplay = new StringBuilder();
         if (!TextUtils.isEmpty(editableItemRef.get().content)) {
             String[] parts = editableItemRef.get().content.split(";;;");
@@ -2686,18 +2571,14 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
         mediaLayout.addView(currentPathTv);
         mediaLayout.addView(selectMediaBtn);
         
-        // 【修改】媒体列表与顺序管理：使用simple_list_item_multiple_choice布局显示复选框，支持多选
         final LinearLayout mediaOrderLayout = new LinearLayout(getTopActivity());
         mediaOrderLayout.setOrientation(LinearLayout.VERTICAL);
         mediaOrderLayout.setPadding(0, 0, 0, 16);
         final ListView mediaListView = new ListView(getTopActivity());
-        // 【修改】使用multiple_choice布局显示复选框
         final ArrayList<String> displayMediaList = new ArrayList<String>();
         mediaListView.setAdapter(new ArrayAdapter<String>(getTopActivity(), android.R.layout.simple_list_item_multiple_choice, displayMediaList));
         mediaListView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        // 【优化】设置触摸事件，确保直接滚动
         setupListViewTouchForScroll(mediaListView);
-        // 【V11】初始高度设为最小，避免空旷，后续动态调整
         LinearLayout.LayoutParams mediaListParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(50));
         mediaListView.setLayoutParams(mediaListParams);
         mediaOrderLayout.addView(mediaListView);
@@ -2726,47 +2607,42 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
         orderButtonsLayout.addView(deleteButton);
         mediaOrderLayout.addView(orderButtonsLayout);
         
-        // 【新增】名片选择布局（类似媒体，但选择好友Wxid）
+        // 名片和群聊复用相同的卡片UI
         final LinearLayout cardLayout = new LinearLayout(getTopActivity());
         cardLayout.setOrientation(LinearLayout.VERTICAL);
         cardLayout.setPadding(0, 0, 0, 16);
         final TextView currentCardTv = new TextView(getTopActivity());
-        // 【新增】初始显示选中的Wxid列表（\n分隔）
         StringBuilder initialCardDisplay = new StringBuilder();
         if (!TextUtils.isEmpty(editableItemRef.get().content)) {
             String[] wxidParts = editableItemRef.get().content.split(";;;");
             for (int k = 0; k < wxidParts.length; k++) {
                 if (!TextUtils.isEmpty(wxidParts[k].trim())) {
-                    initialCardDisplay.append(wxidParts[k].trim()).append("\n");
+                    initialCardDisplay.append(getDisplayNameForWxid(wxidParts[k].trim())).append("\n");
                 }
             }
         }
-        currentCardTv.setText(initialCardDisplay.toString().trim().isEmpty() ? "未选择名片" : initialCardDisplay.toString().trim());
+        currentCardTv.setText(initialCardDisplay.toString().trim().isEmpty() ? "未选择内容" : initialCardDisplay.toString().trim());
         currentCardTv.setTextSize(14);
         currentCardTv.setTextColor(Color.parseColor("#666666"));
         currentCardTv.setPadding(0, 8, 0, 0);
         final Button selectCardBtn = new Button(getTopActivity());
-        selectCardBtn.setText("选择名片好友（多选）");
+        selectCardBtn.setText("选择名片/群聊（多选）");
         styleMediaSelectionButton(selectCardBtn);
         cardLayout.addView(currentCardTv);
         cardLayout.addView(selectCardBtn);
         
-        // 【修改】名片列表与顺序管理：使用simple_list_item_multiple_choice布局显示复选框，支持多选
         final LinearLayout cardOrderLayout = new LinearLayout(getTopActivity());
         cardOrderLayout.setOrientation(LinearLayout.VERTICAL);
         cardOrderLayout.setPadding(0, 0, 0, 16);
         final ListView cardListView = new ListView(getTopActivity());
-        // 【修改】使用multiple_choice布局显示复选框
         final ArrayList<String> displayCardList = new ArrayList<String>();
         cardListView.setAdapter(new ArrayAdapter<String>(getTopActivity(), android.R.layout.simple_list_item_multiple_choice, displayCardList));
         cardListView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        // 【优化】设置触摸事件，确保直接滚动
         setupListViewTouchForScroll(cardListView);
-        // 【V11】初始高度设为最小，避免空旷，后续动态调整
         LinearLayout.LayoutParams cardListParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(50));
         cardListView.setLayoutParams(cardListParams);
         cardOrderLayout.addView(cardListView);
-        TextView cardOrderPrompt = createPromptText("选中名片后，使用下方按钮调整发送顺序（顺序发送，间隔自定义秒）");
+        TextView cardOrderPrompt = createPromptText("选中项后，使用下方按钮调整发送顺序（顺序发送，间隔自定义秒）");
         cardOrderLayout.addView(cardOrderPrompt);
         final LinearLayout cardOrderButtonsLayout = new LinearLayout(getTopActivity());
         cardOrderButtonsLayout.setOrientation(LinearLayout.HORIZONTAL);
@@ -2799,7 +2675,7 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                 if (!TextUtils.isEmpty(p)) mediaPaths.add(p);
             }
         }
-        final List<String> cardWxids = new ArrayList<String>(); // 【新增】名片Wxid列表
+        final List<String> cardWxids = new ArrayList<String>(); 
         if (!TextUtils.isEmpty(editableItemRef.get().content)) {
             String[] wxidParts = editableItemRef.get().content.split(";;;");
             for (int k = 0; k < wxidParts.length; k++) {
@@ -2807,7 +2683,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                 if (!TextUtils.isEmpty(wxid)) cardWxids.add(wxid);
             }
         }
-        // 【新增】基于内容的选中集
         final Set<String> selectedMediaPaths = new HashSet<String>();
         final Set<String> selectedCardWxids = new HashSet<String>();
         final Runnable updateMediaList = new Runnable() {
@@ -2815,81 +2690,76 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                 displayMediaList.clear();
                 for (int k = 0; k < mediaPaths.size(); k++) {
                     String path = mediaPaths.get(k);
-                    String fileName = new File(path).getName(); // 【V9】只显示文件名
+                    String fileName = new File(path).getName(); 
                     String display = (k + 1) + ". " + (fileName.length() > 30 ? fileName.substring(0, 30) + "..." : fileName);
                     displayMediaList.add(display);
                 }
                 ((ArrayAdapter<String>) mediaListView.getAdapter()).notifyDataSetChanged();
                 mediaListView.clearChoices();
-                mediaListView.requestLayout(); // 【新增】强制重绘，确保checked状态更新
-                // 【V9】更新currentPathTv为文件名列表显示，而非完整路径
+                mediaListView.requestLayout(); 
                 StringBuilder pathDisplay = new StringBuilder();
                 for (String path : mediaPaths) {
                     pathDisplay.append(new File(path).getName()).append("\n");
                 }
                 currentPathTv.setText(pathDisplay.toString().trim().isEmpty() ? "未选择媒体" : pathDisplay.toString().trim());
                 editableItemRef.get().content = TextUtils.join(";;;", mediaPaths);
-                // 【V11】动态调整高度
                 adjustListViewHeight(mediaListView, mediaPaths.size());
-                // 重新设置选中状态
                 for (int k = 0; k < mediaPaths.size(); k++) {
                     if (selectedMediaPaths.contains(mediaPaths.get(k))) {
                         mediaListView.setItemChecked(k, true);
                     }
                 }
-                // 更新按钮可见性和启用状态
                 updateOrderButtons(mediaListView, orderButtonsLayout, mediaPaths.size(), upButton, downButton, deleteButton);
             }
         };
-        final Runnable updateCardList = new Runnable() { // 【新增】更新名片列表
+        final Runnable updateCardList = new Runnable() { 
             public void run() {
                 displayCardList.clear();
                 for (int k = 0; k < cardWxids.size(); k++) {
                     String wxid = cardWxids.get(k);
-                    String display = (k + 1) + ". " + (wxid.length() > 30 ? wxid.substring(0, 30) + "..." : wxid);
+                    String name = getDisplayNameForWxid(wxid);
+                    String display = (k + 1) + ". " + (name.length() > 30 ? name.substring(0, 30) + "..." : name);
                     displayCardList.add(display);
                 }
                 ((ArrayAdapter<String>) cardListView.getAdapter()).notifyDataSetChanged();
                 cardListView.clearChoices();
-                cardListView.requestLayout(); // 【新增】强制重绘，确保checked状态更新
-                // 更新currentCardTv为Wxid列表显示
+                cardListView.requestLayout(); 
                 StringBuilder cardDisplay = new StringBuilder();
                 for (String wxid : cardWxids) {
-                    cardDisplay.append(wxid).append("\n");
+                    cardDisplay.append(getDisplayNameForWxid(wxid)).append("\n");
                 }
-                currentCardTv.setText(cardDisplay.toString().trim().isEmpty() ? "未选择名片" : cardDisplay.toString().trim());
+                currentCardTv.setText(cardDisplay.toString().trim().isEmpty() ? "未选择内容" : cardDisplay.toString().trim());
                 editableItemRef.get().content = TextUtils.join(";;;", cardWxids);
-                // 【V11】动态调整高度
                 adjustListViewHeight(cardListView, cardWxids.size());
-                // 重新设置选中状态
                 for (int k = 0; k < cardWxids.size(); k++) {
                     if (selectedCardWxids.contains(cardWxids.get(k))) {
                         cardListView.setItemChecked(k, true);
                     }
                 }
-                // 更新按钮可见性和启用状态
                 updateOrderButtons(cardListView, cardOrderButtonsLayout, cardWxids.size(), cardUpButton, cardDownButton, cardDeleteButton);
             }
         };
         updateMediaList.run();
-        updateCardList.run(); // 【新增】
+        updateCardList.run(); 
         
         final Runnable updateInputs = new Runnable() {
             public void run() {
                 int type = editableItemRef.get().type;
                 boolean isTextType = (type == ACCEPT_REPLY_TYPE_TEXT);
-                boolean isMediaType = !isTextType && (type != ACCEPT_REPLY_TYPE_CARD);
-                boolean isCardType = (type == ACCEPT_REPLY_TYPE_CARD);
+                boolean isCardOrGroupType = (type == ACCEPT_REPLY_TYPE_CARD || type == ACCEPT_REPLY_TYPE_INVITE_GROUP);
+                boolean isMediaType = !isTextType && !isCardOrGroupType;
+                
                 contentLabel.setVisibility(isTextType ? View.VISIBLE : View.GONE);
                 contentEdit.setVisibility(isTextType ? View.VISIBLE : View.GONE);
-                mediaDelayLabel.setVisibility(isMediaType || isCardType ? View.VISIBLE : View.GONE);
-                mediaDelayEdit.setVisibility(isMediaType || isCardType ? View.VISIBLE : View.GONE);
+                helpCard.setVisibility(isTextType ? View.VISIBLE : View.GONE); // 变量面板跟随文本框
+                mediaDelayLabel.setVisibility(isMediaType || isCardOrGroupType ? View.VISIBLE : View.GONE);
+                mediaDelayEdit.setVisibility(isMediaType || isCardOrGroupType ? View.VISIBLE : View.GONE);
                 mediaLayout.setVisibility(isMediaType ? View.VISIBLE : View.GONE);
                 mediaOrderLayout.setVisibility(isMediaType ? View.VISIBLE : View.GONE);
-                cardLayout.setVisibility(isCardType ? View.VISIBLE : View.GONE); // 【新增】
-                cardOrderLayout.setVisibility(isCardType ? View.VISIBLE : View.GONE); // 【新增】
+                cardLayout.setVisibility(isCardOrGroupType ? View.VISIBLE : View.GONE); 
+                cardOrderLayout.setVisibility(isCardOrGroupType ? View.VISIBLE : View.GONE); 
                 if (type == ACCEPT_REPLY_TYPE_TEXT) {
-                    contentLabel.setText("文本内容 (可用 %friendName%):");
+                    contentLabel.setText("文本内容:");
                     contentEdit.setHint("输入欢迎文本...");
                 } else if (type == ACCEPT_REPLY_TYPE_IMAGE) {
                     contentLabel.setText("图片路径:");
@@ -2898,7 +2768,7 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                 } else if (type == ACCEPT_REPLY_TYPE_VOICE_FIXED) {
                     contentLabel.setText("语音文件路径:");
                     contentEdit.setHint("输入语音文件绝对路径");
-                    selectMediaBtn.setText("选择语音文件（多选）"); // 【修改】支持多选
+                    selectMediaBtn.setText("选择语音文件（多选）"); 
                 } else if (type == ACCEPT_REPLY_TYPE_VOICE_RANDOM) {
                     contentLabel.setText("语音文件夹路径:");
                     contentEdit.setHint("输入语音文件夹绝对路径");
@@ -2911,16 +2781,19 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                     contentLabel.setText("视频文件路径:");
                     contentEdit.setHint("输入视频绝对路径");
                     selectMediaBtn.setText("选择视频文件（多选）");
-                } else if (type == ACCEPT_REPLY_TYPE_CARD) { // 【修改】名片改为多选
-                    contentLabel.setText("名片 Wxid 列表:");
-                    contentEdit.setHint("输入要分享的名片的Wxid（多选用;;;分隔）");
-                    selectCardBtn.setText("选择名片好友（多选）");
                 } else if (type == ACCEPT_REPLY_TYPE_FILE) {
                     contentLabel.setText("文件路径:");
                     contentEdit.setHint("输入文件绝对路径");
                     selectMediaBtn.setText("选择文件（多选）");
+                } else if (type == ACCEPT_REPLY_TYPE_CARD) { 
+                    contentLabel.setText("名片 Wxid 列表:");
+                    contentEdit.setHint("输入要分享的名片的Wxid（多选用;;;分隔）");
+                    selectCardBtn.setText("选择名片好友（多选）");
+                } else if (type == ACCEPT_REPLY_TYPE_INVITE_GROUP) {
+                    contentLabel.setText("群聊 ID 列表:");
+                    contentEdit.setHint("输入要邀请的群聊ID（多选用;;;分隔）");
+                    selectCardBtn.setText("选择要邀请的群聊（多选）");
                 }
-                // 【修复】每次更新时重新设置tag，确保选择按钮可用
                 Object[] tag = getMediaSelectTag(type);
                 selectMediaBtn.setTag(tag);
             }
@@ -2933,7 +2806,8 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
             case ACCEPT_REPLY_TYPE_EMOJI: replyTypeGroup.check(typeEmojiRadio.getId()); break;
             case ACCEPT_REPLY_TYPE_VIDEO: replyTypeGroup.check(typeVideoRadio.getId()); break;
             case ACCEPT_REPLY_TYPE_CARD: replyTypeGroup.check(typeCardRadio.getId()); break;
-            case ACCEPT_REPLY_TYPE_FILE: replyTypeGroup.check(typeFileRadio.getId()); break; // 新增
+            case ACCEPT_REPLY_TYPE_FILE: replyTypeGroup.check(typeFileRadio.getId()); break; 
+            case ACCEPT_REPLY_TYPE_INVITE_GROUP: replyTypeGroup.check(typeInviteGroupRadio.getId()); break;
             default: replyTypeGroup.check(typeTextRadio.getId());
         }
         updateInputs.run();
@@ -2947,7 +2821,8 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                 else if (checkedId == typeEmojiRadio.getId()) editableItemRef.get().type = ACCEPT_REPLY_TYPE_EMOJI;
                 else if (checkedId == typeVideoRadio.getId()) editableItemRef.get().type = ACCEPT_REPLY_TYPE_VIDEO;
                 else if (checkedId == typeCardRadio.getId()) editableItemRef.get().type = ACCEPT_REPLY_TYPE_CARD;
-                else if (checkedId == typeFileRadio.getId()) editableItemRef.get().type = ACCEPT_REPLY_TYPE_FILE; // 新增
+                else if (checkedId == typeFileRadio.getId()) editableItemRef.get().type = ACCEPT_REPLY_TYPE_FILE; 
+                else if (checkedId == typeInviteGroupRadio.getId()) editableItemRef.get().type = ACCEPT_REPLY_TYPE_INVITE_GROUP;
                 updateInputs.run();
             }
         });
@@ -2955,7 +2830,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
         layout.addView(mediaDelayLabel);
         layout.addView(mediaDelayEdit);
         
-        // 媒体选择按钮逻辑
         selectMediaBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 int type = editableItemRef.get().type;
@@ -3001,45 +2875,72 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
             }
         });
         
-        // 【新增】名片选择按钮逻辑：多选好友Wxid
         selectCardBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                showLoadingDialog("选择名片好友", "  正在加载好友列表...", new Runnable() {
-                    public void run() {
-                        if (sCachedFriendList == null) sCachedFriendList = getFriendList();
-                        new Handler(Looper.getMainLooper()).post(new Runnable() {
-                            public void run() {
-                                if (sCachedFriendList == null || sCachedFriendList.isEmpty()) {
-                                    toast("未获取到好友列表");
-                                    return;
-                                }
-                                List names = new ArrayList();
-                                List ids = new ArrayList();
-                                for (int i = 0; i < sCachedFriendList.size(); i++) {
-                                    FriendInfo friendInfo = (FriendInfo) sCachedFriendList.get(i);
-                                    String nickname = TextUtils.isEmpty(friendInfo.getNickname()) ? "未知昵称" : friendInfo.getNickname();
-                                    String remark = friendInfo.getRemark();
-                                    String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
-                                    // 【新增】显示ID（完整ID）
-                                    names.add("👤 " + displayName + "\nID: " + friendInfo.getWxid());
-                                    ids.add(friendInfo.getWxid());
-                                }
-                                final Set<String> tempSelectedWxids = new HashSet<String>(cardWxids);
-                                showMultiSelectDialog("✨ 选择名片好友 ✨", names, ids, tempSelectedWxids, "🔍 搜索好友(昵称/备注)...", new Runnable() {
-                                    public void run() {
-                                        cardWxids.clear();
-                                        cardWxids.addAll(tempSelectedWxids);
-                                        updateCardList.run();
+                if (editableItemRef.get().type == ACCEPT_REPLY_TYPE_INVITE_GROUP) {
+                    showLoadingDialog("选择群聊", "  正在加载群聊列表...", new Runnable() {
+                        public void run() {
+                            if (sCachedGroupList == null) sCachedGroupList = getGroupList();
+                            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                public void run() {
+                                    if (sCachedGroupList == null || sCachedGroupList.isEmpty()) {
+                                        toast("未获取到群聊列表"); return;
                                     }
-                                }, null);
-                            }
-                        });
-                    }
-                });
+                                    List names = new ArrayList();
+                                    List ids = new ArrayList();
+                                    for (int i = 0; i < sCachedGroupList.size(); i++) {
+                                        GroupInfo groupInfo = (GroupInfo) sCachedGroupList.get(i);
+                                        String groupName = TextUtils.isEmpty(groupInfo.getName()) ? "未知群聊" : groupInfo.getName();
+                                        names.add("🏠 " + groupName + "\nID: " + groupInfo.getRoomId());
+                                        ids.add(groupInfo.getRoomId());
+                                    }
+                                    final Set<String> tempSelected = new HashSet<String>(cardWxids);
+                                    showMultiSelectDialog("✨ 选择要邀请的群聊 ✨", names, ids, tempSelected, "🔍 搜索群聊...", new Runnable() {
+                                        public void run() {
+                                            cardWxids.clear();
+                                            cardWxids.addAll(tempSelected);
+                                            updateCardList.run();
+                                        }
+                                    }, null);
+                                }
+                            });
+                        }
+                    });
+                } else {
+                    showLoadingDialog("选择名片好友", "  正在加载好友列表...", new Runnable() {
+                        public void run() {
+                            if (sCachedFriendList == null) sCachedFriendList = getFriendList();
+                            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                public void run() {
+                                    if (sCachedFriendList == null || sCachedFriendList.isEmpty()) {
+                                        toast("未获取到好友列表"); return;
+                                    }
+                                    List names = new ArrayList();
+                                    List ids = new ArrayList();
+                                    for (int i = 0; i < sCachedFriendList.size(); i++) {
+                                        FriendInfo friendInfo = (FriendInfo) sCachedFriendList.get(i);
+                                        String nickname = TextUtils.isEmpty(friendInfo.getNickname()) ? "未知昵称" : friendInfo.getNickname();
+                                        String remark = friendInfo.getRemark();
+                                        String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
+                                        names.add("👤 " + displayName + "\nID: " + friendInfo.getWxid());
+                                        ids.add(friendInfo.getWxid());
+                                    }
+                                    final Set<String> tempSelectedWxids = new HashSet<String>(cardWxids);
+                                    showMultiSelectDialog("✨ 选择名片好友 ✨", names, ids, tempSelectedWxids, "🔍 搜索好友(昵称/备注)...", new Runnable() {
+                                        public void run() {
+                                            cardWxids.clear();
+                                            cardWxids.addAll(tempSelectedWxids);
+                                            updateCardList.run();
+                                        }
+                                    }, null);
+                                }
+                            });
+                        }
+                    });
+                }
             }
         });
         
-        // 【修改】媒体顺序管理逻辑：支持多选，动态更新按钮
         mediaListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 String path = mediaPaths.get(position);
@@ -3048,7 +2949,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                 } else {
                     selectedMediaPaths.remove(path);
                 }
-                // 更新按钮可见性和启用状态
                 updateOrderButtons(mediaListView, orderButtonsLayout, mediaPaths.size(), upButton, downButton, deleteButton);
             }
         });
@@ -3058,7 +2958,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                     String selectedPath = selectedMediaPaths.iterator().next();
                     int pos = mediaPaths.indexOf(selectedPath);
                     if (pos > 0) {
-                        // 交换位置
                         Collections.swap(mediaPaths, pos, pos - 1);
                         updateMediaList.run();
                     }
@@ -3071,7 +2970,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                     String selectedPath = selectedMediaPaths.iterator().next();
                     int pos = mediaPaths.indexOf(selectedPath);
                     if (pos < mediaPaths.size() - 1) {
-                        // 交换位置
                         Collections.swap(mediaPaths, pos, pos + 1);
                         updateMediaList.run();
                     }
@@ -3088,7 +2986,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
             }
         });
         
-        // 【修改】名片顺序管理逻辑：支持多选，动态更新按钮
         cardListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 String wxid = cardWxids.get(position);
@@ -3097,7 +2994,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                 } else {
                     selectedCardWxids.remove(wxid);
                 }
-                // 更新按钮可见性和启用状态
                 updateOrderButtons(cardListView, cardOrderButtonsLayout, cardWxids.size(), cardUpButton, cardDownButton, cardDeleteButton);
             }
         });
@@ -3107,7 +3003,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                     String selectedWxid = selectedCardWxids.iterator().next();
                     int pos = cardWxids.indexOf(selectedWxid);
                     if (pos > 0) {
-                        // 交换位置
                         Collections.swap(cardWxids, pos, pos - 1);
                         updateCardList.run();
                     }
@@ -3120,7 +3015,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                     String selectedWxid = selectedCardWxids.iterator().next();
                     int pos = cardWxids.indexOf(selectedWxid);
                     if (pos < cardWxids.size() - 1) {
-                        // 交换位置
                         Collections.swap(cardWxids, pos, pos + 1);
                         updateCardList.run();
                     }
@@ -3139,8 +3033,8 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
         
         layout.addView(mediaLayout);
         layout.addView(mediaOrderLayout);
-        layout.addView(cardLayout); // 【新增】
-        layout.addView(cardOrderLayout); // 【新增】
+        layout.addView(cardLayout); 
+        layout.addView(cardOrderLayout); 
         
         String dialogTitle = (editPosition >= 0) ? "编辑回复项 (" + featureName + ")" : "添加回复项 (" + featureName + ")";
         final AlertDialog dialog = buildCommonAlertDialog(getTopActivity(), dialogTitle, scrollView, "✅ 保存", new DialogInterface.OnClickListener() {
@@ -3150,7 +3044,7 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                 try {
                     mediaDelay = Long.parseLong(mediaDelayEdit.getText().toString().trim());
                 } catch (Exception e) {
-                    mediaDelay = 1L; // 默认值
+                    mediaDelay = 1L; 
                 }
                 editableItemRef.get().mediaDelaySeconds = mediaDelay;
                 
@@ -3160,10 +3054,10 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                         toast("内容不能为空");
                         return;
                     }
-                } else if (type == ACCEPT_REPLY_TYPE_CARD) {
+                } else if (type == ACCEPT_REPLY_TYPE_CARD || type == ACCEPT_REPLY_TYPE_INVITE_GROUP) {
                     editableItemRef.get().content = TextUtils.join(";;;", cardWxids);
                     if (cardWxids.isEmpty()) {
-                        toast("名片Wxid不能为空");
+                        toast(type == ACCEPT_REPLY_TYPE_CARD ? "名片Wxid不能为空" : "群聊ID不能为空");
                         return;
                     }
                 } else {
@@ -3178,7 +3072,7 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                             type == ACCEPT_REPLY_TYPE_VOICE_FIXED ||
                             type == ACCEPT_REPLY_TYPE_EMOJI ||
                             type == ACCEPT_REPLY_TYPE_VIDEO ||
-                            type == ACCEPT_REPLY_TYPE_FILE) { // 新增文件检查
+                            type == ACCEPT_REPLY_TYPE_FILE) { 
                             if (!file.exists()) {
                                 toast("文件不存在: " + path);
                                 return;
@@ -3192,7 +3086,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                     }
                 }
                 
-                // 【修复】更新list中的对象引用
                 if (editPosition >= 0 && editPosition < itemsList.size()) {
                     itemsList.set(editPosition, editableItemRef.get());
                 } else {
@@ -3211,7 +3104,6 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
     }
 }
 
-// 【新增】获取ListView选中位置列表（从大到小排序，便于删除）
 private List<Integer> getSelectedPositions(ListView listView) {
     List<Integer> selected = new ArrayList<Integer>();
     for (int i = 0; i < listView.getCount(); i++) {
@@ -3219,12 +3111,10 @@ private List<Integer> getSelectedPositions(ListView listView) {
             selected.add(i);
         }
     }
-    // 从大到小排序
     java.util.Collections.sort(selected, java.util.Collections.reverseOrder());
     return selected;
 }
 
-// 【新增】更新顺序按钮可见性和启用状态
 private void updateOrderButtons(ListView listView, LinearLayout buttonsLayout, int itemCount, Button upButton, Button downButton, Button deleteButton) {
     List<Integer> selectedPositions = getSelectedPositions(listView);
     int selectedCount = selectedPositions.size();
@@ -3248,7 +3138,6 @@ private void updateOrderButtons(ListView listView, LinearLayout buttonsLayout, i
     }
 }
 
-// 【新增】根据类型获取媒体选择tag
 private Object[] getMediaSelectTag(int type) {
     String extFilter = "";
     boolean isFolder = false;
@@ -3261,7 +3150,7 @@ private Object[] getMediaSelectTag(int type) {
             break;
         case ACCEPT_REPLY_TYPE_VOICE_FIXED:
             extFilter = "";
-            isMulti = true; // 【修改】支持多选
+            isMulti = true; 
             break;
         case ACCEPT_REPLY_TYPE_VOICE_RANDOM:
             isFolder = true;
@@ -3277,7 +3166,7 @@ private Object[] getMediaSelectTag(int type) {
             isMulti = true;
             break;
         case ACCEPT_REPLY_TYPE_FILE:
-            extFilter = ""; // 所有文件类型
+            extFilter = ""; 
             isMulti = true;
             break;
     }
@@ -3294,14 +3183,11 @@ private void showAutoReplyRulesDialog() {
         rootLayout.setBackgroundColor(Color.parseColor("#FAFBF9"));
         scrollView.addView(rootLayout);
 
-        // --- 卡片1: 规则列表 ---
         LinearLayout rulesCard = createCardLayout();
         rulesCard.addView(createSectionTitle("📝 自动回复规则管理"));
         final ListView rulesListView = new ListView(getTopActivity());
-        // 【优化】设置触摸事件，确保直接滚动
         setupListViewTouchForScroll(rulesListView);
         rulesListView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        // 【V11】初始高度设为最小，避免空旷，后续动态调整
         LinearLayout.LayoutParams rulesListParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(50));
         rulesListView.setLayoutParams(rulesListParams);
         final ArrayAdapter rulesAdapter = new ArrayAdapter(getTopActivity(), android.R.layout.simple_list_item_multiple_choice);
@@ -3344,7 +3230,7 @@ private void showAutoReplyRulesDialog() {
                     int atTriggerType = (Integer) rule.get("atTriggerType");
                     String atTriggerStr = getAtTriggerStr(atTriggerType);
                     int patTriggerType = (Integer) rule.get("patTriggerType");
-                    String patTriggerStr = getPatTriggerStr(patTriggerType); // 【新增】拍一拍触发字符串
+                    String patTriggerStr = getPatTriggerStr(patTriggerType); 
                     Set targetWxids = (Set) rule.get("targetWxids");
                     int targetType = (Integer) rule.get("targetType");
                     String targetInfo = getTargetInfo(targetType, targetWxids);
@@ -3354,7 +3240,7 @@ private void showAutoReplyRulesDialog() {
                     long delaySeconds = (Long) rule.get("delaySeconds");
                     String delayInfo = (delaySeconds > 0) ? " 延迟" + delaySeconds + "秒" : "";
                     long mediaDelaySeconds = (Long) rule.get("mediaDelaySeconds");
-                    String mediaDelayInfo = (mediaDelaySeconds > 1) ? " 媒体间隔" + mediaDelaySeconds + "秒" : ""; // 【新增】显示媒体延迟
+                    String mediaDelayInfo = (mediaDelaySeconds > 1) ? " 媒体间隔" + mediaDelaySeconds + "秒" : ""; 
                     boolean replyAsQuote = (Boolean) rule.get("replyAsQuote");
                     String quoteInfo = replyAsQuote ? " [引用]" : "";
                     String startTime = (String) rule.get("startTime");
@@ -3373,7 +3259,6 @@ private void showAutoReplyRulesDialog() {
                         rulesListView.setItemChecked(i, true);
                     }
                 }
-                // 【V11】动态调整高度
                 adjustListViewHeight(rulesListView, rules.size());
                 updateReplyButtonsVisibility(editButton, delButton, selectedRules.size());
             }
@@ -3423,7 +3308,6 @@ private void showAutoReplyRulesDialog() {
             }
         });
 
-        // --- 对话框构建 ---
         final AlertDialog dialog = buildCommonAlertDialog(getTopActivity(), "✨ 自动回复规则管理 ✨", scrollView, "✅ 保存", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
                 saveAutoReplyRules(rules);
@@ -3444,13 +3328,11 @@ private void showAutoReplyRulesDialog() {
     }
 }
 
-// 【新增】辅助方法：获取拍一拍触发字符串
 private String getPatTriggerStr(int patTriggerType) {
     if (patTriggerType == PAT_TRIGGER_ME) return "被拍一拍";
     else return "不限拍一拍";
 }
 
-// 【新增】辅助方法：获取匹配类型字符串
 private String getMatchTypeStr(int matchType) {
     if (matchType == MATCH_TYPE_EXACT) return "全字";
     else if (matchType == MATCH_TYPE_REGEX) return "正则";
@@ -3458,14 +3340,12 @@ private String getMatchTypeStr(int matchType) {
     else return "模糊";
 }
 
-// 【新增】辅助方法：获取@触发字符串
 private String getAtTriggerStr(int atTriggerType) {
     if (atTriggerType == AT_TRIGGER_ME) return "@我";
     else if (atTriggerType == AT_TRIGGER_ALL) return "@全体";
     else return "不限@";
 }
 
-// 【新增】辅助方法：获取目标信息
 private String getTargetInfo(int targetType, Set targetWxids) {
     if (targetType == TARGET_TYPE_FRIEND) return " (指定好友: " + (targetWxids != null ? targetWxids.size() : 0) + "人)";
     else if (targetType == TARGET_TYPE_GROUP) return " (指定群聊: " + (targetWxids != null ? targetWxids.size() : 0) + "个)";
@@ -3473,7 +3353,6 @@ private String getTargetInfo(int targetType, Set targetWxids) {
     return "";
 }
 
-// 【新增】辅助方法：获取规则回复类型字符串 (区分小智和智聊AI)
 private String getReplyTypeStrForRule(int replyType) {
     switch (replyType) {
         case REPLY_TYPE_XIAOZHI_AI: return " [小智AI]";
@@ -3484,12 +3363,12 @@ private String getReplyTypeStrForRule(int replyType) {
         case REPLY_TYPE_EMOJI: return " [表情]";
         case REPLY_TYPE_VIDEO: return " [视频]";
         case REPLY_TYPE_FILE: return " [文件]";
-        case REPLY_TYPE_CARD: return " [名片]"; // 支持多选
+        case REPLY_TYPE_CARD: return " [名片]"; 
+        case REPLY_TYPE_INVITE_GROUP: return " [邀请群聊]";
         default: return " [文本]";
     }
 }
 
-// 【新增】辅助方法：获取回复内容预览
 private String getReplyContentPreview(Map<String, Object> rule) {
     int replyType = (Integer) rule.get("replyType");
     switch (replyType) {
@@ -3503,37 +3382,43 @@ private String getReplyContentPreview(Map<String, Object> rule) {
             List mediaPaths = (List) rule.get("mediaPaths");
             if (mediaPaths != null && !mediaPaths.isEmpty()) {
                 String path = (String) mediaPaths.get(0);
-                return " (" + mediaPaths.size() + "个): ..." + path.substring(Math.max(0, path.length() - 20));
+                return " (" + mediaPaths.size() + "个): ..." + new File(path).getName();
             }
             return "未设置路径";
         case REPLY_TYPE_VOICE_FILE_LIST:
             List mediaPaths2 = (List) rule.get("mediaPaths");
             if (mediaPaths2 != null && !mediaPaths2.isEmpty()) {
                 String path = (String) mediaPaths2.get(0);
-                return " (" + mediaPaths2.size() + "个语音): ..." + path.substring(Math.max(0, path.length() - 20));
+                return " (" + mediaPaths2.size() + "个语音): ..." + new File(path).getName();
             }
             return "未设置语音文件路径";
         case REPLY_TYPE_VOICE_FOLDER:
             List mediaPaths3 = (List) rule.get("mediaPaths");
             if (mediaPaths3 != null && !mediaPaths3.isEmpty()) {
                 String path = (String) mediaPaths3.get(0);
-                return "文件夹: ..." + path.substring(Math.max(0, path.length() - 20));
+                return "文件夹: ..." + new File(path).getName();
             }
             return "未设置语音文件夹路径";
         case REPLY_TYPE_CARD:
+        case REPLY_TYPE_INVITE_GROUP:
             String reply = (String) rule.get("reply");
             if (!TextUtils.isEmpty(reply)) {
-                String[] wxids = reply.split(";;;");
-                return " (" + wxids.length + "个): " + (reply.length() > 30 ? reply.substring(0, 30) + "..." : reply);
+                String[] items = reply.split(";;;");
+                StringBuilder previewNames = new StringBuilder();
+                for(int j=0; j<Math.min(2, items.length); j++) {
+                    if(j>0) previewNames.append(",");
+                    previewNames.append(getDisplayNameForWxid(items[j].trim()));
+                }
+                if(items.length > 2) previewNames.append("...");
+                return " (" + items.length + "个): " + previewNames.toString();
             }
-            return "未设置Wxid";
-        default: // REPLY_TYPE_TEXT
+            return "未设置目标ID";
+        default: 
             String textReply = (String) rule.get("reply");
-            return textReply.length() > 20 ? textReply.substring(0, 20) + "..." : textReply;
+            return textReply != null && textReply.length() > 20 ? textReply.substring(0, 20) + "..." : (textReply != null ? textReply : "");
     }
 }
 
-// 【新增】辅助方法：获取时间信息
 private String getTimeInfo(String startTime, String endTime) {
     String timeInfo = "";
     if (!TextUtils.isEmpty(startTime)) {
@@ -3557,29 +3442,28 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         layout.setBackgroundColor(Color.parseColor("#FAFBF9"));
         scrollView.addView(layout);
         
-        // --- 卡片1: 关键词设置 ---
         LinearLayout keywordCard = createCardLayout();
         keywordCard.addView(createSectionTitle("关键词"));
         final EditText keywordEdit = createStyledEditText("输入触发关键词...", (String) rule.get("keyword"));
         keywordCard.addView(keywordEdit);
         layout.addView(keywordCard);
         
-        // --- 卡片2: 回复类型 ---
         LinearLayout typeCard = createCardLayout();
         typeCard.addView(createSectionTitle("回复类型"));
         final RadioGroup replyTypeGroup = createRadioGroup(getTopActivity(), LinearLayout.VERTICAL);
         final RadioButton replyTypeXiaozhiAIRadio = createRadioButton(getTopActivity(), "🤖 小智AI 回复(回复快,能联网)");
-        final RadioButton replyTypeZhiliaAIRadio = createRadioButton(getTopActivity(), "🧠 智聊AI 回复(回复慢,不能联网,可以用deepseek官方key官方配置即可联网)"); // 新增智聊AI选项
+        final RadioButton replyTypeZhiliaAIRadio = createRadioButton(getTopActivity(), "🧠 智聊AI 回复(回复慢,不能联网,可以用deepseek官方key官方配置即可联网)"); 
         final RadioButton replyTypeTextRadio = createRadioButton(getTopActivity(), "📄文本");
         final RadioButton replyTypeImageRadio = createRadioButton(getTopActivity(), "🖼️图片");
         final RadioButton replyTypeEmojiRadio = createRadioButton(getTopActivity(), "😊表情");
         final RadioButton replyTypeVideoRadio = createRadioButton(getTopActivity(), "🎬视频");
-        final RadioButton replyTypeCardRadio = createRadioButton(getTopActivity(), "📇名片"); // 支持多选
+        final RadioButton replyTypeCardRadio = createRadioButton(getTopActivity(), "📇名片"); 
         final RadioButton replyTypeVoiceFileListRadio = createRadioButton(getTopActivity(), "🎤语音(文件列表)");
         final RadioButton replyTypeVoiceFolderRadio = createRadioButton(getTopActivity(), "🔀🎤语音(文件夹随机)");
-        final RadioButton replyTypeFileRadio = createRadioButton(getTopActivity(), "📁文件"); // 新增文件选项
+        final RadioButton replyTypeFileRadio = createRadioButton(getTopActivity(), "📁文件"); 
+        final RadioButton replyTypeInviteGroupRadio = createRadioButton(getTopActivity(), "💌邀请群聊"); 
         replyTypeGroup.addView(replyTypeXiaozhiAIRadio);
-        replyTypeGroup.addView(replyTypeZhiliaAIRadio); // 新增
+        replyTypeGroup.addView(replyTypeZhiliaAIRadio); 
         replyTypeGroup.addView(replyTypeTextRadio);
         replyTypeGroup.addView(replyTypeImageRadio);
         replyTypeGroup.addView(replyTypeEmojiRadio);
@@ -3587,7 +3471,8 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         replyTypeGroup.addView(replyTypeCardRadio);
         replyTypeGroup.addView(replyTypeVoiceFileListRadio);
         replyTypeGroup.addView(replyTypeVoiceFolderRadio);
-        replyTypeGroup.addView(replyTypeFileRadio); // 新增
+        replyTypeGroup.addView(replyTypeFileRadio); 
+        replyTypeGroup.addView(replyTypeInviteGroupRadio);
         typeCard.addView(replyTypeGroup);
         layout.addView(typeCard);
         
@@ -3599,8 +3484,25 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         final EditText replyEdit = createStyledEditText("输入自动回复内容...", (String) rule.get("reply"));
         replyEdit.setMinLines(3);
         replyEdit.setGravity(Gravity.TOP);
+
+        // 【新增】快捷插入变量面板（动态显示）
+        final LinearLayout helpCard = createCardLayout();
+        helpCard.addView(createSectionTitle("点击变量插入到回复内容"));
+        LinearLayout row1 = new LinearLayout(getTopActivity());
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.addView(createVariableChip("%senderName%", "发送者昵称", replyEdit));
+        row1.addView(createVariableChip("%senderWxid%", "发送者wxid", replyEdit));
+        LinearLayout row2 = new LinearLayout(getTopActivity());
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.addView(createVariableChip("%groupName%", "群名称", replyEdit));
+        row2.addView(createVariableChip("%time%", "当前时间", replyEdit));
+        LinearLayout row3 = new LinearLayout(getTopActivity());
+        row3.setOrientation(LinearLayout.HORIZONTAL);
+        row3.addView(createVariableChip("%atSender%", "@发送者", replyEdit));
+        helpCard.addView(row1);
+        helpCard.addView(row2);
+        helpCard.addView(row3);
         
-        // 【新增】媒体发送延迟设置
         final TextView mediaDelayLabel = new TextView(getTopActivity());
         mediaDelayLabel.setText("媒体发送间隔 (秒):");
         mediaDelayLabel.setTextSize(14);
@@ -3609,12 +3511,10 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         final EditText mediaDelayEdit = createStyledEditText("默认为1秒", String.valueOf(rule.get("mediaDelaySeconds")));
         mediaDelayEdit.setInputType(InputType.TYPE_CLASS_NUMBER);
         
-        // 媒体选择布局
         final LinearLayout mediaLayout = new LinearLayout(getTopActivity());
         mediaLayout.setOrientation(LinearLayout.VERTICAL);
         mediaLayout.setPadding(0, 0, 0, 16);
         final TextView currentMediaTv = new TextView(getTopActivity());
-        // 【修复】初始显示具体路径列表（\n分隔），而非mediaPaths的;;;格式 + null检查
         StringBuilder initialMediaDisplay = new StringBuilder();
         Object mediaObj = rule.get("mediaPaths");
         List mediaPathsInit = (mediaObj instanceof List) ? (List) mediaObj : null;
@@ -3624,7 +3524,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 if (pObj instanceof String) {
                     String p = (String) pObj;
                     if (!TextUtils.isEmpty(p)) {
-                        initialMediaDisplay.append(new File(p).getName()).append("\n"); // 【V9】只显示文件名
+                        initialMediaDisplay.append(new File(p).getName()).append("\n"); 
                     }
                 }
             }
@@ -3639,18 +3539,14 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         mediaLayout.addView(currentMediaTv);
         mediaLayout.addView(selectMediaBtn);
         
-        // 【修改】媒体列表与顺序管理：使用simple_list_item_multiple_choice布局显示复选框，支持多选
         final LinearLayout mediaOrderLayout = new LinearLayout(getTopActivity());
         mediaOrderLayout.setOrientation(LinearLayout.VERTICAL);
         mediaOrderLayout.setPadding(0, 0, 0, 16);
         final ListView mediaListView = new ListView(getTopActivity());
-        // 【修改】使用multiple_choice布局显示复选框
         final ArrayList<String> displayMediaList = new ArrayList<String>();
         mediaListView.setAdapter(new ArrayAdapter<String>(getTopActivity(), android.R.layout.simple_list_item_multiple_choice, displayMediaList));
         mediaListView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        // 【优化】设置触摸事件，确保直接滚动
         setupListViewTouchForScroll(mediaListView);
-        // 【V11】初始高度设为最小，避免空旷，后续动态调整
         LinearLayout.LayoutParams mediaListParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(50));
         mediaListView.setLayoutParams(mediaListParams);
         mediaOrderLayout.addView(mediaListView);
@@ -3679,48 +3575,43 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         orderButtonsLayout.addView(deleteButton);
         mediaOrderLayout.addView(orderButtonsLayout);
         
-        // 【新增】名片选择布局（类似媒体，但选择好友Wxid）
+        // 名片和群聊复用相同的卡片UI
         final LinearLayout cardLayout = new LinearLayout(getTopActivity());
         cardLayout.setOrientation(LinearLayout.VERTICAL);
         cardLayout.setPadding(0, 0, 0, 16);
         final TextView currentCardTv = new TextView(getTopActivity());
-        // 【新增】初始显示选中的Wxid列表（\n分隔）
         StringBuilder initialCardDisplay = new StringBuilder();
-        String replyStr = (String) rule.get("reply");
-        if (!TextUtils.isEmpty(replyStr)) {
-            String[] wxidParts = replyStr.split(";;;");
+        String replyStrForCard = (String) rule.get("reply");
+        if (!TextUtils.isEmpty(replyStrForCard)) {
+            String[] wxidParts = replyStrForCard.split(";;;");
             for (int k = 0; k < wxidParts.length; k++) {
                 if (!TextUtils.isEmpty(wxidParts[k].trim())) {
-                    initialCardDisplay.append(wxidParts[k].trim()).append("\n");
+                    initialCardDisplay.append(getDisplayNameForWxid(wxidParts[k].trim())).append("\n");
                 }
             }
         }
-        currentCardTv.setText(initialCardDisplay.toString().trim().isEmpty() ? "未选择名片" : initialCardDisplay.toString().trim());
+        currentCardTv.setText(initialCardDisplay.toString().trim().isEmpty() ? "未选择内容" : initialCardDisplay.toString().trim());
         currentCardTv.setTextSize(14);
         currentCardTv.setTextColor(Color.parseColor("#666666"));
         currentCardTv.setPadding(0, 8, 0, 0);
         final Button selectCardBtn = new Button(getTopActivity());
-        selectCardBtn.setText("选择名片好友（多选）");
+        selectCardBtn.setText("选择名片/群聊（多选）");
         styleMediaSelectionButton(selectCardBtn);
         cardLayout.addView(currentCardTv);
         cardLayout.addView(selectCardBtn);
         
-        // 【修改】名片列表与顺序管理：使用simple_list_item_multiple_choice布局显示复选框，支持多选
         final LinearLayout cardOrderLayout = new LinearLayout(getTopActivity());
         cardOrderLayout.setOrientation(LinearLayout.VERTICAL);
         cardOrderLayout.setPadding(0, 0, 0, 16);
         final ListView cardListView = new ListView(getTopActivity());
-        // 【修改】使用multiple_choice布局显示复选框
         final ArrayList<String> displayCardList = new ArrayList<String>();
         cardListView.setAdapter(new ArrayAdapter<String>(getTopActivity(), android.R.layout.simple_list_item_multiple_choice, displayCardList));
         cardListView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        // 【优化】设置触摸事件，确保直接滚动
         setupListViewTouchForScroll(cardListView);
-        // 【V11】初始高度设为最小，避免空旷，后续动态调整
         LinearLayout.LayoutParams cardListParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(50));
         cardListView.setLayoutParams(cardListParams);
         cardOrderLayout.addView(cardListView);
-        TextView cardOrderPrompt = createPromptText("选中名片后，使用下方按钮调整发送顺序（顺序发送，间隔自定义秒）");
+        TextView cardOrderPrompt = createPromptText("选中项后，使用下方按钮调整发送顺序（顺序发送，间隔自定义秒）");
         cardOrderLayout.addView(cardOrderPrompt);
         final LinearLayout cardOrderButtonsLayout = new LinearLayout(getTopActivity());
         cardOrderButtonsLayout.setOrientation(LinearLayout.HORIZONTAL);
@@ -3745,43 +3636,37 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         cardOrderButtonsLayout.addView(cardDeleteButton);
         cardOrderLayout.addView(cardOrderButtonsLayout);
         
-        // 【修复】null检查 + 强制空列表
         Object mediaPathsObj = rule.get("mediaPaths");
         final List<String> mediaPaths = (mediaPathsObj instanceof List) ? new ArrayList<String>((List<String>) mediaPathsObj) : new ArrayList<String>();
-        // 【新增】基于内容的选中集
         final Set<String> selectedMediaPaths = new HashSet<String>();
         final Runnable updateMediaList = new Runnable() {
             public void run() {
                 displayMediaList.clear();
                 for (int k = 0; k < mediaPaths.size(); k++) {
                     String path = mediaPaths.get(k);
-                    String fileName = new File(path).getName(); // 【V9】只显示文件名
+                    String fileName = new File(path).getName(); 
                     String display = (k + 1) + ". " + (fileName.length() > 30 ? fileName.substring(0, 30) + "..." : fileName);
                     displayMediaList.add(display);
                 }
                 ((ArrayAdapter<String>) mediaListView.getAdapter()).notifyDataSetChanged();
                 mediaListView.clearChoices();
-                mediaListView.requestLayout(); // 【新增】强制重绘，确保checked状态更新
-                // 【V9】更新currentMediaTv为文件名列表显示，而非完整路径
+                mediaListView.requestLayout(); 
                 StringBuilder mediaDisplay = new StringBuilder();
                 for (String path : mediaPaths) {
                     mediaDisplay.append(new File(path).getName()).append("\n");
                 }
                 currentMediaTv.setText(mediaDisplay.toString().trim().isEmpty() ? "未选择媒体" : mediaDisplay.toString().trim());
-                rule.put("mediaPaths", new ArrayList<String>(mediaPaths)); // 更新规则的mediaPaths
-                // 【V11】动态调整高度
+                rule.put("mediaPaths", new ArrayList<String>(mediaPaths)); 
                 adjustListViewHeight(mediaListView, mediaPaths.size());
-                // 重新设置选中状态
                 for (int k = 0; k < mediaPaths.size(); k++) {
                     if (selectedMediaPaths.contains(mediaPaths.get(k))) {
                         mediaListView.setItemChecked(k, true);
                     }
                 }
-                // 更新按钮可见性和启用状态
                 updateOrderButtons(mediaListView, orderButtonsLayout, mediaPaths.size(), upButton, downButton, deleteButton);
             }
         };
-        final List<String> cardWxids = new ArrayList<String>(); // 【新增】名片Wxid列表
+        final List<String> cardWxids = new ArrayList<String>(); 
         String replyStrForCard = (String) rule.get("reply");
         if (!TextUtils.isEmpty(replyStrForCard)) {
             String[] wxidParts = replyStrForCard.split(";;;");
@@ -3790,42 +3675,37 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 if (!TextUtils.isEmpty(wxid)) cardWxids.add(wxid);
             }
         }
-        // 【新增】基于内容的选中集 for card
         final Set<String> selectedCardWxids = new HashSet<String>();
-        final Runnable updateCardList = new Runnable() { // 【新增】更新名片列表
+        final Runnable updateCardList = new Runnable() { 
             public void run() {
                 displayCardList.clear();
                 for (int k = 0; k < cardWxids.size(); k++) {
                     String wxid = cardWxids.get(k);
-                    String display = (k + 1) + ". " + (wxid.length() > 30 ? wxid.substring(0, 30) + "..." : wxid);
+                    String name = getDisplayNameForWxid(wxid);
+                    String display = (k + 1) + ". " + (name.length() > 30 ? name.substring(0, 30) + "..." : name);
                     displayCardList.add(display);
                 }
                 ((ArrayAdapter<String>) cardListView.getAdapter()).notifyDataSetChanged();
                 cardListView.clearChoices();
-                cardListView.requestLayout(); // 【新增】强制重绘，确保checked状态更新
-                // 更新currentCardTv为Wxid列表显示
+                cardListView.requestLayout(); 
                 StringBuilder cardDisplay = new StringBuilder();
                 for (String wxid : cardWxids) {
-                    cardDisplay.append(wxid).append("\n");
+                    cardDisplay.append(getDisplayNameForWxid(wxid)).append("\n");
                 }
-                currentCardTv.setText(cardDisplay.toString().trim().isEmpty() ? "未选择名片" : cardDisplay.toString().trim());
-                rule.put("reply", TextUtils.join(";;;", cardWxids)); // 【修复】更新规则的reply为Wxid列表
-                // 【V11】动态调整高度
+                currentCardTv.setText(cardDisplay.toString().trim().isEmpty() ? "未选择内容" : cardDisplay.toString().trim());
+                rule.put("reply", TextUtils.join(";;;", cardWxids)); 
                 adjustListViewHeight(cardListView, cardWxids.size());
-                // 重新设置选中状态
                 for (int k = 0; k < cardWxids.size(); k++) {
                     if (selectedCardWxids.contains(cardWxids.get(k))) {
                         cardListView.setItemChecked(k, true);
                     }
                 }
-                // 更新按钮可见性和启用状态
                 updateOrderButtons(cardListView, cardOrderButtonsLayout, cardWxids.size(), cardUpButton, cardDownButton, cardDeleteButton);
             }
         };
         updateMediaList.run();
-        updateCardList.run(); // 【新增】
+        updateCardList.run(); 
         
-        // 【修复】初始 tag 设置，确保媒体类型加载时 tag 已就位
         int initialReplyType = (Integer) rule.get("replyType");
         String initialExtFilter = "";
         boolean initialIsFolder = false;
@@ -3854,17 +3734,19 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
             public void run() {
                 int type = (Integer) rule.get("replyType");
                 boolean isTextType = (type == REPLY_TYPE_TEXT);
-                boolean isMediaType = !isTextType && (type != REPLY_TYPE_XIAOZHI_AI && type != REPLY_TYPE_ZHILIA_AI && type != REPLY_TYPE_CARD);
-                boolean isCardType = (type == REPLY_TYPE_CARD);
+                boolean isCardOrGroupType = (type == REPLY_TYPE_CARD || type == REPLY_TYPE_INVITE_GROUP);
+                boolean isMediaType = !isTextType && !isCardOrGroupType && (type != REPLY_TYPE_XIAOZHI_AI && type != REPLY_TYPE_ZHILIA_AI);
                 
                 replyContentLabel.setVisibility(isTextType ? View.VISIBLE : View.GONE);
                 replyEdit.setVisibility(isTextType ? View.VISIBLE : View.GONE);
-                mediaDelayLabel.setVisibility(isMediaType || isCardType ? View.VISIBLE : View.GONE);
-                mediaDelayEdit.setVisibility(isMediaType || isCardType ? View.VISIBLE : View.GONE);
+                helpCard.setVisibility(isTextType ? View.VISIBLE : View.GONE); // 变量面板仅文本模式可见
+                
+                mediaDelayLabel.setVisibility(isMediaType || isCardOrGroupType ? View.VISIBLE : View.GONE);
+                mediaDelayEdit.setVisibility(isMediaType || isCardOrGroupType ? View.VISIBLE : View.GONE);
                 mediaLayout.setVisibility(isMediaType ? View.VISIBLE : View.GONE);
                 mediaOrderLayout.setVisibility(isMediaType ? View.VISIBLE : View.GONE);
-                cardLayout.setVisibility(isCardType ? View.VISIBLE : View.GONE); // 【新增】控制名片布局可见性
-                cardOrderLayout.setVisibility(isCardType ? View.VISIBLE : View.GONE); // 【新增】控制名片顺序布局可见性
+                cardLayout.setVisibility(isCardOrGroupType ? View.VISIBLE : View.GONE); 
+                cardOrderLayout.setVisibility(isCardOrGroupType ? View.VISIBLE : View.GONE); 
                 
                 final LinearLayout replyAsQuoteSwitchRow = (LinearLayout) layout.findViewWithTag("replyAsQuoteSwitchRow");
                 if (replyAsQuoteSwitchRow != null) {
@@ -3875,20 +3757,24 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                     quotePrompt.setVisibility(type == REPLY_TYPE_TEXT ? View.VISIBLE : View.GONE);
                 }
                 
-                if (type == REPLY_TYPE_CARD) { // 【修改】名片改为多选
+                if (type == REPLY_TYPE_CARD) { 
                     replyContentLabel.setText("名片 Wxid 列表:");
                     replyEdit.setHint("输入要分享的名片的Wxid（多选用;;;分隔）");
                     selectCardBtn.setText("选择名片好友（多选）");
-                } else if (type == REPLY_TYPE_XIAOZHI_AI || type == REPLY_TYPE_ZHILIA_AI) { // AI类型不显示输入
+                } else if (type == REPLY_TYPE_INVITE_GROUP) {
+                    replyContentLabel.setText("群聊 ID 列表:");
+                    replyEdit.setHint("输入要邀请的群聊ID（多选用;;;分隔）");
+                    selectCardBtn.setText("选择要邀请的群聊（多选）");
+                } else if (type == REPLY_TYPE_XIAOZHI_AI || type == REPLY_TYPE_ZHILIA_AI) { 
                     replyContentLabel.setVisibility(View.GONE);
                     replyEdit.setVisibility(View.GONE);
                     mediaLayout.setVisibility(View.GONE);
                     mediaOrderLayout.setVisibility(View.GONE);
                     mediaDelayLabel.setVisibility(View.GONE);
                     mediaDelayEdit.setVisibility(View.GONE);
-                    cardLayout.setVisibility(View.GONE); // 【新增】AI类型隐藏名片
-                    cardOrderLayout.setVisibility(View.GONE); // 【新增】AI类型隐藏名片顺序
-                } else { // TEXT
+                    cardLayout.setVisibility(View.GONE); 
+                    cardOrderLayout.setVisibility(View.GONE); 
+                } else { 
                     replyContentLabel.setText("回复内容:");
                     replyEdit.setHint("输入自动回复内容...");
                 }
@@ -3912,7 +3798,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                         btnText = "选择视频文件（多选）";
                         break;
                     case REPLY_TYPE_FILE:
-                        extFilter = ""; // 所有文件
+                        extFilter = ""; 
                         btnText = "选择文件（多选）";
                         break;
                     case REPLY_TYPE_VOICE_FILE_LIST:
@@ -3926,11 +3812,9 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                         break;
                 }
                 selectMediaBtn.setText(btnText);
-                // 【修复】每次更新时重新设置tag，确保选择按钮可用
                 Object[] tag = new Object[]{extFilter, isFolder, allowFolder, isMulti};
                 selectMediaBtn.setTag(tag);
                 
-                // 更新显示
                 StringBuilder display = new StringBuilder();
                 if (mediaPaths != null) {
                     for (int i = 0; i < mediaPaths.size(); i++) {
@@ -3945,31 +3829,33 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         int currentReplyType = (Integer) rule.get("replyType");
         switch(currentReplyType) {
             case REPLY_TYPE_XIAOZHI_AI: replyTypeGroup.check(replyTypeXiaozhiAIRadio.getId()); break;
-            case REPLY_TYPE_ZHILIA_AI: replyTypeGroup.check(replyTypeZhiliaAIRadio.getId()); break; // 新增
+            case REPLY_TYPE_ZHILIA_AI: replyTypeGroup.check(replyTypeZhiliaAIRadio.getId()); break; 
             case REPLY_TYPE_IMAGE: replyTypeGroup.check(replyTypeImageRadio.getId()); break;
             case REPLY_TYPE_EMOJI: replyTypeGroup.check(replyTypeEmojiRadio.getId()); break;
             case REPLY_TYPE_VIDEO: replyTypeGroup.check(replyTypeVideoRadio.getId()); break;
             case REPLY_TYPE_CARD: replyTypeGroup.check(replyTypeCardRadio.getId()); break;
             case REPLY_TYPE_VOICE_FILE_LIST: replyTypeGroup.check(replyTypeVoiceFileListRadio.getId()); break;
             case REPLY_TYPE_VOICE_FOLDER: replyTypeGroup.check(replyTypeVoiceFolderRadio.getId()); break;
-            case REPLY_TYPE_FILE: replyTypeGroup.check(replyTypeFileRadio.getId()); break; // 新增
+            case REPLY_TYPE_FILE: replyTypeGroup.check(replyTypeFileRadio.getId()); break; 
+            case REPLY_TYPE_INVITE_GROUP: replyTypeGroup.check(replyTypeInviteGroupRadio.getId()); break;
             default: replyTypeGroup.check(replyTypeTextRadio.getId());
         }
         updateReplyInputVisibility.run();
         
         layout.addView(replyContentLabel);
         layout.addView(replyEdit);
+        layout.addView(helpCard); // 将变量卡片添加进主视图
         layout.addView(mediaDelayLabel);
         layout.addView(mediaDelayEdit);
         layout.addView(mediaLayout);
         layout.addView(mediaOrderLayout);
-        layout.addView(cardLayout); // 【新增】
-        layout.addView(cardOrderLayout); // 【新增】
+        layout.addView(cardLayout); 
+        layout.addView(cardOrderLayout); 
         
         replyTypeGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             public void onCheckedChanged(RadioGroup group, int checkedId) {
                 if (checkedId == replyTypeXiaozhiAIRadio.getId()) rule.put("replyType", REPLY_TYPE_XIAOZHI_AI);
-                else if (checkedId == replyTypeZhiliaAIRadio.getId()) rule.put("replyType", REPLY_TYPE_ZHILIA_AI); // 新增
+                else if (checkedId == replyTypeZhiliaAIRadio.getId()) rule.put("replyType", REPLY_TYPE_ZHILIA_AI); 
                 else if (checkedId == replyTypeTextRadio.getId()) rule.put("replyType", REPLY_TYPE_TEXT);
                 else if (checkedId == replyTypeImageRadio.getId()) rule.put("replyType", REPLY_TYPE_IMAGE);
                 else if (checkedId == replyTypeEmojiRadio.getId()) rule.put("replyType", REPLY_TYPE_EMOJI);
@@ -3977,7 +3863,8 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 else if (checkedId == replyTypeCardRadio.getId()) rule.put("replyType", REPLY_TYPE_CARD);
                 else if (checkedId == replyTypeVoiceFileListRadio.getId()) rule.put("replyType", REPLY_TYPE_VOICE_FILE_LIST);
                 else if (checkedId == replyTypeVoiceFolderRadio.getId()) rule.put("replyType", REPLY_TYPE_VOICE_FOLDER);
-                else if (checkedId == replyTypeFileRadio.getId()) rule.put("replyType", REPLY_TYPE_FILE); // 新增
+                else if (checkedId == replyTypeFileRadio.getId()) rule.put("replyType", REPLY_TYPE_FILE); 
+                else if (checkedId == replyTypeInviteGroupRadio.getId()) rule.put("replyType", REPLY_TYPE_INVITE_GROUP);
                 
                 final LinearLayout replyAsQuoteSwitchRow = (LinearLayout) layout.findViewWithTag("replyAsQuoteSwitchRow");
                 if (replyAsQuoteSwitchRow != null) {
@@ -3997,7 +3884,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
             }
         });
         
-        // 媒体选择按钮逻辑
         selectMediaBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 Object[] tag = (Object[]) selectMediaBtn.getTag();
@@ -4021,7 +3907,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                                     mediaPaths.clear();
                                     mediaPaths.add(path);
                                     StringBuilder display = new StringBuilder();
-                                    display.append(new File(path).getName()); // 【V9】只显示文件名
+                                    display.append(new File(path).getName()); 
                                     currentMediaTv.setText(display.toString());
                                     updateMediaList.run();
                                 } else {
@@ -4043,13 +3929,13 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                                 StringBuilder display = new StringBuilder();
                                 for (int i = 0; i < selectedFiles.size(); i++) {
                                     String p = selectedFiles.get(i);
-                                    display.append(new File(p).getName()).append("\n"); // 【V9】只显示文件名
+                                    display.append(new File(p).getName()).append("\n"); 
                                 }
                                 currentMediaTv.setText(display.toString().trim());
                             } else {
                                 if (!selectedFiles.isEmpty()) {
                                     mediaPaths.add(selectedFiles.get(0));
-                                    currentMediaTv.setText(new File(selectedFiles.get(0)).getName()); // 【V9】只显示文件名
+                                    currentMediaTv.setText(new File(selectedFiles.get(0)).getName()); 
                                 }
                             }
                             updateMediaList.run();
@@ -4059,45 +3945,74 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
             }
         });
         
-        // 【新增】名片选择按钮逻辑：多选好友Wxid
         selectCardBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                showLoadingDialog("选择名片好友", "  正在加载好友列表...", new Runnable() {
-                    public void run() {
-                        if (sCachedFriendList == null) sCachedFriendList = getFriendList();
-                        new Handler(Looper.getMainLooper()).post(new Runnable() {
-                            public void run() {
-                                if (sCachedFriendList == null || sCachedFriendList.isEmpty()) {
-                                    toast("未获取到好友列表");
-                                    return;
-                                }
-                                List names = new ArrayList();
-                                List ids = new ArrayList();
-                                for (int i = 0; i < sCachedFriendList.size(); i++) {
-                                    FriendInfo friendInfo = (FriendInfo) sCachedFriendList.get(i);
-                                    String nickname = TextUtils.isEmpty(friendInfo.getNickname()) ? "未知昵称" : friendInfo.getNickname();
-                                    String remark = friendInfo.getRemark();
-                                    String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
-                                    // 【新增】显示ID（完整ID）
-                                    names.add("👤 " + displayName + "\nID: " + friendInfo.getWxid());
-                                    ids.add(friendInfo.getWxid());
-                                }
-                                final Set<String> tempSelectedWxids = new HashSet<String>(cardWxids);
-                                showMultiSelectDialog("✨ 选择名片好友 ✨", names, ids, tempSelectedWxids, "🔍 搜索好友(昵称/备注)...", new Runnable() {
-                                    public void run() {
-                                        cardWxids.clear();
-                                        cardWxids.addAll(tempSelectedWxids);
-                                        updateCardList.run();
+                int type = (Integer) rule.get("replyType");
+                if (type == REPLY_TYPE_INVITE_GROUP) {
+                    showLoadingDialog("选择群聊", "  正在加载群聊列表...", new Runnable() {
+                        public void run() {
+                            if (sCachedGroupList == null) sCachedGroupList = getGroupList();
+                            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                public void run() {
+                                    if (sCachedGroupList == null || sCachedGroupList.isEmpty()) {
+                                        toast("未获取到群聊列表"); return;
                                     }
-                                }, null);
-                            }
-                        });
-                    }
-                });
+                                    List names = new ArrayList();
+                                    List ids = new ArrayList();
+                                    for (int i = 0; i < sCachedGroupList.size(); i++) {
+                                        GroupInfo groupInfo = (GroupInfo) sCachedGroupList.get(i);
+                                        String groupName = TextUtils.isEmpty(groupInfo.getName()) ? "未知群聊" : groupInfo.getName();
+                                        names.add("🏠 " + groupName + "\nID: " + groupInfo.getRoomId());
+                                        ids.add(groupInfo.getRoomId());
+                                    }
+                                    final Set<String> tempSelected = new HashSet<String>(cardWxids);
+                                    showMultiSelectDialog("✨ 选择要邀请的群聊 ✨", names, ids, tempSelected, "🔍 搜索群聊...", new Runnable() {
+                                        public void run() {
+                                            cardWxids.clear();
+                                            cardWxids.addAll(tempSelected);
+                                            updateCardList.run();
+                                        }
+                                    }, null);
+                                }
+                            });
+                        }
+                    });
+                } else {
+                    showLoadingDialog("选择名片好友", "  正在加载好友列表...", new Runnable() {
+                        public void run() {
+                            if (sCachedFriendList == null) sCachedFriendList = getFriendList();
+                            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                public void run() {
+                                    if (sCachedFriendList == null || sCachedFriendList.isEmpty()) {
+                                        toast("未获取到好友列表");
+                                        return;
+                                    }
+                                    List names = new ArrayList();
+                                    List ids = new ArrayList();
+                                    for (int i = 0; i < sCachedFriendList.size(); i++) {
+                                        FriendInfo friendInfo = (FriendInfo) sCachedFriendList.get(i);
+                                        String nickname = TextUtils.isEmpty(friendInfo.getNickname()) ? "未知昵称" : friendInfo.getNickname();
+                                        String remark = friendInfo.getRemark();
+                                        String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
+                                        names.add("👤 " + displayName + "\nID: " + friendInfo.getWxid());
+                                        ids.add(friendInfo.getWxid());
+                                    }
+                                    final Set<String> tempSelectedWxids = new HashSet<String>(cardWxids);
+                                    showMultiSelectDialog("✨ 选择名片好友 ✨", names, ids, tempSelectedWxids, "🔍 搜索好友(昵称/备注)...", new Runnable() {
+                                        public void run() {
+                                            cardWxids.clear();
+                                            cardWxids.addAll(tempSelectedWxids);
+                                            updateCardList.run();
+                                        }
+                                    }, null);
+                                }
+                            });
+                        }
+                    });
+                }
             }
         });
         
-        // 【修改】媒体顺序管理逻辑：支持多选，动态更新按钮
         mediaListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 String path = mediaPaths.get(position);
@@ -4106,7 +4021,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 } else {
                     selectedMediaPaths.remove(path);
                 }
-                // 更新按钮可见性和启用状态
                 updateOrderButtons(mediaListView, orderButtonsLayout, mediaPaths.size(), upButton, downButton, deleteButton);
             }
         });
@@ -4116,7 +4030,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                     String selectedPath = selectedMediaPaths.iterator().next();
                     int pos = mediaPaths.indexOf(selectedPath);
                     if (pos > 0) {
-                        // 交换位置
                         Collections.swap(mediaPaths, pos, pos - 1);
                         updateMediaList.run();
                     }
@@ -4129,7 +4042,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                     String selectedPath = selectedMediaPaths.iterator().next();
                     int pos = mediaPaths.indexOf(selectedPath);
                     if (pos < mediaPaths.size() - 1) {
-                        // 交换位置
                         Collections.swap(mediaPaths, pos, pos + 1);
                         updateMediaList.run();
                     }
@@ -4146,8 +4058,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
             }
         });
         
-        // 【修改】名片顺序管理逻辑：支持多选，动态更新按钮
-        // 【修复】修复onItemClickListener签名和内容
         cardListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 String wxid = cardWxids.get(position);
@@ -4156,7 +4066,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 } else {
                     selectedCardWxids.remove(wxid);
                 }
-                // 更新按钮可见性和启用状态
                 updateOrderButtons(cardListView, cardOrderButtonsLayout, cardWxids.size(), cardUpButton, cardDownButton, cardDeleteButton);
             }
         });
@@ -4166,7 +4075,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                     String selectedWxid = selectedCardWxids.iterator().next();
                     int pos = cardWxids.indexOf(selectedWxid);
                     if (pos > 0) {
-                        // 交换位置
                         Collections.swap(cardWxids, pos, pos - 1);
                         updateCardList.run();
                     }
@@ -4179,7 +4087,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                     String selectedWxid = selectedCardWxids.iterator().next();
                     int pos = cardWxids.indexOf(selectedWxid);
                     if (pos < cardWxids.size() - 1) {
-                        // 交换位置
                         Collections.swap(cardWxids, pos, pos + 1);
                         updateCardList.run();
                     }
@@ -4197,18 +4104,14 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         });
         
         final LinearLayout replyAsQuoteSwitchRow = createSwitchRow(getTopActivity(), "引用原消息回复", (Boolean) rule.get("replyAsQuote"), new View.OnClickListener() {
-            public void onClick(View v) {
-                // Toggle已内嵌
-            }
+            public void onClick(View v) {}
         });
         replyAsQuoteSwitchRow.setTag("replyAsQuoteSwitchRow");
-        // 【修改】为引用开关添加提示
         TextView quotePrompt = createPromptText("⚠️ 勾选后将引用原消息回复");
         quotePrompt.setTag("quotePrompt");
         layout.addView(replyAsQuoteSwitchRow);
         layout.addView(quotePrompt);
         
-        // --- 卡片3: 匹配方式 ---
         LinearLayout matchCard = createCardLayout();
         matchCard.addView(createSectionTitle("匹配方式"));
         final RadioGroup matchTypeGroup = createRadioGroup(getTopActivity(), LinearLayout.HORIZONTAL);
@@ -4246,7 +4149,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
             keywordEdit.setHint("已禁用（匹配任何消息）");
         } else matchTypeGroup.check(partialMatchRadio.getId());
         
-        // --- 卡片4: @触发 ---
         LinearLayout atCard = createCardLayout();
         atCard.addView(createSectionTitle("@触发"));
         final RadioGroup atTriggerGroup = createRadioGroup(getTopActivity(), LinearLayout.HORIZONTAL);
@@ -4263,7 +4165,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         atCard.addView(atTriggerGroup);
         layout.addView(atCard);
 
-        // 【新增】卡片：拍一拍触发
         LinearLayout patCard = createCardLayout();
         patCard.addView(createSectionTitle("拍一拍触发"));
         final RadioGroup patTriggerGroup = createRadioGroup(getTopActivity(), LinearLayout.HORIZONTAL);
@@ -4277,7 +4178,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         patCard.addView(patTriggerGroup);
         layout.addView(patCard);
         
-        // --- 卡片5: 延迟设置 ---
         LinearLayout delayCard = createCardLayout();
         delayCard.addView(createSectionTitle("延迟回复 (秒)"));
         final EditText delayEdit = createStyledEditText("输入延迟秒数 (0为立即回复)", String.valueOf(rule.get("delaySeconds")));
@@ -4285,7 +4185,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         delayCard.addView(delayEdit);
         layout.addView(delayCard);
         
-        // --- 卡片6: 时间段设置 ---
         LinearLayout timeCard = createCardLayout();
         timeCard.addView(createSectionTitle("生效时间段 (留空则不限制)"));
         LinearLayout timeLayout = new LinearLayout(getTopActivity());
@@ -4293,15 +4192,13 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         timeLayout.setGravity(Gravity.CENTER_VERTICAL);
         final EditText startTimeEdit = createStyledEditText("开始 HH:mm", (String) rule.get("startTime"));
         startTimeEdit.setFocusable(false);
-        // 【修复】设置权重布局，确保起始时间不挤占全部空间
         LinearLayout.LayoutParams startParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        startParams.setMargins(0, 8, 4, 16);  // 轻微右边距
+        startParams.setMargins(0, 8, 4, 16);  
         startTimeEdit.setLayoutParams(startParams);
         final EditText endTimeEdit = createStyledEditText("结束 HH:mm", (String) rule.get("endTime"));
         endTimeEdit.setFocusable(false);
-        // 【修复】设置权重布局，确保结束时间等宽显示
         LinearLayout.LayoutParams endParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        endParams.setMargins(4, 8, 0, 16);  // 轻微左边距
+        endParams.setMargins(4, 8, 0, 16);  
         endTimeEdit.setLayoutParams(endParams);
         startTimeEdit.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showTimePickerDialog(startTimeEdit); } });
         endTimeEdit.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showTimePickerDialog(endTimeEdit); } });
@@ -4309,7 +4206,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         TextView dashText = new TextView(getTopActivity());
         dashText.setText("  -  ");
         dashText.setTextSize(16);
-        // 【优化】dash 文本使用 WRAP_CONTENT，避免影响两侧
         LinearLayout.LayoutParams dashParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         dashText.setLayoutParams(dashParams);
         timeLayout.addView(dashText);
@@ -4317,7 +4213,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         timeCard.addView(timeLayout);
         layout.addView(timeCard);
         
-        // --- 卡片7: 生效目标 ---
         LinearLayout targetCard = createCardLayout();
         targetCard.addView(createSectionTitle("生效目标"));
         final RadioGroup targetTypeGroup = createRadioGroup(getTopActivity(), LinearLayout.HORIZONTAL);
@@ -4388,27 +4283,14 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         updateSelectTargetsButton.run();
         updateSelectExcludedButtons.run();
         
-        // --- 卡片8: 启用开关 ---
         LinearLayout switchCard = createCardLayout();
         final LinearLayout enabledSwitchRow = createSwitchRow(getTopActivity(), "启用此规则", (Boolean) rule.get("enabled"), new View.OnClickListener() {
-            public void onClick(View v) {
-                // Toggle已内嵌
-            }
+            public void onClick(View v) {}
         });
-        // 【修改】为规则开关添加提示
         TextView ruleEnabledPrompt = createPromptText("⚠️ 勾选后启用此规则");
         switchCard.addView(enabledSwitchRow);
         switchCard.addView(ruleEnabledPrompt);
         layout.addView(switchCard);
-        
-        // --- 卡片9: 变量帮助 ---
-        LinearLayout helpCard = createCardLayout();
-        TextView helpText = new TextView(getTopActivity());
-        helpText.setText("可用变量 (仅文本回复):\n%senderName% - 发送者昵称(优先显示备注)\n%senderWxid% - 发送者wxid\n%groupName% - 群名称(仅群聊)\n%time% - 当前时间\n%atSender% - @发送者 (仅群聊)");
-        helpText.setTextSize(12);
-        helpText.setTextColor(Color.parseColor("#666666"));
-        helpCard.addView(helpText);
-        layout.addView(helpCard);
         
         String keyword = (String) rule.get("keyword");
         String dialogTitle = keyword.isEmpty() ? "➕ 添加规则" : "✏️ 编辑规则";
@@ -4422,7 +4304,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
             }
         };
 
-        // 获取引用开关
         final CheckBox enabledCheckBox = (CheckBox) enabledSwitchRow.getChildAt(1);
         final CheckBox quoteCheckBox = (CheckBox) replyAsQuoteSwitchRow.getChildAt(1);
 
@@ -4444,10 +4325,10 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 if (replyType == REPLY_TYPE_TEXT) {
                     if (reply.isEmpty()) { toast("内容不能为空"); return; }
                     rule.put("reply", reply);
-                } else if (replyType == REPLY_TYPE_CARD) {
+                } else if (replyType == REPLY_TYPE_CARD || replyType == REPLY_TYPE_INVITE_GROUP) {
                     rule.put("reply", TextUtils.join(";;;", cardWxids));
-                    if (cardWxids.isEmpty()) { toast("名片Wxid不能为空"); return; }
-                } else if (replyType != REPLY_TYPE_XIAOZHI_AI && replyType != REPLY_TYPE_ZHILIA_AI) { // AI类型不检查
+                    if (cardWxids.isEmpty()) { toast(replyType == REPLY_TYPE_CARD ? "名片Wxid不能为空" : "群聊ID不能为空"); return; }
+                } else if (replyType != REPLY_TYPE_XIAOZHI_AI && replyType != REPLY_TYPE_ZHILIA_AI) { 
                     if (mediaPaths.isEmpty()) { toast("媒体文件路径不能为空"); return; }
                     for (String path : mediaPaths) {
                         File file = new File(path);
@@ -4462,11 +4343,8 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 }
                 String startTime = startTimeEdit.getText().toString().trim();
                 String endTime = endTimeEdit.getText().toString().trim();
-                // 【优化】放宽验证：允许仅设置开始或结束（但如果两者都不空，则视为范围）
-                // 如果仅一个不空，toast 提醒但不阻塞保存
                 if ((!startTime.isEmpty() && endTime.isEmpty()) || (startTime.isEmpty() && !endTime.isEmpty())) {
                     toast("建议同时设置开始和结束时间，否则视为单点时间（非范围）");
-                    // 不 return，继续保存
                 }
                 rule.put("keyword", keyword);
                 rule.put("enabled", enabledCheckBox.isChecked());
@@ -4478,7 +4356,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 else atTriggerType = AT_TRIGGER_NONE;
                 rule.put("atTriggerType", atTriggerType);
 
-                // 【新增】拍一拍触发类型
                 int patTriggerType;
                 if (patTriggerGroup.getCheckedRadioButtonId() == patTriggerMeRadio.getId()) patTriggerType = PAT_TRIGGER_ME;
                 else patTriggerType = PAT_TRIGGER_NONE;
@@ -4490,11 +4367,10 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 rule.put("startTime", startTime);
                 rule.put("endTime", endTime);
                 rule.put("mediaPaths", new ArrayList<String>(mediaPaths));
-                // 【新增】保存媒体延迟
                 try {
                     rule.put("mediaDelaySeconds", Long.parseLong(mediaDelayEdit.getText().toString().trim()));
                 } catch (NumberFormatException e) {
-                    rule.put("mediaDelaySeconds", 1L); // 默认值
+                    rule.put("mediaDelaySeconds", 1L); 
                 }
                 compileRegexPatternForRule(rule);
                 if (!rules.contains(rule)) rules.add(rule);
@@ -4564,13 +4440,12 @@ private void showSelectTargetFriendsDialog(final Set currentSelectedWxids, final
                         String nickname = TextUtils.isEmpty(friendInfo.getNickname()) ? "未知昵称" : friendInfo.getNickname();
                         String remark = friendInfo.getRemark();
                         String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
-                        // 【新增】显示ID（完整ID）
                         names.add("👤 " + displayName + "\nID: " + friendInfo.getWxid());
                         ids.add(friendInfo.getWxid());
                     }
                     showMultiSelectDialog("✨ 选择生效好友 ✨", names, ids, currentSelectedWxids, "🔍 搜索好友(昵称/备注)...", updateButtonCallback, new Runnable() {
                         public void run() {
-                            updateSelectAllButton((AlertDialog) null, null, null); // 简化，实际在通用方法中处理
+                            updateSelectAllButton((AlertDialog) null, null, null); 
                         }
                     });
                 }
@@ -4605,7 +4480,6 @@ private void showSelectTargetGroupsDialog(final Set currentSelectedWxids, final 
                         String groupName = TextUtils.isEmpty(groupInfo.getName()) ? "未知群聊" : groupInfo.getName();
                         String groupId = groupInfo.getRoomId();
                         Integer memberCount = (Integer) sCachedGroupMemberCounts.get(groupId);
-                        // 【新增】显示ID（完整ID）
                         names.add("🏠 " + groupName + " (" + (memberCount != null ? memberCount.intValue() : 0) + "人)" + "\nID: " + groupId);
                         ids.add(groupId);
                     }
@@ -4633,7 +4507,6 @@ private void showSelectExcludeFriendsDialog(final Set currentSelectedWxids, fina
                         String nickname = TextUtils.isEmpty(friendInfo.getNickname()) ? "未知昵称" : friendInfo.getNickname();
                         String remark = friendInfo.getRemark();
                         String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
-                        // 【新增】显示ID（完整ID）
                         names.add("👤 " + displayName + "\nID: " + friendInfo.getWxid());
                         ids.add(friendInfo.getWxid());
                     }
@@ -4670,7 +4543,6 @@ private void showSelectExcludeGroupsDialog(final Set currentSelectedWxids, final
                         String groupName = TextUtils.isEmpty(groupInfo.getName()) ? "未知群聊" : groupInfo.getName();
                         String groupId = groupInfo.getRoomId();
                         Integer memberCount = (Integer) sCachedGroupMemberCounts.get(groupId);
-                        // 【新增】显示ID（完整ID）
                         names.add("🏠 " + groupName + " (" + (memberCount != null ? memberCount.intValue() : 0) + "人)" + "\nID: " + groupId);
                         ids.add(groupId);
                     }
@@ -4714,323 +4586,6 @@ private void showLoadingDialog(String title, String message, final Runnable data
     }).start();
 }
 
-private void showFriendSwitchDialog() {
-    showLoadingDialog("👥 好友自动回复开关", "  正在加载好友列表...", new Runnable() {
-        public void run() {
-            if (sCachedFriendList == null) sCachedFriendList = getFriendList();
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                public void run() {
-                    if (sCachedFriendList == null || sCachedFriendList.isEmpty()) {
-                        toast("未获取到好友列表");
-                        return;
-                    }
-                    List names = new ArrayList();
-                    List ids = new ArrayList();
-                    for (int i = 0; i < sCachedFriendList.size(); i++) {
-                        FriendInfo friendInfo = (FriendInfo) sCachedFriendList.get(i);
-                        String nickname = TextUtils.isEmpty(friendInfo.getNickname()) ? "未知昵称" : friendInfo.getNickname();
-                        String remark = friendInfo.getRemark();
-                        String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
-                        names.add("👤 " + displayName + "\nID: " + friendInfo.getWxid());
-                        ids.add(friendInfo.getWxid());
-                    }
-                    final Set<String> originalEnabledFriends = getStringSet(AUTO_REPLY_ENABLED_FRIENDS_KEY, new HashSet<String>());
-                    final Set<String> tempEnabledFriends = new HashSet<String>(originalEnabledFriends);
-                    final boolean globalFriendEnabled = getBoolean(AUTO_REPLY_FRIEND_ENABLED_KEY, false);
-                    ScrollView scrollView = new ScrollView(getTopActivity());
-                    LinearLayout mainLayout = new LinearLayout(getTopActivity());
-                    mainLayout.setOrientation(LinearLayout.VERTICAL);
-                    mainLayout.setPadding(24, 24, 24, 24);
-                    mainLayout.setBackgroundColor(Color.parseColor("#FAFBF9"));
-                    scrollView.addView(mainLayout);
-                    final LinearLayout globalSwitchRow = createSwitchRow(getTopActivity(), "启用好友自动回复", globalFriendEnabled, new View.OnClickListener() {
-                        public void onClick(View v) {}
-                    });
-                    mainLayout.addView(globalSwitchRow);
-                    TextView friendPrompt = createPromptText("⚠️ 全局开关控制所有好友的自动回复，下面可指定具体好友");
-                    mainLayout.addView(friendPrompt);
-                    final EditText searchEditText = createStyledEditText("🔍 搜索好友(昵称/备注)...", "");
-                    searchEditText.setSingleLine(true);
-                    mainLayout.addView(searchEditText);
-                    final ListView friendListView = new ListView(getTopActivity());
-                    setupListViewTouchForScroll(friendListView);
-                    friendListView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-                    LinearLayout.LayoutParams friendListParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(50));
-                    friendListView.setLayoutParams(friendListParams);
-                    mainLayout.addView(friendListView);
-                    final List currentFilteredFriendIds = new ArrayList();
-                    final List currentFilteredFriendNames = new ArrayList();
-                    final Runnable updateListRunnable = new Runnable() {
-                        public void run() {
-                            String searchText = searchEditText.getText().toString().toLowerCase();
-                            currentFilteredFriendIds.clear();
-                            currentFilteredFriendNames.clear();
-                            for (int i = 0; i < names.size(); i++) {
-                                String id = (String) ids.get(i);
-                                String name = (String) names.get(i);
-                                if (searchText.isEmpty() || name.toLowerCase().contains(searchText) || id.toLowerCase().contains(searchText)) {
-                                    currentFilteredFriendIds.add(id);
-                                    currentFilteredFriendNames.add(name);
-                                }
-                            }
-                            ArrayAdapter adapter = new ArrayAdapter(getTopActivity(), android.R.layout.simple_list_item_multiple_choice, currentFilteredFriendNames);
-                            friendListView.setAdapter(adapter);
-                            friendListView.clearChoices();
-                            for (int j = 0; j < currentFilteredFriendIds.size(); j++) {
-                                friendListView.setItemChecked(j, tempEnabledFriends.contains(currentFilteredFriendIds.get(j)));
-                            }
-                            adjustListViewHeight(friendListView, currentFilteredFriendIds.size());
-                            final AlertDialog currentDialog = (AlertDialog) searchEditText.getTag();
-                            if (currentDialog != null) {
-                                updateSelectAllButton(currentDialog, currentFilteredFriendIds, tempEnabledFriends);
-                            }
-                        }
-                    };
-                    friendListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-                        public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                            String selectedId = (String) currentFilteredFriendIds.get(position);
-                            if (friendListView.isItemChecked(position)) tempEnabledFriends.add(selectedId);
-                            else tempEnabledFriends.remove(selectedId);
-                            final AlertDialog currentDialog = (AlertDialog) searchEditText.getTag();
-                            if (currentDialog != null) {
-                                updateSelectAllButton(currentDialog, currentFilteredFriendIds, tempEnabledFriends);
-                            }
-                        }
-                    });
-                    final Handler searchHandler = new Handler(Looper.getMainLooper());
-                    final Runnable searchRunnable = new Runnable() {
-                        public void run() {
-                            updateListRunnable.run();
-                        }
-                    };
-                    searchEditText.addTextChangedListener(new TextWatcher() {
-                        public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-                        public void onTextChanged(CharSequence s, int start, int before, int count) {
-                            if (searchRunnable != null) searchHandler.removeCallbacks(searchRunnable);
-                        }
-                        public void afterTextChanged(Editable s) {
-                            searchHandler.postDelayed(searchRunnable, 300);
-                        }
-                    });
-                    
-                    final CheckBox globalCheckBox = (CheckBox) globalSwitchRow.getChildAt(1);
-                    
-                    final DialogInterface.OnClickListener fullSelectListener = new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int which) {
-                            boolean shouldSelectAll = shouldSelectAll(currentFilteredFriendIds, tempEnabledFriends);
-                            for (int i = 0; i < currentFilteredFriendIds.size(); i++) {
-                                String id = (String) currentFilteredFriendIds.get(i);
-                                if (shouldSelectAll) {
-                                    tempEnabledFriends.add(id);
-                                } else {
-                                    tempEnabledFriends.remove(id);
-                                }
-                                friendListView.setItemChecked(i, shouldSelectAll);
-                            }
-                            friendListView.getAdapter().notifyDataSetChanged();
-                            friendListView.requestLayout();
-                            updateSelectAllButton((AlertDialog) dialog, currentFilteredFriendIds, tempEnabledFriends);
-                        }
-                    };
-
-                    final AlertDialog dialog = buildCommonAlertDialog(getTopActivity(), "✨ 好友自动回复开关 ✨", scrollView, "✅ 保存", new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int which) {
-                            putBoolean(AUTO_REPLY_FRIEND_ENABLED_KEY, globalCheckBox.isChecked());
-                            putStringSet(AUTO_REPLY_ENABLED_FRIENDS_KEY, tempEnabledFriends);
-                            toast("好友自动回复设置已保存");
-                        }
-                    }, "❌ 取消", new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int which) {
-                            dialog.dismiss();
-                        }
-                    }, "全选", fullSelectListener);
-
-                    dialog.setOnShowListener(new DialogInterface.OnShowListener() {
-                        public void onShow(DialogInterface dialogInterface) {
-                            setupUnifiedDialog((AlertDialog) dialogInterface);
-                            Button neutralBtn = ((AlertDialog) dialogInterface).getButton(AlertDialog.BUTTON_NEUTRAL);
-                            if (neutralBtn != null) {
-                                neutralBtn.setOnClickListener(new View.OnClickListener() {
-                                    public void onClick(View v) {
-                                        fullSelectListener.onClick(dialog, AlertDialog.BUTTON_NEUTRAL);
-                                    }
-                                });
-                            }
-                        }
-                    });
-                    searchEditText.setTag(dialog);
-
-                    dialog.show();
-                    updateListRunnable.run();
-                }
-            });
-        }
-    });
-}
-
-private void showGroupSwitchDialog() {
-    showLoadingDialog("🏠 群聊自动回复开关", "  正在加载群聊列表...", new Runnable() {
-        public void run() {
-            if (sCachedGroupList == null) sCachedGroupList = getGroupList();
-            if (sCachedGroupMemberCounts == null) {
-                sCachedGroupMemberCounts = new HashMap();
-                if (sCachedGroupList != null) {
-                    for (int i = 0; i < sCachedGroupList.size(); i++) {
-                        String groupId = ((GroupInfo) sCachedGroupList.get(i)).getRoomId();
-                        if (groupId != null) sCachedGroupMemberCounts.put(groupId, new Integer(getGroupMemberCount(groupId)));
-                    }
-                }
-            }
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                public void run() {
-                    if (sCachedGroupList == null || sCachedGroupList.isEmpty()) {
-                        toast("未获取到群聊列表");
-                        return;
-                    }
-                    List names = new ArrayList();
-                    List ids = new ArrayList();
-                    for (int i = 0; i < sCachedGroupList.size(); i++) {
-                        GroupInfo groupInfo = (GroupInfo) sCachedGroupList.get(i);
-                        String groupName = TextUtils.isEmpty(groupInfo.getName()) ? "未知群聊" : groupInfo.getName();
-                        String groupId = groupInfo.getRoomId();
-                        Integer memberCount = (Integer) sCachedGroupMemberCounts.get(groupId);
-                        names.add("🏠 " + groupName + " (" + (memberCount != null ? memberCount.intValue() : 0) + "人)" + "\nID: " + groupId);
-                        ids.add(groupId);
-                    }
-                    final Set<String> originalEnabledGroups = getStringSet(AUTO_REPLY_ENABLED_GROUPS_KEY, new HashSet<String>());
-                    final Set<String> tempEnabledGroups = new HashSet<String>(originalEnabledGroups);
-                    final boolean globalGroupEnabled = getBoolean(AUTO_REPLY_GROUP_ENABLED_KEY, false);
-                    ScrollView scrollView = new ScrollView(getTopActivity());
-                    LinearLayout mainLayout = new LinearLayout(getTopActivity());
-                    mainLayout.setOrientation(LinearLayout.VERTICAL);
-                    mainLayout.setPadding(24, 24, 24, 24);
-                    mainLayout.setBackgroundColor(Color.parseColor("#FAFBF9"));
-                    scrollView.addView(mainLayout);
-                    final LinearLayout globalSwitchRow = createSwitchRow(getTopActivity(), "启用群聊自动回复", globalGroupEnabled, new View.OnClickListener() {
-                        public void onClick(View v) {}
-                    });
-                    mainLayout.addView(globalSwitchRow);
-                    TextView groupPrompt = createPromptText("⚠️ 全局开关控制所有群聊的自动回复，下面可指定具体群聊");
-                    mainLayout.addView(groupPrompt);
-                    final EditText searchEditText = createStyledEditText("🔍 搜索群聊...", "");
-                    searchEditText.setSingleLine(true);
-                    mainLayout.addView(searchEditText);
-                    final ListView groupListView = new ListView(getTopActivity());
-                    setupListViewTouchForScroll(groupListView);
-                    groupListView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-                    LinearLayout.LayoutParams groupListParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(50));
-                    groupListView.setLayoutParams(groupListParams);
-                    mainLayout.addView(groupListView);
-                    final List currentFilteredGroupIds = new ArrayList();
-                    final List currentFilteredGroupNames = new ArrayList();
-                    final Runnable updateListRunnable = new Runnable() {
-                        public void run() {
-                            String searchText = searchEditText.getText().toString().toLowerCase();
-                            currentFilteredGroupIds.clear();
-                            currentFilteredGroupNames.clear();
-                            for (int i = 0; i < names.size(); i++) {
-                                String id = (String) ids.get(i);
-                                String name = (String) names.get(i);
-                                if (searchText.isEmpty() || name.toLowerCase().contains(searchText) || id.toLowerCase().contains(searchText)) {
-                                    currentFilteredGroupIds.add(id);
-                                    currentFilteredGroupNames.add(name);
-                                }
-                            }
-                            ArrayAdapter adapter = new ArrayAdapter(getTopActivity(), android.R.layout.simple_list_item_multiple_choice, currentFilteredGroupNames);
-                            groupListView.setAdapter(adapter);
-                            groupListView.clearChoices();
-                            for (int j = 0; j < currentFilteredGroupIds.size(); j++) {
-                                groupListView.setItemChecked(j, tempEnabledGroups.contains(currentFilteredGroupIds.get(j)));
-                            }
-                            adjustListViewHeight(groupListView, currentFilteredGroupIds.size());
-                            final AlertDialog currentDialog = (AlertDialog) searchEditText.getTag();
-                            if (currentDialog != null) {
-                                updateSelectAllButton(currentDialog, currentFilteredGroupIds, tempEnabledGroups);
-                            }
-                        }
-                    };
-                    groupListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-                        public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                            String selectedId = (String) currentFilteredGroupIds.get(position);
-                            if (groupListView.isItemChecked(position)) tempEnabledGroups.add(selectedId);
-                            else tempEnabledGroups.remove(selectedId);
-                            final AlertDialog currentDialog = (AlertDialog) searchEditText.getTag();
-                            if (currentDialog != null) {
-                                updateSelectAllButton(currentDialog, currentFilteredGroupIds, tempEnabledGroups);
-                            }
-                        }
-                    });
-                    final Handler searchHandler = new Handler(Looper.getMainLooper());
-                    final Runnable searchRunnable = new Runnable() {
-                        public void run() {
-                            updateListRunnable.run();
-                        }
-                    };
-                    searchEditText.addTextChangedListener(new TextWatcher() {
-                        public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-                        public void onTextChanged(CharSequence s, int start, int before, int count) {
-                            if (searchRunnable != null) searchHandler.removeCallbacks(searchRunnable);
-                        }
-                        public void afterTextChanged(Editable s) {
-                            searchHandler.postDelayed(searchRunnable, 300);
-                        }
-                    });
-                    
-                    final CheckBox globalCheckBox = (CheckBox) globalSwitchRow.getChildAt(1);
-                    
-                    final DialogInterface.OnClickListener fullSelectListener = new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int which) {
-                            boolean shouldSelectAll = shouldSelectAll(currentFilteredGroupIds, tempEnabledGroups);
-                            for (int i = 0; i < currentFilteredGroupIds.size(); i++) {
-                                String id = (String) currentFilteredGroupIds.get(i);
-                                if (shouldSelectAll) {
-                                    tempEnabledGroups.add(id);
-                                } else {
-                                    tempEnabledGroups.remove(id);
-                                }
-                                groupListView.setItemChecked(i, shouldSelectAll);
-                            }
-                            groupListView.getAdapter().notifyDataSetChanged();
-                            groupListView.requestLayout();
-                            updateSelectAllButton((AlertDialog) dialog, currentFilteredGroupIds, tempEnabledGroups);
-                        }
-                    };
-
-                    final AlertDialog dialog = buildCommonAlertDialog(getTopActivity(), "✨ 群聊自动回复开关 ✨", scrollView, "✅ 保存", new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int which) {
-                            putBoolean(AUTO_REPLY_GROUP_ENABLED_KEY, globalCheckBox.isChecked());
-                            putStringSet(AUTO_REPLY_ENABLED_GROUPS_KEY, tempEnabledGroups);
-                            toast("群聊自动回复设置已保存");
-                        }
-                    }, "❌ 取消", new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int which) {
-                            dialog.dismiss();
-                        }
-                    }, "全选", fullSelectListener);
-
-                    dialog.setOnShowListener(new DialogInterface.OnShowListener() {
-                        public void onShow(DialogInterface dialogInterface) {
-                            setupUnifiedDialog((AlertDialog) dialogInterface);
-                            Button neutralBtn = ((AlertDialog) dialogInterface).getButton(AlertDialog.BUTTON_NEUTRAL);
-                            if (neutralBtn != null) {
-                                neutralBtn.setOnClickListener(new View.OnClickListener() {
-                                    public void onClick(View v) {
-                                        fullSelectListener.onClick(dialog, AlertDialog.BUTTON_NEUTRAL);
-                                    }
-                                });
-                            }
-                        }
-                    });
-                    searchEditText.setTag(dialog);
-                    
-                    dialog.show();
-                    updateListRunnable.run();
-                }
-            });
-        }
-    });
-}
-
 private List loadAutoReplyRules() {
     Set rulesSet = getStringSet(AUTO_REPLY_RULES_KEY, new HashSet());
     List rules = new ArrayList();
@@ -5038,10 +4593,7 @@ private List loadAutoReplyRules() {
         Map<String, Object> rule = ruleFromString((String) ruleStr);
         if (rule != null) rules.add(rule);
     }
-    if (rules.isEmpty()) {
-        rules.add(createAutoReplyRuleMap("你好", "您好！我现在不在，稍后回复您。", true, MATCH_TYPE_FUZZY, new HashSet(), TARGET_TYPE_NONE, AT_TRIGGER_NONE, 0, false, REPLY_TYPE_TEXT, new ArrayList()));
-        rules.add(createAutoReplyRuleMap("在吗", "我暂时不在，有事请留言。", true, MATCH_TYPE_FUZZY, new HashSet(), TARGET_TYPE_NONE, AT_TRIGGER_NONE, 0, false, REPLY_TYPE_TEXT, new ArrayList()));
-    }
+    // 已根据要求删除自动生成“你好”、“在吗”等默认规则的代码块
     return rules;
 }
 
@@ -5071,7 +4623,6 @@ private void showAIConfigDialog() {
     layout.setBackgroundColor(Color.parseColor("#FAFBF9"));
     scrollView.addView(layout);
     
-    // --- 卡片1: 服务配置 ---
     LinearLayout configCard = createCardLayout();
     configCard.addView(createSectionTitle("服务配置"));
     configCard.addView(createTextView(activity, "WS地址:", 14, 0));
@@ -5085,7 +4636,6 @@ private void showAIConfigDialog() {
     configCard.addView(consoleEdit);
     layout.addView(configCard);
 
-    // --- 卡片2: 设备信息 ---
     LinearLayout deviceCard = createCardLayout();
     deviceCard.addView(createSectionTitle("设备信息"));
     TextView macText = new TextView(activity);
@@ -5100,7 +4650,6 @@ private void showAIConfigDialog() {
     deviceCard.addView(uuidText);
     layout.addView(deviceCard);
 
-    // --- 卡片3: 操作按钮 ---
     LinearLayout buttonCard = createCardLayout();
     Button bindButton = new Button(activity);
     bindButton.setText("绑定设备");
@@ -5227,19 +4776,7 @@ private void addStyledText(SpannableStringBuilder builder, String text, String c
     builder.setSpan(new ForegroundColorSpan(Color.parseColor(color)), start, end, 0);
     builder.setSpan(new AbsoluteSizeSpan(textSize, true), start, end, 0);
 }
-// 【新增】反射获取Object方法（用于PatMsg）
-private Object invokeObjectMethod(Object obj, String methodName) {
-    if (obj == null) return null;
-    try {
-        Method method = obj.getClass().getMethod(methodName);
-        return method.invoke(obj);
-    } catch (Exception e) {
-        log("Error invoking object method: " + methodName + " - " + e.getMessage());
-        return null;
-    }
-}
 
-// 【新增】时间选择器对话框
 private void showTimePickerDialog(final EditText timeEdit) {
     final AlertDialog timeDialog = new AlertDialog.Builder(getTopActivity()).create();
     LinearLayout timeLayout = new LinearLayout(getTopActivity());
@@ -5265,7 +4802,60 @@ private void showTimePickerDialog(final EditText timeEdit) {
     timeDialog.show();
 }
 
-// 【新增】统一设置对话框样式
+private List getReplyItems(String itemsKey, String defaultText) {
+    List replyItems = new ArrayList();
+    String itemsStr = getString(itemsKey, "");
+    
+    if (TextUtils.isEmpty(itemsStr)) {
+        if (!TextUtils.isEmpty(defaultText)) {
+            replyItems.add(new AcceptReplyItem(ACCEPT_REPLY_TYPE_TEXT, defaultText));
+        }
+    } else {
+        String[] itemArray = itemsStr.split(LIST_SEPARATOR);
+        for (String itemStr : itemArray) {
+            if (!TextUtils.isEmpty(itemStr.trim())) {
+                AcceptReplyItem item = AcceptReplyItem.fromString(itemStr.trim());
+                if (item != null) {
+                    replyItems.add(item);
+                }
+            }
+        }
+    }
+    return replyItems;
+}
+
+private List getGreetOnAcceptedReplyItems() {
+    return getReplyItems(GREET_ON_ACCEPTED_REPLY_ITEMS_KEY, "哈喽，%friendName%！感谢通过好友请求，以后请多指教啦！");
+}
+
+private void saveAutoAcceptReplyItems(List replyItems) {
+    if (replyItems == null || replyItems.isEmpty()) {
+        putString(AUTO_ACCEPT_REPLY_ITEMS_KEY, "");
+        return;
+    }
+    
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < replyItems.size(); i++) {
+        if (i > 0) sb.append(LIST_SEPARATOR);
+        sb.append(replyItems.get(i).toString());
+    }
+    putString(AUTO_ACCEPT_REPLY_ITEMS_KEY, sb.toString());
+}
+
+private void saveGreetOnAcceptedReplyItems(List replyItems) {
+    if (replyItems == null || replyItems.isEmpty()) {
+        putString(GREET_ON_ACCEPTED_REPLY_ITEMS_KEY, "");
+        return;
+    }
+    
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < replyItems.size(); i++) {
+        if (i > 0) sb.append(LIST_SEPARATOR);
+        sb.append(replyItems.get(i).toString());
+    }
+    putString(GREET_ON_ACCEPTED_REPLY_ITEMS_KEY, sb.toString());
+}
+
 private void setupUnifiedDialog(AlertDialog dialog) {
     GradientDrawable dialogBg = new GradientDrawable();
     dialogBg.setCornerRadius(48);
@@ -5274,7 +4864,6 @@ private void setupUnifiedDialog(AlertDialog dialog) {
     styleDialogButtons(dialog);
 }
 
-// --- 新增的配置读写方法 ---
 private void putString(String setName, String itemName, String value) {
     String existingData = getString(setName, "{}");
     try {
@@ -5296,7 +4885,6 @@ private String getString(String setName, String itemName, String defaultValue) {
             return json.getString(itemName);
         }
     } catch (Exception e) {
-        // ignore
     }
     return defaultValue;
 }

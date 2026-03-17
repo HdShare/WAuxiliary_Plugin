@@ -128,47 +128,88 @@ void scanFiles(final File folder, final String ext, final int mode) {
     dialog.show();
 }
 
-/* ========== 4. 处理文件（3 个分支） ========== */
-void handleFile(File src, int mode) {
-    if (mode == 2) {
-        /* 直接发送原 silk 语音（固定 60 秒，可改） */
-        int fixedMs = 1000;
-        try {
-            sendVoice(getTargetTalker(), src.getAbsolutePath(), fixedMs);
-            toast("已直接发送原 silk");
-        } catch (Throwable e) {
-            toast("发送失败：" + e);
-        }
+/* ========== 4. 处理文件（3 个分支） - 修复跨线程调用 ========== */
+void handleFile(final File src, final int mode) {
+    toast("正在处理中，请稍候...");
+
+    // 提前在主线程获取发送目标（跨线程获取可能会报错）
+    String tempTalker = "";
+    try {
+        if (mode == 0 || mode == 2) tempTalker = getTargetTalker();
+    } catch (Throwable e) {
+        showRealError("获取联系人失败", e);
         return;
     }
+    final String talker = tempTalker;
 
-    /* 其余两种：转换后发送 / 保存 */
-    String base = src.getName().replaceFirst("\\.[^.]*$", "") + "_" + System.currentTimeMillis();
-    forceClean();
-    if (mode == 0) {
-        /* mp3 → silk 并发送 */
-        String silk = CACHE_DIR + base + ".silk";
-        try {
-            mp3ToSilk(src.getAbsolutePath(), silk);
-            int ms = (int)(new File(silk).length() / 1024.0 * 26);
-            sendVoice(getTargetTalker(), silk, ms);
-            toast("已发送");
-            new File(silk).delete();
-            forceClean();
-        } catch (Throwable e) {
-            toast("转换失败：" + e);
+    // 开启新线程进行耗时操作（音视频转换）
+    new Thread(new Runnable() {
+       
+        public void run() {
+            try {
+                if (mode == 2) {
+                    /* 直接发送原 silk 语音 */
+                    runOnMainThread(new Runnable() {
+                        public void run() {
+                            try {
+                                sendVoice(talker, src.getAbsolutePath());
+                                toast("已直接发送原 silk");
+                            } catch (Throwable e) {
+                                showRealError("发送失败", e);
+                            }
+                        }
+                    });
+                    return;
+                }
+
+                /* 其余两种：转换后发送 / 保存 */
+                String base = src.getName().replaceFirst("\\.[^.]*$", "") + "_" + System.currentTimeMillis();
+                forceClean();
+                
+                if (mode == 0) {
+                    /* mp3 → silk 并发送 */
+                    final String silk = CACHE_DIR + base + ".silk";
+                    
+                    // 1. 耗时操作：转换（在子线程）
+                    mp3ToSilk(src.getAbsolutePath(), silk);
+
+                    // 2. 转换完成后，切回主线程发送和弹窗
+                    runOnMainThread(new Runnable() {
+                        public void run() {
+                            try {
+                                sendVoice(talker, silk);
+                                toast("转换并发送成功");
+                                new File(silk).delete();
+                                forceClean();
+                            } catch (Throwable e) {
+                                showRealError("发送失败", e);
+                            }
+                        }
+                    });
+                } else {
+                    /* silk → mp3 保存 */
+                    final String mp3 = OUT_DIR + base + ".mp3";
+                    
+                    // 1. 耗时操作：转换（在子线程）
+                    silkToMp3(src.getAbsolutePath(), mp3);
+                    
+                    // 2. 转换完成后，切回主线程提示
+                    runOnMainThread(new Runnable() {
+                        public void run() {
+                            toast("已转换并保存到 " + mp3);
+                            forceClean();
+                        }
+                    });
+                }
+            } catch (final Throwable e) {
+                runOnMainThread(new Runnable() {
+                    public void run() {
+                        showRealError("后台处理失败", e);
+                    }
+                });
+            }
         }
-    } else {
-        /* silk → mp3 保存 */
-        String mp3 = OUT_DIR + base + ".mp3";
-        try {
-            silkToMp3(src.getAbsolutePath(), mp3);
-            toast("已保存到 " + mp3);
-            forceClean();
-        } catch (Throwable e) {
-            toast("转换失败：" + e);
-        }
-    }
+    }).start();
 }
 
 /* ========== 强制清理临时文件 ========== */
@@ -181,4 +222,20 @@ void forceClean() {
             if (f.getName().startsWith("tmp_audio_")) f.delete();
         }
     }
+}
+
+/* ========== 辅助方法：确保在主线程执行UI和微信API ========== */
+void runOnMainThread(Runnable r) {
+    if (getTopActivity() != null) {
+        getTopActivity().runOnUiThread(r);
+    }
+}
+
+/* ========== 辅助方法：剥离反射异常，显示真正的死因 ========== */
+void showRealError(String prefix, Throwable e) {
+    Throwable cause = e;
+    if (e instanceof java.lang.reflect.InvocationTargetException) {
+        cause = ((java.lang.reflect.InvocationTargetException) e).getTargetException();
+    }
+    toast(prefix + "：" + (cause != null ? cause.toString() : e.toString()));
 }

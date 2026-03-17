@@ -1,15 +1,21 @@
-name: Generate Plugins
+name: Generate Plugins and Deploy
 
 on:
   push:
     branches: [ main ]
     paths:
-      - '.github/workflows/generate.js'
-      - 'plugins/v126/**'
+      - ".github/workflows/generate.js"
+      - "plugins/v126/**"
   workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   generate-plugins:
@@ -49,3 +55,27 @@ jobs:
             git commit -m "文档: 自动构建插件列表"
             git push
           fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Build VitePress
+        run: npm run docs:build
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    if: ${{ github.repository == 'HdShare/WAuxiliary_Plugin' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: generate-plugins
+    runs-on: ubuntu-latest
+    name: Deploy
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

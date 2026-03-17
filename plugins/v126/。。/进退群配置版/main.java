@@ -15,6 +15,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
@@ -47,6 +48,8 @@ import java.util.Set;
 
 // 你原有的 GroupInfo 类
 import me.hd.wauxv.data.bean.info.GroupInfo;
+
+// === 顶部独立声明的类与接口 ===
 
 // 定义一个内部类来封装卡片消息
 class MediaMessage {
@@ -84,6 +87,12 @@ class SendTask {
     }
 }
 
+// 文件选择回调接口
+interface MediaSelectionCallback {
+    void onSelected(ArrayList<String> selectedFiles);
+}
+
+
 // === 存储 Key 定义 ===
 private final String LISTEN_GROUPS_KEY = "listen_groups";
 private final String DELAY_KEY = "send_delay";
@@ -91,6 +100,8 @@ private final int DEFAULT_DELAY = 10;
 private final String JOIN_TOGGLE_KEY = "join_toggle";
 private final String LEFT_TOGGLE_KEY = "left_toggle";
 private final String PROMPT_TYPE_KEY = "prompt_type";
+
+// 全局提示语Key
 private final String JOIN_TEXT_PROMPT_KEY = "join_text_prompt";
 private final String LEFT_TEXT_PROMPT_KEY = "left_text_prompt";
 private final String JOIN_CARD_TITLE_KEY = "join_card_title";
@@ -98,39 +109,42 @@ private final String LEFT_CARD_TITLE_KEY = "left_card_title";
 private final String JOIN_CARD_DESC_KEY = "join_card_desc";
 private final String LEFT_CARD_DESC_KEY = "left_card_desc";
 
-// 新增媒体发送设置
+// 媒体发送设置
 private final String JOIN_IMAGE_PATHS_KEY = "join_image_paths";
 private final String LEFT_IMAGE_PATHS_KEY = "left_image_paths";
 private final String JOIN_EMOJI_PATHS_KEY = "join_emoji_paths";
 private final String LEFT_EMOJI_PATHS_KEY = "left_emoji_paths";
 private final String JOIN_VOICE_PATHS_KEY = "join_voice_paths";
 private final String LEFT_VOICE_PATHS_KEY = "left_voice_paths";
-private final String JOIN_VIDEO_PATHS_KEY = "join_video_paths"; // 新增：视频路径
-private final String LEFT_VIDEO_PATHS_KEY = "left_video_paths"; // 新增：视频路径
-private final String JOIN_FILE_PATHS_KEY = "join_file_paths"; // 新增：分享文件路径
-private final String LEFT_FILE_PATHS_KEY = "left_file_paths"; // 新增：分享文件路径
-private final String SEND_MEDIA_ORDER_KEY = "send_media_order"; // "none", "before", "after"
-private final String SEND_MEDIA_SEQUENCE_KEY = "send_media_sequence"; // e.g., "image,voice,emoji,video,file"
+private final String JOIN_VIDEO_PATHS_KEY = "join_video_paths";
+private final String LEFT_VIDEO_PATHS_KEY = "left_video_paths";
+private final String JOIN_FILE_PATHS_KEY = "join_file_paths";
+private final String LEFT_FILE_PATHS_KEY = "left_file_paths";
+private final String SEND_MEDIA_ORDER_KEY = "send_media_order";
+private final String SEND_MEDIA_SEQUENCE_KEY = "send_media_sequence";
 
-// 新增：精细化延迟设置 (单位: 毫秒)
+// 精细化延迟设置 (单位: 毫秒)
 private final String PROMPT_DELAY_KEY = "prompt_delay_ms";
 private final String IMAGE_DELAY_KEY = "image_delay_ms";
 private final String VOICE_DELAY_KEY = "voice_delay_ms";
 private final String EMOJI_DELAY_KEY = "emoji_delay_ms";
-private final String VIDEO_DELAY_KEY = "video_delay_ms"; // 新增：视频延迟
-private final String FILE_DELAY_KEY = "file_delay_ms"; // 新增：文件延迟
+private final String VIDEO_DELAY_KEY = "video_delay_ms";
+private final String FILE_DELAY_KEY = "file_delay_ms";
 
-// [新增] 丰富的随机提示语库（每次填充时随机选一条）
+// 记录当前获得焦点的输入框，用于快捷插入变量
+private EditText currentFocusedEdit = null;
+
+// 丰富的随机提示语库（每次填充时随机选一条）
 private final String[] RANDOM_JOIN_TEXTS_ARRAY = new String[] {
     "[AtWx=%userWxid%] 欢迎 %userName% 加入 %groupName%～ 🎉",
-    "热烈欢迎新朋友 %userName%，大家请多关照！",
+    "热烈欢迎新朋友 %userName% (群名片: %groupNickname%)，大家请多关照！",
     "又来了一位大佬，欢迎 %userName%！记得看群公告哦~",
     "捕捉到一只小萌新 %userName%，来打个招呼吧～",
     "欢迎 %userName%，愿在 %groupName% 玩得开心～"
 };
 private final String[] RANDOM_LEFT_TEXTS_ARRAY = new String[] {
     "有缘再会，祝 %userName% 前程似锦。",
-    "悄悄地他走了，正如他悄悄地来。再见，%userName%。",
+    "悄悄地他走了，正如他悄悄地来。再见，%userName% (群名片: %groupNickname%)。",
     "%userName% 已离开群聊，愿一切安好。",
     "青山不改，绿水长流，后会有期。",
     "我们会想念你的，%userName%。"
@@ -142,7 +156,7 @@ private final String[] RANDOM_JOIN_CARD_TITLES_ARRAY = new String[] {
 };
 private final String[] RANDOM_JOIN_CARD_DESCS_ARRAY = new String[] {
     "常来聊天哦~",
-    "群名称：%groupName% \n进群时间：%time%",
+    "群名称：%groupName% \n名片：%groupNickname%\n进群时间：%time%",
     "快来和大家一起玩耍吧！\nID: %userWxid%"
 };
 private final String[] RANDOM_LEFT_CARD_TITLES_ARRAY = new String[] {
@@ -152,14 +166,14 @@ private final String[] RANDOM_LEFT_CARD_TITLES_ARRAY = new String[] {
 };
 private final String[] RANDOM_LEFT_CARD_DESCS_ARRAY = new String[] {
     "我们有缘再见",
-    "群名称：%groupName% \n离群时间：%time%",
+    "群名称：%groupName% \n名片：%groupNickname%\n离群时间：%time%",
     "相逢是缘，祝君安好。"
 };
 
 // === 按钮点击事件处理 ===
 public boolean onClickSendBtn(String text) {
-    // 将所有设置入口合并为一个命令
     if ("进退群设置".equals(text)) {
+        currentFocusedEdit = null; // 打开新界面时重置焦点状态
         showUnifiedSettingsDialog();
         return true;
     }
@@ -191,29 +205,44 @@ public void onMemberChange(final String type, final String groupWxid, final Stri
             final String groupName = getGroupNameById(groupWxid);
             final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
             final String currentTime = sdf.format(new Date());
-            final String promptType = getString(PROMPT_TYPE_KEY, "text");
-            final String mediaOrder = getString(SEND_MEDIA_ORDER_KEY, "none");
-            final String mediaSequence = getString(SEND_MEDIA_SEQUENCE_KEY, "image,voice,emoji,video,file");
+            
+            // 智能判断当前群的提示语类型（文本/卡片），如果有专属设置优先使用专属
+            String customPromptType = getString(PROMPT_TYPE_KEY + "_" + groupWxid, "global");
+            final String finalPromptType = "global".equals(customPromptType) ? getString(PROMPT_TYPE_KEY, "text") : customPromptType;
+            
+            // 智能判断当前群的媒体发送模式 (global/custom/none)
+            final String mediaMode = getString("media_mode_" + groupWxid, "global");
+            final String mediaSuffix = "custom".equals(mediaMode) ? "_" + groupWxid : "";
 
-            // 新增：获取显示名称（优先群备注，没有则用昵称）
-            final String displayName = getDisplayName(userWxid, groupWxid, userName);
+            final String mediaOrder;
+            final String mediaSequence;
+            if ("none".equals(mediaMode)) {
+                mediaOrder = "none";
+                mediaSequence = "";
+            } else {
+                mediaOrder = getString(SEND_MEDIA_ORDER_KEY + mediaSuffix, getString(SEND_MEDIA_ORDER_KEY, "none"));
+                mediaSequence = getString(SEND_MEDIA_SEQUENCE_KEY + mediaSuffix, getString(SEND_MEDIA_SEQUENCE_KEY, "image,voice,emoji,video,file"));
+            }
 
-            // 2. 获取精细化的延迟设置
-            final long promptDelay = getInt(PROMPT_DELAY_KEY, 0);
-            final long imageDelay = getInt(IMAGE_DELAY_KEY, 100);
-            final long voiceDelay = getInt(VOICE_DELAY_KEY, 100);
-            final long emojiDelay = getInt(EMOJI_DELAY_KEY, 100);
-            final long videoDelay = getInt(VIDEO_DELAY_KEY, 100);
-            final long fileDelay = getInt(FILE_DELAY_KEY, 100);
+            // 2. 智能判断当前群的延迟模式 (global/custom)
+            final String delayMode = getString("delay_mode_" + groupWxid, "global");
+            final String delaySuffix = "custom".equals(delayMode) ? "_" + groupWxid : "";
+
+            // 获取精细化的延迟设置 (如果专属没有配置，就回退到读取全局配置的值)
+            final long promptDelay = getInt(PROMPT_DELAY_KEY + delaySuffix, getInt(PROMPT_DELAY_KEY, 0));
+            final long imageDelay  = getInt(IMAGE_DELAY_KEY + delaySuffix, getInt(IMAGE_DELAY_KEY, 100));
+            final long voiceDelay  = getInt(VOICE_DELAY_KEY + delaySuffix, getInt(VOICE_DELAY_KEY, 100));
+            final long emojiDelay  = getInt(EMOJI_DELAY_KEY + delaySuffix, getInt(EMOJI_DELAY_KEY, 100));
+            final long videoDelay  = getInt(VIDEO_DELAY_KEY + delaySuffix, getInt(VIDEO_DELAY_KEY, 100));
+            final long fileDelay   = getInt(FILE_DELAY_KEY + delaySuffix, getInt(FILE_DELAY_KEY, 100));
 
             // 3. 创建所有可能的发送任务
-            // 提示语任务
             Runnable promptAction = new Runnable() {
                 public void run() {
-                    if ("card".equals(promptType)) {
-                        handleCardSending(type, groupWxid, userWxid, displayName, userName, groupWxid, groupName, currentTime);
+                    if ("card".equals(finalPromptType)) {
+                        handleCardSending(type, groupWxid, userWxid, userName, groupName, currentTime);
                     } else {
-                        handleTextSending(type, groupWxid, userWxid, displayName, userName, groupWxid, groupName, currentTime);
+                        handleTextSending(type, groupWxid, userWxid, userName, groupName, currentTime);
                     }
                 }
             };
@@ -222,108 +251,86 @@ public void onMemberChange(final String type, final String groupWxid, final Stri
             // 媒体任务
             Map<String, SendTask> mediaTasks = new HashMap<>();
 
-            // 图片任务
-            final String imagePaths = getString("join".equals(type) ? JOIN_IMAGE_PATHS_KEY : LEFT_IMAGE_PATHS_KEY, "");
-            if (!TextUtils.isEmpty(imagePaths)) {
-                Runnable imageAction = new Runnable() {
-                    public void run() {
-                        for (String p : imagePaths.split(",")) {
-                            if (!TextUtils.isEmpty(p.trim())) {
-                                try {
-                                    sendImage(groupWxid, p.trim());
-                                } catch (Exception e) {
-                                    toast("发送图片失败: " + e.getMessage());
+            // 只有当 mediaMode 不是 none 时，才读取并调度媒体任务
+            if (!"none".equals(mediaMode)) {
+                final String imagePaths = getString(("join".equals(type) ? JOIN_IMAGE_PATHS_KEY : LEFT_IMAGE_PATHS_KEY) + mediaSuffix, "");
+                if (!TextUtils.isEmpty(imagePaths)) {
+                    Runnable imageAction = new Runnable() {
+                        public void run() {
+                            for (String p : imagePaths.split(",")) {
+                                if (!TextUtils.isEmpty(p.trim())) {
+                                    try { sendImage(groupWxid, p.trim()); } catch (Exception e) {}
                                 }
                             }
                         }
-                    }
-                };
-                mediaTasks.put("image", new SendTask(imageAction, imageDelay));
-            }
+                    };
+                    mediaTasks.put("image", new SendTask(imageAction, imageDelay));
+                }
 
-            // 语音任务
-            final String voicePaths = getString("join".equals(type) ? JOIN_VOICE_PATHS_KEY : LEFT_VOICE_PATHS_KEY, "");
-            if (!TextUtils.isEmpty(voicePaths)) {
-                Runnable voiceAction = new Runnable() {
-                    public void run() {
-                        for (String p : voicePaths.split(",")) {
-                            if (!TextUtils.isEmpty(p.trim())) {
-                                try {
-                                    sendVoice(groupWxid, p.trim());
-                                } catch (Exception e) {
-                                    toast("发送语音失败: " + e.getMessage());
+                final String voicePaths = getString(("join".equals(type) ? JOIN_VOICE_PATHS_KEY : LEFT_VOICE_PATHS_KEY) + mediaSuffix, "");
+                if (!TextUtils.isEmpty(voicePaths)) {
+                    Runnable voiceAction = new Runnable() {
+                        public void run() {
+                            for (String p : voicePaths.split(",")) {
+                                if (!TextUtils.isEmpty(p.trim())) {
+                                    try { sendVoice(groupWxid, p.trim()); } catch (Exception e) {}
                                 }
                             }
                         }
-                    }
-                };
-                mediaTasks.put("voice", new SendTask(voiceAction, voiceDelay));
-            }
+                    };
+                    mediaTasks.put("voice", new SendTask(voiceAction, voiceDelay));
+                }
 
-            // 表情任务
-            final String emojiPaths = getString("join".equals(type) ? JOIN_EMOJI_PATHS_KEY : LEFT_EMOJI_PATHS_KEY, "");
-            if (!TextUtils.isEmpty(emojiPaths)) {
-                Runnable emojiAction = new Runnable() {
-                    public void run() {
-                        for (String p : emojiPaths.split(",")) {
-                            if (!TextUtils.isEmpty(p.trim())) {
-                                try {
-                                    sendEmoji(groupWxid, p.trim());
-                                } catch (Exception e) {
-                                    toast("发送表情失败: " + e.getMessage());
+                final String emojiPaths = getString(("join".equals(type) ? JOIN_EMOJI_PATHS_KEY : LEFT_EMOJI_PATHS_KEY) + mediaSuffix, "");
+                if (!TextUtils.isEmpty(emojiPaths)) {
+                    Runnable emojiAction = new Runnable() {
+                        public void run() {
+                            for (String p : emojiPaths.split(",")) {
+                                if (!TextUtils.isEmpty(p.trim())) {
+                                    try { sendEmoji(groupWxid, p.trim()); } catch (Exception e) {}
                                 }
                             }
                         }
-                    }
-                };
-                mediaTasks.put("emoji", new SendTask(emojiAction, emojiDelay));
-            }
+                    };
+                    mediaTasks.put("emoji", new SendTask(emojiAction, emojiDelay));
+                }
 
-            // 视频任务
-            final String videoPaths = getString("join".equals(type) ? JOIN_VIDEO_PATHS_KEY : LEFT_VIDEO_PATHS_KEY, "");
-            if (!TextUtils.isEmpty(videoPaths)) {
-                Runnable videoAction = new Runnable() {
-                    public void run() {
-                        for (String p : videoPaths.split(",")) {
-                            if (!TextUtils.isEmpty(p.trim())) {
-                                try {
-                                    sendVideo(groupWxid, p.trim());
-                                } catch (Exception e) {
-                                    toast("发送视频失败: " + e.getMessage());
+                final String videoPaths = getString(("join".equals(type) ? JOIN_VIDEO_PATHS_KEY : LEFT_VIDEO_PATHS_KEY) + mediaSuffix, "");
+                if (!TextUtils.isEmpty(videoPaths)) {
+                    Runnable videoAction = new Runnable() {
+                        public void run() {
+                            for (String p : videoPaths.split(",")) {
+                                if (!TextUtils.isEmpty(p.trim())) {
+                                    try { sendVideo(groupWxid, p.trim()); } catch (Exception e) {}
                                 }
                             }
                         }
-                    }
-                };
-                mediaTasks.put("video", new SendTask(videoAction, videoDelay));
-            }
+                    };
+                    mediaTasks.put("video", new SendTask(videoAction, videoDelay));
+                }
 
-            // 分享文件任务
-            final String filePaths = getString("join".equals(type) ? JOIN_FILE_PATHS_KEY : LEFT_FILE_PATHS_KEY, "");
-            if (!TextUtils.isEmpty(filePaths)) {
-                Runnable fileAction = new Runnable() {
-                    public void run() {
-                        for (String p : filePaths.split(",")) {
-                            if (!TextUtils.isEmpty(p.trim())) {
-                                try {
-                                    // 从文件路径中提取文件名（包括后缀）
-                                    String fileName = new java.io.File(p.trim()).getName();
-                                    shareFile(groupWxid, fileName, p.trim(), "");
-                                } catch (Exception e) {
-                                    toast("分享文件失败: " + e.getMessage());
+                final String filePaths = getString(("join".equals(type) ? JOIN_FILE_PATHS_KEY : LEFT_FILE_PATHS_KEY) + mediaSuffix, "");
+                if (!TextUtils.isEmpty(filePaths)) {
+                    Runnable fileAction = new Runnable() {
+                        public void run() {
+                            for (String p : filePaths.split(",")) {
+                                if (!TextUtils.isEmpty(p.trim())) {
+                                    try {
+                                        String fileName = new java.io.File(p.trim()).getName();
+                                        shareFile(groupWxid, fileName, p.trim(), "");
+                                    } catch (Exception e) {}
                                 }
                             }
                         }
-                    }
-                };
-                mediaTasks.put("file", new SendTask(fileAction, fileDelay));
+                    };
+                    mediaTasks.put("file", new SendTask(fileAction, fileDelay));
+                }
             }
 
             // 4. 根据 mediaOrder 和 mediaSequence 构建最终的发送任务链
             List<SendTask> finalTaskChain = new ArrayList<>();
-
             List<SendTask> orderedMediaTasks = new ArrayList<>();
-            if (!"none".equals(mediaOrder)) {
+            if (!"none".equals(mediaOrder) && !"none".equals(mediaMode)) {
                 for (String seq : mediaSequence.split(",")) {
                     String mediaType = seq.trim().toLowerCase();
                     if (mediaTasks.containsKey(mediaType)) {
@@ -348,10 +355,9 @@ public void onMemberChange(final String type, final String groupWxid, final Stri
     }, delaySeconds * 1000L);
 }
 
-// 新增：任务链执行器
 private void executeSendChain(final List<SendTask> tasks, final int index) {
     if (index >= tasks.size()) {
-        return; // 任务链执行完毕
+        return;
     }
     final SendTask currentTask = tasks.get(index);
     new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
@@ -359,63 +365,105 @@ private void executeSendChain(final List<SendTask> tasks, final int index) {
             if (currentTask.getAction() != null) {
                 currentTask.getAction().run();
             }
-            // 递归调用，执行链中的下一个任务
             executeSendChain(tasks, index + 1);
         }
     }, currentTask.getDelay());
 }
 
-private void handleTextSending(String type, String groupWxid, String userWxid, String displayName, String userName, String groupWxidParam, String groupName, String currentTime) {
+private void handleTextSending(String type, String groupWxid, String userWxid, String userName, String groupName, String currentTime) {
     String textToSend = "";
     String prompts;
 
+    // 获取当前群的模式，如果是"global"，则无视专属文本框内容，强制使用全局配置
+    boolean useGlobalContent = "global".equals(getString(PROMPT_TYPE_KEY + "_" + groupWxid, "global"));
+
     if ("join".equals(type)) {
-        prompts = getString(JOIN_TEXT_PROMPT_KEY, "[AtWx=%userWxid%]\n欢迎进群\n时间：%time%\n群昵称：%groupName%\n进群者昵称：%userName%\n进群者ID：%userWxid%");
+        String globalPrompt = getString(JOIN_TEXT_PROMPT_KEY, "[AtWx=%userWxid%]\n欢迎进群\n时间：%time%\n群昵称：%groupName%\n进群者微信昵称：%userName%\n进群者群内昵称：%groupNickname%\n进群者ID：%userWxid%");
+        if (useGlobalContent) {
+            prompts = globalPrompt;
+        } else {
+            String customPrompt = getString(JOIN_TEXT_PROMPT_KEY + "_" + groupWxid, globalPrompt);
+            prompts = TextUtils.isEmpty(customPrompt) ? globalPrompt : customPrompt;
+        }
     } else { // left
-        prompts = getString(LEFT_TEXT_PROMPT_KEY, "退群通知：\n时间：%time%\n群昵称：%groupName%\n退群者昵称：%userName%\n退群者ID：%userWxid%");
+        String globalPrompt = getString(LEFT_TEXT_PROMPT_KEY, "退群通知：\n时间：%time%\n群昵称：%groupName%\n退群者微信昵称：%userName%\n退群者群内昵称：%groupNickname%\n退群者ID：%userWxid%");
+        if (useGlobalContent) {
+            prompts = globalPrompt;
+        } else {
+            String customPrompt = getString(LEFT_TEXT_PROMPT_KEY + "_" + groupWxid, globalPrompt);
+            prompts = TextUtils.isEmpty(customPrompt) ? globalPrompt : customPrompt;
+        }
     }
 
     if (!TextUtils.isEmpty(prompts)) {
-        // 新行为：如果存的是多选兼容格式（包含 ||），保留随机选择逻辑（兼容旧配置）
         if (prompts.contains("||")) {
             String[] options = prompts.split("\\|\\|");
             textToSend = options[new Random().nextInt(options.length)].trim();
         } else {
-            // 否则直接按当前存储的内容（单条），这与“随机填充”操作配合使用：填充时已经是随机的一条
             textToSend = prompts.trim();
         }
 
-        if ("join".equals(type)) {
-            textToSend = textToSend.replace("%userWxid%", userWxid).replace("%userName%", displayName);
-        } else {
-            // 对于退群，同时包含昵称和群内备注昵称（格式：昵称 (备注)）
-            String nickname = userName;
-            String groupNickname = getFriendName(userWxid, groupWxid);
-            String fullName = nickname;
-            if (!TextUtils.isEmpty(groupNickname) && !"未设置".equals(groupNickname)) {
-                fullName = groupNickname + " (" + nickname + ")";
+        // 1. 获取微信昵称 (好友昵称)
+        String wxName = userName;
+        if (TextUtils.isEmpty(wxName) || wxName.startsWith("wxid_")) {
+            String fName = getFriendName(userWxid);
+            if (!TextUtils.isEmpty(fName) && !"未设置".equals(fName)) {
+                wxName = fName;
+            } else {
+                wxName = "未知成员";
             }
-            textToSend = textToSend.replace("%userName%", fullName).replace("%userWxid%", userWxid);
         }
 
-        textToSend = textToSend.replace("%groupName%", groupName).replace("%time%", currentTime);
+        // 2. 获取群内昵称
+        String groupNick = getFriendName(userWxid, groupWxid);
+        if (TextUtils.isEmpty(groupNick) || "未设置".equals(groupNick)) {
+            groupNick = "未设置"; 
+        }
+
+        textToSend = textToSend.replace("%userName%", wxName)
+                               .replace("%groupNickname%", groupNick)
+                               .replace("%userWxid%", userWxid)
+                               .replace("%groupName%", groupName)
+                               .replace("%time%", currentTime);
+                               
         sendText(groupWxid, textToSend);
     }
 }
 
-
-private void handleCardSending(String type, String groupWxid, String userWxid, String displayName, String userName, String groupWxidParam, String groupName, String currentTime) {
+private void handleCardSending(String type, String groupWxid, String userWxid, String userName, String groupName, String currentTime) {
     String titlePrompts, descPrompts;
 
+    // 获取当前群的模式，如果是"global"，则强制使用全局卡片配置
+    boolean useGlobalContent = "global".equals(getString(PROMPT_TYPE_KEY + "_" + groupWxid, "global"));
+
     if ("join".equals(type)) {
-        titlePrompts = getString(JOIN_CARD_TITLE_KEY, "🎊 欢迎：%userName%");
-        descPrompts = getString(JOIN_CARD_DESC_KEY, "🆔：%userWxid%\n⏰：%time%\n🏠：%groupName%");
+        String globalTitle = getString(JOIN_CARD_TITLE_KEY, "🎊 欢迎：%userName%");
+        String globalDesc = getString(JOIN_CARD_DESC_KEY, "🆔：%userWxid%\n名片：%groupNickname%\n⏰：%time%");
+        if (useGlobalContent) {
+            titlePrompts = globalTitle;
+            descPrompts = globalDesc;
+        } else {
+            String customTitle = getString(JOIN_CARD_TITLE_KEY + "_" + groupWxid, globalTitle);
+            titlePrompts = TextUtils.isEmpty(customTitle) ? globalTitle : customTitle;
+
+            String customDesc = getString(JOIN_CARD_DESC_KEY + "_" + groupWxid, globalDesc);
+            descPrompts = TextUtils.isEmpty(customDesc) ? globalDesc : customDesc;
+        }
     } else { // left
-        titlePrompts = getString(LEFT_CARD_TITLE_KEY, "💔 离群：%userName%");
-        descPrompts = getString(LEFT_CARD_DESC_KEY, "🆔：%userWxid%\n⏰：%time%\n🏠：%groupName%");
+        String globalTitle = getString(LEFT_CARD_TITLE_KEY, "💔 离群：%userName%");
+        String globalDesc = getString(LEFT_CARD_DESC_KEY, "🆔：%userWxid%\n名片：%groupNickname%\n⏰：%time%");
+        if (useGlobalContent) {
+            titlePrompts = globalTitle;
+            descPrompts = globalDesc;
+        } else {
+            String customTitle = getString(LEFT_CARD_TITLE_KEY + "_" + groupWxid, globalTitle);
+            titlePrompts = TextUtils.isEmpty(customTitle) ? globalTitle : customTitle;
+
+            String customDesc = getString(LEFT_CARD_DESC_KEY + "_" + groupWxid, globalDesc);
+            descPrompts = TextUtils.isEmpty(customDesc) ? globalDesc : customDesc;
+        }
     }
 
-    // 新行为：支持兼容旧格式 || 随机，也支持单条（UI 随机填充会存单条）
     String titleTemplate;
     if (titlePrompts.contains("||")) {
         String[] titleOptions = titlePrompts.split("\\|\\|");
@@ -432,24 +480,37 @@ private void handleCardSending(String type, String groupWxid, String userWxid, S
         descTemplate = descPrompts.trim();
     }
 
-    String userNameForReplace;
-    if ("left".equals(type)) {
-        // 对于退群，同时包含昵称和群内备注昵称（格式：昵称 (备注)）
-        String nickname = userName;
-        String groupNickname = getFriendName(userWxid, groupWxid);
-        userNameForReplace = nickname;
-        if (!TextUtils.isEmpty(groupNickname) && !"未设置".equals(groupNickname)) {
-            userNameForReplace = groupNickname + " (" + nickname + ")";
+    // 1. 获取微信昵称 (好友昵称)
+    String wxName = userName;
+    if (TextUtils.isEmpty(wxName) || wxName.startsWith("wxid_")) {
+        String fName = getFriendName(userWxid);
+        if (!TextUtils.isEmpty(fName) && !"未设置".equals(fName)) {
+            wxName = fName;
+        } else {
+            wxName = "未知成员";
         }
-    } else {
-        userNameForReplace = displayName;
     }
 
-    String title = titleTemplate.replace("%userName%", userNameForReplace).replace("%userWxid%", userWxid).replace("%groupName%", groupName).replace("%time%", currentTime);
-    String description = descTemplate.replace("%userName%", userNameForReplace).replace("%userWxid%", userWxid).replace("%groupName%", groupName).replace("%time%", currentTime);
+    // 2. 获取群内昵称
+    String groupNick = getFriendName(userWxid, groupWxid);
+    if (TextUtils.isEmpty(groupNick) || "未设置".equals(groupNick)) {
+        groupNick = "未设置";
+    }
 
-    String avatarUrl = getAvatarUrl(userWxid, false); // 小头像
-    String bigAvatarUrl = getAvatarUrl(userWxid, true); // 大头像作为卡片内容链接
+    String title = titleTemplate.replace("%userName%", wxName)
+                                .replace("%groupNickname%", groupNick)
+                                .replace("%userWxid%", userWxid)
+                                .replace("%groupName%", groupName)
+                                .replace("%time%", currentTime);
+                                
+    String description = descTemplate.replace("%userName%", wxName)
+                                     .replace("%groupNickname%", groupNick)
+                                     .replace("%userWxid%", userWxid)
+                                     .replace("%groupName%", groupName)
+                                     .replace("%time%", currentTime);
+
+    String avatarUrl = getAvatarUrl(userWxid, false);
+    String bigAvatarUrl = getAvatarUrl(userWxid, true);
 
     MediaMessage mediaMsg = new MediaMessage();
     mediaMsg.setTitle(title);
@@ -513,29 +574,21 @@ private byte[] getImageBytesFromUrl(String imageUrl) {
     return null;
 }
 
-// === 文件/文件夹浏览与多选（来自音频转换2，扩展为多选） ===
+// === 文件/文件夹浏览与多选 ===
 
 final String DEFAULT_LAST_FOLDER_SP = "last_folder_for_media";
 final String ROOT_FOLER = "/storage/emulated/0";
 
-// 回调接口
-interface MediaSelectionCallback {
-    void onSelected(ArrayList<String> selectedFiles);
-}
-
-// [V3] 递进浏览文件夹, 增加 currentSelection 参数用于传递已选中的文件
 void browseFolderForSelection(final File startFolder, final String wantedExtFilter, final String currentSelection, final MediaSelectionCallback callback) {
     putString(DEFAULT_LAST_FOLDER_SP, startFolder.getAbsolutePath());
     ArrayList<String> names = new ArrayList<>();
     final ArrayList<Object> items = new ArrayList<>();
 
-    // 上一级（根目录除外）
     if (!startFolder.getAbsolutePath().equals(ROOT_FOLER)) {
         names.add("⬆ 上一级");
         items.add(startFolder.getParentFile());
     }
 
-    // 当前目录下的子文件夹
     File[] subs = startFolder.listFiles();
     if (subs != null) {
         for (File f : subs) {
@@ -560,7 +613,6 @@ void browseFolderForSelection(final File startFolder, final String wantedExtFilt
             if (selected instanceof File) {
                 File sel = (File) selected;
                 if (sel.isDirectory()) {
-                    // 进入该目录继续浏览
                     browseFolderForSelection(sel, wantedExtFilter, currentSelection, callback);
                 }
             }
@@ -578,7 +630,6 @@ void browseFolderForSelection(final File startFolder, final String wantedExtFilt
     builder.create().show();
 }
 
-// [V3] 扫描文件并支持多选, 增加 currentSelection 参数用于恢复勾选状态
 void scanFilesMulti(final File folder, final String extFilter, final String currentSelection, final MediaSelectionCallback callback) {
     final ArrayList<String> names = new ArrayList<>();
     final ArrayList<File> files = new ArrayList<>();
@@ -600,12 +651,10 @@ void scanFilesMulti(final File folder, final String extFilter, final String curr
         return;
     }
 
-    // [V3] 解析当前已选中的文件路径
     final Set<String> selectedPathsSet = new HashSet<>();
     if (!TextUtils.isEmpty(currentSelection)) {
         selectedPathsSet.addAll(Arrays.asList(currentSelection.split(",")));
     }
-
 
     AlertDialog.Builder builder = new AlertDialog.Builder(getTopActivity());
     builder.setTitle("选择文件（可多选）：" + folder.getAbsolutePath());
@@ -614,7 +663,6 @@ void scanFilesMulti(final File folder, final String extFilter, final String curr
     listView.setAdapter(new ArrayAdapter(getTopActivity(), android.R.layout.simple_list_item_multiple_choice, names));
     builder.setView(listView);
 
-    // [V3] 恢复勾选状态
     for (int i = 0; i < files.size(); i++) {
         if (selectedPathsSet.contains(files.get(i).getAbsolutePath())) {
             listView.setItemChecked(i, true);
@@ -637,10 +685,157 @@ void scanFilesMulti(final File folder, final String extFilter, final String curr
     builder.create().show();
 }
 
-// === 新的统一设置界面（集成多选媒体选择） ===
+// === UI生成方法：快捷插入变量栏 ===
+private View createVariableBar() {
+    LinearLayout container = new LinearLayout(getTopActivity());
+    container.setOrientation(LinearLayout.VERTICAL);
+
+    TextView tip = new TextView(getTopActivity());
+    tip.setText("💡 点击下方变量快速插入到光标处：");
+    tip.setTextSize(12);
+    tip.setTextColor(Color.parseColor("#666666"));
+    tip.setPadding(0, 0, 0, 16);
+    container.addView(tip);
+
+    HorizontalScrollView hsv = new HorizontalScrollView(getTopActivity());
+    hsv.setHorizontalScrollBarEnabled(false);
+    LinearLayout layout = new LinearLayout(getTopActivity());
+    layout.setOrientation(LinearLayout.HORIZONTAL);
+    layout.setPadding(0, 0, 0, 24);
+
+    String[] vars = {"%userName%", "%groupNickname%", "%userWxid%", "%groupName%", "%time%", "[AtWx=%userWxid%]", "[AtWx=]"};
+    String[] labels = {"+ 微信昵称", "+ 群内昵称", "+ Wxid", "+ 群名", "+ 时间", "+ @新人", "+ @其他人"};
+
+    for (int i=0; i<vars.length; i++) {
+        final int index = i;
+        TextView chip = new TextView(getTopActivity());
+        chip.setText(labels[i]);
+        chip.setTag(vars[i]);
+        chip.setTextSize(13);
+        chip.setTextColor(Color.parseColor("#4A90E2"));
+        chip.setPadding(32, 16, 32, 16);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(30);
+        bg.setColor(Color.parseColor("#EBF3FA"));
+        bg.setStroke(2, Color.parseColor("#BBD7E6"));
+        chip.setBackground(bg);
+        
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        lp.setMargins(0, 0, 16, 0);
+        chip.setLayoutParams(lp);
+
+        chip.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (currentFocusedEdit != null) {
+                    // 第7个按钮（index=6）是"@其他"，需要弹出输入框
+                    if (index == 6) {
+                        showAtOtherInputDialog();
+                    } else {
+                        String realVarToInsert = (String) v.getTag();
+                        int start = Math.max(currentFocusedEdit.getSelectionStart(), 0);
+                        int end = Math.max(currentFocusedEdit.getSelectionEnd(), 0);
+                        Editable editable = currentFocusedEdit.getText();
+                        if (editable != null) {
+                            editable.replace(Math.min(start, end), Math.max(start, end), realVarToInsert);
+                        }
+                    }
+                } else {
+                    toast("请先点击选中一个输入框");
+                }
+            }
+        });
+        layout.addView(chip);
+    }
+    hsv.addView(layout);
+    container.addView(hsv);
+    return container;
+}
+
+// === 艾特其他人的输入对话框 ===
+private void showAtOtherInputDialog() {
+    AlertDialog.Builder builder = new AlertDialog.Builder(getTopActivity());
+    builder.setTitle("艾特其他人");
+    builder.setMessage("请输入要艾特的人的微信ID (wxid开头)：");
+
+    final EditText input = new EditText(getTopActivity());
+    input.setHint("例如: wxid_xxxxxx");
+    input.setPadding(40, 30, 40, 30);
+    input.setInputType(InputType.TYPE_CLASS_TEXT);
+    
+    // 设置输入框样式
+    GradientDrawable inputBg = new GradientDrawable();
+    inputBg.setShape(GradientDrawable.RECTANGLE);
+    inputBg.setCornerRadius(20);
+    inputBg.setColor(Color.parseColor("#F8F9FA"));
+    inputBg.setStroke(2, Color.parseColor("#E6E9EE"));
+    input.setBackground(inputBg);
+    
+    LinearLayout container = new LinearLayout(getTopActivity());
+    container.setOrientation(LinearLayout.VERTICAL);
+    container.setPadding(40, 20, 40, 0);
+    container.addView(input);
+    
+    // 添加提示
+    TextView hintText = new TextView(getTopActivity());
+    hintText.setText("💡 提示: 可输入群成员的wxid，输入后将插入 [AtWx=wxid] 格式");
+    hintText.setTextSize(12);
+    hintText.setTextColor(Color.parseColor("#999999"));
+    hintText.setPadding(40, 10, 40, 0);
+    container.addView(hintText);
+    
+    builder.setView(container);
+
+    builder.setPositiveButton("插入变量", new DialogInterface.OnClickListener() {
+        public void onClick(DialogInterface dialog, int which) {
+            String wxid = input.getText().toString().trim();
+            if (!TextUtils.isEmpty(wxid)) {
+                String atVar = "[AtWx=" + wxid + "]";
+                int start = Math.max(currentFocusedEdit.getSelectionStart(), 0);
+                int end = Math.max(currentFocusedEdit.getSelectionEnd(), 0);
+                Editable editable = currentFocusedEdit.getText();
+                if (editable != null) {
+                    editable.replace(Math.min(start, end), Math.max(start, end), atVar);
+                }
+                toast("已插入艾特变量: " + atVar);
+            } else {
+                toast("请输入微信ID");
+            }
+        }
+    });
+    
+    builder.setNegativeButton("取消", null);
+    
+    AlertDialog dialog = builder.create();
+    dialog.show();
+}
+
+// === 通用媒体选择按钮绑定工具 ===
+private void setupMediaButton(Button btn, final TextView countTv, final String key, final String extFilter, final String typeName) {
+    styleMediaSelectionButton(btn);
+    styleCountTextView(countTv);
+    
+    btn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
+            String currentSelection = getString(key, "");
+            browseFolderForSelection(last, extFilter, currentSelection, new MediaSelectionCallback() {
+                public void onSelected(ArrayList<String> selectedFiles) {
+                    putString(key, joinPaths(selectedFiles));
+                    countTv.setText(selectedFiles.size() + " 个已选");
+                    toast("已保存" + typeName + " (" + selectedFiles.size() + ")");
+                }
+            });
+        }
+    });
+    countTv.setText(countFromString(getString(key, "")) + " 个已选");
+}
+
+// === 新的统一设置界面 ===
 private void showUnifiedSettingsDialog() {
     try {
-        // --- 根布局和滚动视图 ---
+        currentFocusedEdit = null; // 重置焦点状态
         ScrollView scrollView = new ScrollView(getTopActivity());
         LinearLayout rootLayout = new LinearLayout(getTopActivity());
         rootLayout.setOrientation(LinearLayout.VERTICAL);
@@ -652,20 +847,18 @@ private void showUnifiedSettingsDialog() {
         LinearLayout managementCard = createCardLayout();
         managementCard.addView(createSectionTitle("⚙️ 主要功能管理"));
         Button groupManagementButton = new Button(getTopActivity());
-        groupManagementButton.setText("管理监听群组和进退群开关");
+        groupManagementButton.setText("管理监听群组和专属进退群设置");
         styleUtilityButton(groupManagementButton);
         managementCard.addView(groupManagementButton);
         rootLayout.addView(managementCard);
 
         // --- 卡片2: 核心设置 ---
         LinearLayout coreSettingsCard = createCardLayout();
-        coreSettingsCard.addView(createSectionTitle("🚀 核心设置"));
-        // 整体延迟
+        coreSettingsCard.addView(createSectionTitle("🚀 全局核心设置"));
         coreSettingsCard.addView(newTextView("触发后整体延迟（秒）:"));
         final EditText delayEditText = createStyledEditText("0-600秒", String.valueOf(getInt(DELAY_KEY, DEFAULT_DELAY)));
         delayEditText.setInputType(InputType.TYPE_CLASS_NUMBER);
         coreSettingsCard.addView(delayEditText);
-        // 提示语类型
         coreSettingsCard.addView(newTextView("选择提示语类型:"));
         RadioGroup promptTypeGroup = new RadioGroup(getTopActivity());
         promptTypeGroup.setOrientation(RadioGroup.HORIZONTAL);
@@ -683,49 +876,43 @@ private void showUnifiedSettingsDialog() {
 
         // --- 卡片3: 文本提示语设置 ---
         LinearLayout textPromptCard = createCardLayout();
-        textPromptCard.addView(createSectionTitle("📝 文本提示语设置"));
-        final EditText joinPromptEditText = createStyledEditText("设置进群欢迎语", getString(JOIN_TEXT_PROMPT_KEY, "[AtWx=%userWxid%]\n欢迎进群\n时间：%time%\n群昵称：%groupName%\n进群者昵称：%userName%\n进群者ID：%userWxid%"));
+        textPromptCard.addView(createSectionTitle("📝 全局文本提示语"));
+        textPromptCard.addView(createVariableBar()); // 添加变量插入栏
+        final EditText joinPromptEditText = createStyledEditText("设置进群欢迎语", getString(JOIN_TEXT_PROMPT_KEY, "[AtWx=%userWxid%]\n欢迎进群\n时间：%time%\n群昵称：%groupName%\n进群者微信昵称：%userName%\n进群者群内昵称：%groupNickname%\n进群者ID：%userWxid%"));
         joinPromptEditText.setLines(5);
         joinPromptEditText.setGravity(Gravity.TOP);
         textPromptCard.addView(joinPromptEditText);
-        final EditText leftPromptEditText = createStyledEditText("设置退群通知", getString(LEFT_TEXT_PROMPT_KEY, "退群通知：\n时间：%time%\n群昵称：%groupName%\n退群者昵称：%userName%\n退群者ID：%userWxid%"));
+        final EditText leftPromptEditText = createStyledEditText("设置退群通知", getString(LEFT_TEXT_PROMPT_KEY, "退群通知：\n时间：%time%\n群昵称：%groupName%\n退群者微信昵称：%userName%\n退群者群内昵称：%groupNickname%\n退群者ID：%userWxid%"));
         leftPromptEditText.setLines(5);
         leftPromptEditText.setGravity(Gravity.TOP);
         textPromptCard.addView(leftPromptEditText);
 
-        // [新增] 一键随机填充（直接填入随机单条）
         Button fillRandomTextButton = new Button(getTopActivity());
         fillRandomTextButton.setText("💡 随机填充一条欢迎/退群语");
         styleFillButton(fillRandomTextButton);
         textPromptCard.addView(fillRandomTextButton);
 
-        // [新增] 恢复默认单独按钮（恢复文本区域）
         Button restoreTextDefaultsButton = new Button(getTopActivity());
         restoreTextDefaultsButton.setText("🔄 恢复文本默认");
         styleRestoreButton(restoreTextDefaultsButton);
         textPromptCard.addView(restoreTextDefaultsButton);
-
-        TextView textHelp = new TextView(getTopActivity());
-        textHelp.setText("可用变量: %userName%, %userWxid%, %groupName%, %time%, [AtWx=%userWxid%]\n💡 点击随机填充将写入一条随机提示语（你也可以手动编辑）。");
-        textHelp.setTextSize(12); textHelp.setTextColor(Color.parseColor("#666666"));
-        textPromptCard.addView(textHelp);
         rootLayout.addView(textPromptCard);
 
         // --- 卡片4: 卡片提示语设置 ---
         LinearLayout cardPromptCard = createCardLayout();
-        cardPromptCard.addView(createSectionTitle("🖼️ 卡片提示语设置"));
+        cardPromptCard.addView(createSectionTitle("🖼️ 全局卡片提示语"));
+        cardPromptCard.addView(createVariableBar()); // 添加变量插入栏
         final EditText joinTitleEditText = createStyledEditText("进群卡片标题", getString(JOIN_CARD_TITLE_KEY, "🎊 欢迎：%userName%"));
-        final EditText joinDescEditText = createStyledEditText("进群卡片描述", getString(JOIN_CARD_DESC_KEY, "🆔：%userWxid%\n⏰：%time%\n🏠：%groupName%"));
+        final EditText joinDescEditText = createStyledEditText("进群卡片描述", getString(JOIN_CARD_DESC_KEY, "🆔：%userWxid%\n名片：%groupNickname%\n⏰：%time%"));
         joinDescEditText.setLines(3); joinDescEditText.setGravity(Gravity.TOP);
         cardPromptCard.addView(joinTitleEditText);
         cardPromptCard.addView(joinDescEditText);
         final EditText leftTitleEditText = createStyledEditText("退群卡片标题", getString(LEFT_CARD_TITLE_KEY, "💔 离群：%userName%"));
-        final EditText leftDescEditText = createStyledEditText("退群卡片描述", getString(LEFT_CARD_DESC_KEY, "🆔：%userWxid%\n⏰：%time%\n🏠：%groupName%"));
+        final EditText leftDescEditText = createStyledEditText("退群卡片描述", getString(LEFT_CARD_DESC_KEY, "🆔：%userWxid%\n名片：%groupNickname%\n⏰：%time%"));
         leftDescEditText.setLines(3); leftDescEditText.setGravity(Gravity.TOP);
         cardPromptCard.addView(leftTitleEditText);
         cardPromptCard.addView(leftDescEditText);
 
-        // [新增] 随机与恢复
         Button fillRandomCardButton = new Button(getTopActivity());
         fillRandomCardButton.setText("💡 随机填充卡片内容");
         styleFillButton(fillRandomCardButton);
@@ -735,21 +922,15 @@ private void showUnifiedSettingsDialog() {
         restoreCardDefaultsButton.setText("🔄 恢复卡片默认");
         styleRestoreButton(restoreCardDefaultsButton);
         cardPromptCard.addView(restoreCardDefaultsButton);
-
-        TextView cardHelp = new TextView(getTopActivity());
-        cardHelp.setText("可用变量: %userName%, %userWxid%, %groupName%, %time%\n💡 随机填充将分别为标题/描述写入一条随机模板。");
-        cardHelp.setTextSize(12); cardHelp.setTextColor(Color.parseColor("#666666"));
-        cardPromptCard.addView(cardHelp);
         rootLayout.addView(cardPromptCard);
 
         // --- 卡片5: 媒体设置 (通用) ---
         LinearLayout mediaCard = createCardLayout();
-        mediaCard.addView(createSectionTitle("📂 附加媒体设置 (通用)"));
+        mediaCard.addView(createSectionTitle("📂 全局媒体文件配置"));
         mediaCard.addView(newTextView("媒体发送顺序 (英文逗号隔开):"));
         final EditText mediaSequenceEdit = createStyledEditText("如: image,voice,video...", getString(SEND_MEDIA_SEQUENCE_KEY, "image,voice,emoji,video,file"));
         mediaCard.addView(mediaSequenceEdit);
 
-        // 媒体顺序选项
         RadioGroup mediaOrderGroup = new RadioGroup(getTopActivity());
         mediaOrderGroup.setOrientation(RadioGroup.HORIZONTAL);
         final RadioButton noneButton = new RadioButton(getTopActivity()); noneButton.setText("不发送");
@@ -762,42 +943,48 @@ private void showUnifiedSettingsDialog() {
         else noneButton.setChecked(true);
         mediaCard.addView(mediaOrderGroup);
 
-        // 媒体选择行（每种媒体使用一个按钮选择多文件）
         mediaCard.addView(createSectionTitle("🗂️ 媒体文件选择（支持多选）"));
 
         Button btnSelectJoinImages = new Button(getTopActivity()); btnSelectJoinImages.setText("选择进群图片");
+        TextView tvJoinImagesCount = new TextView(getTopActivity());
+        setupMediaButton(btnSelectJoinImages, tvJoinImagesCount, JOIN_IMAGE_PATHS_KEY, ".png", "进群图片");
+
         Button btnSelectLeftImages = new Button(getTopActivity()); btnSelectLeftImages.setText("选择退群图片");
+        TextView tvLeftImagesCount = new TextView(getTopActivity());
+        setupMediaButton(btnSelectLeftImages, tvLeftImagesCount, LEFT_IMAGE_PATHS_KEY, ".png", "退群图片");
+
         Button btnSelectJoinVoices = new Button(getTopActivity()); btnSelectJoinVoices.setText("选择进群语音");
+        TextView tvJoinVoicesCount = new TextView(getTopActivity());
+        setupMediaButton(btnSelectJoinVoices, tvJoinVoicesCount, JOIN_VOICE_PATHS_KEY, "", "进群语音");
+
         Button btnSelectLeftVoices = new Button(getTopActivity()); btnSelectLeftVoices.setText("选择退群语音");
+        TextView tvLeftVoicesCount = new TextView(getTopActivity());
+        setupMediaButton(btnSelectLeftVoices, tvLeftVoicesCount, LEFT_VOICE_PATHS_KEY, "", "退群语音");
+
         Button btnSelectJoinEmojis = new Button(getTopActivity()); btnSelectJoinEmojis.setText("选择进群表情");
+        TextView tvJoinEmojisCount = new TextView(getTopActivity());
+        setupMediaButton(btnSelectJoinEmojis, tvJoinEmojisCount, JOIN_EMOJI_PATHS_KEY, ".png", "进群表情");
+
         Button btnSelectLeftEmojis = new Button(getTopActivity()); btnSelectLeftEmojis.setText("选择退群表情");
+        TextView tvLeftEmojisCount = new TextView(getTopActivity());
+        setupMediaButton(btnSelectLeftEmojis, tvLeftEmojisCount, LEFT_EMOJI_PATHS_KEY, ".png", "退群表情");
+
         Button btnSelectJoinVideos = new Button(getTopActivity()); btnSelectJoinVideos.setText("选择进群视频");
+        TextView tvJoinVideosCount = new TextView(getTopActivity());
+        setupMediaButton(btnSelectJoinVideos, tvJoinVideosCount, JOIN_VIDEO_PATHS_KEY, ".mp4", "进群视频");
+
         Button btnSelectLeftVideos = new Button(getTopActivity()); btnSelectLeftVideos.setText("选择退群视频");
+        TextView tvLeftVideosCount = new TextView(getTopActivity());
+        setupMediaButton(btnSelectLeftVideos, tvLeftVideosCount, LEFT_VIDEO_PATHS_KEY, ".mp4", "退群视频");
+
         Button btnSelectJoinFiles = new Button(getTopActivity()); btnSelectJoinFiles.setText("选择进群文件");
+        TextView tvJoinFilesCount = new TextView(getTopActivity());
+        setupMediaButton(btnSelectJoinFiles, tvJoinFilesCount, JOIN_FILE_PATHS_KEY, "", "进群文件");
+
         Button btnSelectLeftFiles = new Button(getTopActivity()); btnSelectLeftFiles.setText("选择退群文件");
+        TextView tvLeftFilesCount = new TextView(getTopActivity());
+        setupMediaButton(btnSelectLeftFiles, tvLeftFilesCount, LEFT_FILE_PATHS_KEY, "", "退群文件");
 
-        Button[] mediaButtons = {btnSelectJoinImages, btnSelectLeftImages, btnSelectJoinVoices, btnSelectLeftVoices, btnSelectJoinEmojis, btnSelectLeftEmojis, btnSelectJoinVideos, btnSelectLeftVideos, btnSelectJoinFiles, btnSelectLeftFiles};
-        for(Button btn : mediaButtons) {
-            styleMediaSelectionButton(btn);
-        }
-
-        final TextView tvJoinImagesCount = new TextView(getTopActivity());
-        final TextView tvLeftImagesCount = new TextView(getTopActivity());
-        final TextView tvJoinVoicesCount = new TextView(getTopActivity());
-        final TextView tvLeftVoicesCount = new TextView(getTopActivity());
-        final TextView tvJoinEmojisCount = new TextView(getTopActivity());
-        final TextView tvLeftEmojisCount = new TextView(getTopActivity());
-        final TextView tvJoinVideosCount = new TextView(getTopActivity());
-        final TextView tvLeftVideosCount = new TextView(getTopActivity());
-        final TextView tvJoinFilesCount = new TextView(getTopActivity());
-        final TextView tvLeftFilesCount = new TextView(getTopActivity());
-
-        TextView[] countTextViews = {tvJoinImagesCount, tvLeftImagesCount, tvJoinVoicesCount, tvLeftVoicesCount, tvJoinEmojisCount, tvLeftEmojisCount, tvJoinVideosCount, tvLeftVideosCount, tvJoinFilesCount, tvLeftFilesCount};
-        for (TextView tv : countTextViews) {
-            styleCountTextView(tv);
-        }
-
-        // 布局：简单地依次添加按钮和计数文本
         mediaCard.addView(horizontalRow(btnSelectJoinImages, tvJoinImagesCount));
         mediaCard.addView(horizontalRow(btnSelectLeftImages, tvLeftImagesCount));
         mediaCard.addView(horizontalRow(btnSelectJoinVoices, tvJoinVoicesCount));
@@ -813,7 +1000,7 @@ private void showUnifiedSettingsDialog() {
 
         // --- 卡片6: 精细延迟设置 (通用) ---
         LinearLayout delayCard = createCardLayout();
-        delayCard.addView(createSectionTitle("⏱️ 精细延迟设置 (毫秒)"));
+        delayCard.addView(createSectionTitle("⏱️ 全局精细延迟设置 (毫秒)"));
         delayCard.addView(newTextView("提示语延迟:"));
         final EditText promptDelayEdit = createStyledEditText("0", String.valueOf(getInt(PROMPT_DELAY_KEY, 0)));
         delayCard.addView(promptDelayEdit);
@@ -836,17 +1023,24 @@ private void showUnifiedSettingsDialog() {
 
         // --- 对话框构建 ---
         final AlertDialog dialog = new AlertDialog.Builder(getTopActivity())
-            .setTitle("✨ 进退群统一设置 ✨")
+            .setTitle("✨ 全局进退群设置 ✨")
             .setView(scrollView)
             .setPositiveButton("✅ 保存全部", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface dialog, int which) {
                     try {
-                        // 保存核心设置
                         int newDelay = Integer.parseInt(delayEditText.getText().toString());
                         if (newDelay >= 0 && newDelay <= 600) putInt(DELAY_KEY, newDelay); else { toast("总延迟应在0-600秒之间"); return; }
+                        
+                        // 先校验全部数字再保存
+                        int pDelay = Integer.parseInt(promptDelayEdit.getText().toString());
+                        int iDelay = Integer.parseInt(imageDelayEdit.getText().toString());
+                        int vDelay = Integer.parseInt(voiceDelayEdit.getText().toString());
+                        int eDelay = Integer.parseInt(emojiDelayEdit.getText().toString());
+                        int viDelay = Integer.parseInt(videoDelayEdit.getText().toString());
+                        int fDelay = Integer.parseInt(fileDelayEdit.getText().toString());
+
                         putString(PROMPT_TYPE_KEY, textTypeButton.isChecked() ? "text" : "card");
 
-                        // 保存文本和卡片设置
                         putString(JOIN_TEXT_PROMPT_KEY, joinPromptEditText.getText().toString());
                         putString(LEFT_TEXT_PROMPT_KEY, leftPromptEditText.getText().toString());
                         putString(JOIN_CARD_TITLE_KEY, joinTitleEditText.getText().toString());
@@ -854,21 +1048,19 @@ private void showUnifiedSettingsDialog() {
                         putString(LEFT_CARD_TITLE_KEY, leftTitleEditText.getText().toString());
                         putString(LEFT_CARD_DESC_KEY, leftDescEditText.getText().toString());
 
-                        // 保存媒体设置（已有按钮会直接 putString）
                         putString(SEND_MEDIA_SEQUENCE_KEY, mediaSequenceEdit.getText().toString());
                         putString(SEND_MEDIA_ORDER_KEY, noneButton.isChecked() ? "none" : beforeButton.isChecked() ? "before" : "after");
 
-                        // 保存精细延迟
-                        putInt(PROMPT_DELAY_KEY, Integer.parseInt(promptDelayEdit.getText().toString()));
-                        putInt(IMAGE_DELAY_KEY, Integer.parseInt(imageDelayEdit.getText().toString()));
-                        putInt(VOICE_DELAY_KEY, Integer.parseInt(voiceDelayEdit.getText().toString()));
-                        putInt(EMOJI_DELAY_KEY, Integer.parseInt(emojiDelayEdit.getText().toString()));
-                        putInt(VIDEO_DELAY_KEY, Integer.parseInt(videoDelayEdit.getText().toString()));
-                        putInt(FILE_DELAY_KEY, Integer.parseInt(fileDelayEdit.getText().toString()));
+                        putInt(PROMPT_DELAY_KEY, pDelay);
+                        putInt(IMAGE_DELAY_KEY, iDelay);
+                        putInt(VOICE_DELAY_KEY, vDelay);
+                        putInt(EMOJI_DELAY_KEY, eDelay);
+                        putInt(VIDEO_DELAY_KEY, viDelay);
+                        putInt(FILE_DELAY_KEY, fDelay);
 
-                        toast("所有设置已保存！");
+                        toast("全局设置已保存！");
                     } catch (NumberFormatException e) {
-                        toast("保存失败：延迟时间必须是有效数字!");
+                        toast("保存失败：所有延迟时间必须是有效数字!");
                     } catch (Exception ex) {
                         toast("保存失败: " + ex.getMessage());
                     }
@@ -877,18 +1069,16 @@ private void showUnifiedSettingsDialog() {
             .setNegativeButton("❌ 取消", null)
             .setNeutralButton("🔄 恢复默认", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface dialog, int which) {
-                    // 恢复全部默认（保留原来默认）
                     delayEditText.setText(String.valueOf(DEFAULT_DELAY));
                     textTypeButton.setChecked(true);
-                    joinPromptEditText.setText("[AtWx=%userWxid%]\n欢迎进群\n时间：%time%\n群昵称：%groupName%\n进群者昵称：%userName%\n进群者ID：%userWxid%");
-                    leftPromptEditText.setText("退群通知：\n时间：%time%\n群昵称：%groupName%\n退群者昵称：%userName%\n退群者ID：%userWxid%");
+                    joinPromptEditText.setText("[AtWx=%userWxid%]\n欢迎进群\n时间：%time%\n群昵称：%groupName%\n进群者微信昵称：%userName%\n进群者群内昵称：%groupNickname%\n进群者ID：%userWxid%");
+                    leftPromptEditText.setText("退群通知：\n时间：%time%\n群昵称：%groupName%\n退群者微信昵称：%userName%\n退群者群内昵称：%groupNickname%\n退群者ID：%userWxid%");
                     joinTitleEditText.setText("🎊 欢迎：%userName%");
-                    joinDescEditText.setText("🆔：%userWxid%\n⏰：%time%\n🏠：%groupName%");
+                    joinDescEditText.setText("🆔：%userWxid%\n名片：%groupNickname%\n⏰：%time%");
                     leftTitleEditText.setText("💔 离群：%userName%");
-                    leftDescEditText.setText("🆔：%userWxid%\n⏰：%time%\n🏠：%groupName%");
+                    leftDescEditText.setText("🆔：%userWxid%\n名片：%groupNickname%\n⏰：%time%");
                     noneButton.setChecked(true);
                     mediaSequenceEdit.setText("image,voice,emoji,video,file");
-                    // 清空媒体选择
                     putString(JOIN_IMAGE_PATHS_KEY, ""); putString(LEFT_IMAGE_PATHS_KEY, "");
                     putString(JOIN_VOICE_PATHS_KEY, ""); putString(LEFT_VOICE_PATHS_KEY, "");
                     putString(JOIN_EMOJI_PATHS_KEY, ""); putString(LEFT_EMOJI_PATHS_KEY, "");
@@ -897,7 +1087,7 @@ private void showUnifiedSettingsDialog() {
                     promptDelayEdit.setText("0"); imageDelayEdit.setText("100");
                     voiceDelayEdit.setText("100"); emojiDelayEdit.setText("100");
                     videoDelayEdit.setText("100"); fileDelayEdit.setText("100");
-                    toast("已恢复所有默认设置");
+                    toast("已恢复全局所有默认设置");
                 }
             })
             .create();
@@ -908,26 +1098,24 @@ private void showUnifiedSettingsDialog() {
             }
         });
 
-        // ---- 文本随机填充（直接写入单条随机提示语） ----
         fillRandomTextButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 String randomJoin = RANDOM_JOIN_TEXTS_ARRAY[new Random().nextInt(RANDOM_JOIN_TEXTS_ARRAY.length)];
                 String randomLeft = RANDOM_LEFT_TEXTS_ARRAY[new Random().nextInt(RANDOM_LEFT_TEXTS_ARRAY.length)];
                 joinPromptEditText.setText(randomJoin);
                 leftPromptEditText.setText(randomLeft);
-                toast("已随机填充欢迎/退群语（单条）");
+                toast("已随机填充欢迎/退群语");
             }
         });
 
         restoreTextDefaultsButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                joinPromptEditText.setText("[AtWx=%userWxid%]\n欢迎进群\n时间：%time%\n群昵称：%groupName%\n进群者昵称：%userName%\n进群者ID：%userWxid%");
-                leftPromptEditText.setText("退群通知：\n时间：%time%\n群昵称：%groupName%\n退群者昵称：%userName%\n退群者ID：%userWxid%");
+                joinPromptEditText.setText("[AtWx=%userWxid%]\n欢迎进群\n时间：%time%\n群昵称：%groupName%\n进群者微信昵称：%userName%\n进群者群内昵称：%groupNickname%\n进群者ID：%userWxid%");
+                leftPromptEditText.setText("退群通知：\n时间：%time%\n群昵称：%groupName%\n退群者微信昵称：%userName%\n退群者群内昵称：%groupNickname%\n退群者ID：%userWxid%");
                 toast("已恢复文本默认");
             }
         });
 
-        // ---- 卡片随机填充 ----
         fillRandomCardButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 String title = RANDOM_JOIN_CARD_TITLES_ARRAY[new Random().nextInt(RANDOM_JOIN_CARD_TITLES_ARRAY.length)];
@@ -940,167 +1128,19 @@ private void showUnifiedSettingsDialog() {
                 leftTitleEditText.setText(ltitle);
                 leftDescEditText.setText(ldesc);
 
-                toast("已随机填充卡片内容（单条）");
+                toast("已随机填充卡片内容");
             }
         });
 
         restoreCardDefaultsButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 joinTitleEditText.setText("🎊 欢迎：%userName%");
-                joinDescEditText.setText("🆔：%userWxid%\n⏰：%time%\n🏠：%groupName%");
+                joinDescEditText.setText("🆔：%userWxid%\n名片：%groupNickname%\n⏰：%time%");
                 leftTitleEditText.setText("💔 离群：%userName%");
-                leftDescEditText.setText("🆔：%userWxid%\n⏰：%time%\n🏠：%groupName%");
+                leftDescEditText.setText("🆔：%userWxid%\n名片：%groupNickname%\n⏰：%time%");
                 toast("已恢复卡片默认");
             }
         });
-
-        // ---- 媒体选择按钮逻辑（点击后进入文件浏览并多选） ----
-        btnSelectJoinImages.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
-                String currentSelection = getString(JOIN_IMAGE_PATHS_KEY, "");
-                browseFolderForSelection(last, ".png", currentSelection, new MediaSelectionCallback() {
-                    public void onSelected(ArrayList<String> selectedFiles) {
-                        putString(JOIN_IMAGE_PATHS_KEY, joinPaths(selectedFiles));
-                        tvJoinImagesCount.setText(selectedFiles.size() + " 个已选");
-                        toast("已保存进群图片选择 (" + selectedFiles.size() + ")");
-                    }
-                });
-            }
-        });
-        btnSelectLeftImages.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
-                String currentSelection = getString(LEFT_IMAGE_PATHS_KEY, "");
-                browseFolderForSelection(last, ".png", currentSelection, new MediaSelectionCallback() {
-                    public void onSelected(ArrayList<String> selectedFiles) {
-                        putString(LEFT_IMAGE_PATHS_KEY, joinPaths(selectedFiles));
-                        tvLeftImagesCount.setText(selectedFiles.size() + " 个已选");
-                        toast("已保存退群图片选择 (" + selectedFiles.size() + ")");
-                    }
-                });
-            }
-        });
-
-        btnSelectJoinVoices.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
-                String currentSelection = getString(JOIN_VOICE_PATHS_KEY, "");
-                browseFolderForSelection(last, "", currentSelection, new MediaSelectionCallback() {
-                    public void onSelected(ArrayList<String> selectedFiles) {
-                        putString(JOIN_VOICE_PATHS_KEY, joinPaths(selectedFiles));
-                        tvJoinVoicesCount.setText(selectedFiles.size() + " 个已选");
-                        toast("已保存进群语音选择 (" + selectedFiles.size() + ")");
-                    }
-                });
-            }
-        });
-        btnSelectLeftVoices.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
-                String currentSelection = getString(LEFT_VOICE_PATHS_KEY, "");
-                browseFolderForSelection(last, "", currentSelection, new MediaSelectionCallback() {
-                    public void onSelected(ArrayList<String> selectedFiles) {
-                        putString(LEFT_VOICE_PATHS_KEY, joinPaths(selectedFiles));
-                        tvLeftVoicesCount.setText(selectedFiles.size() + " 个已选");
-                        toast("已保存退群语音选择 (" + selectedFiles.size() + ")");
-                    }
-                });
-            }
-        });
-
-        btnSelectJoinEmojis.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
-                String currentSelection = getString(JOIN_EMOJI_PATHS_KEY, "");
-                browseFolderForSelection(last, ".png", currentSelection, new MediaSelectionCallback() {
-                    public void onSelected(ArrayList<String> selectedFiles) {
-                        putString(JOIN_EMOJI_PATHS_KEY, joinPaths(selectedFiles));
-                        tvJoinEmojisCount.setText(selectedFiles.size() + " 个已选");
-                        toast("已保存进群表情选择 (" + selectedFiles.size() + ")");
-                    }
-                });
-            }
-        });
-        btnSelectLeftEmojis.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
-                String currentSelection = getString(LEFT_EMOJI_PATHS_KEY, "");
-                browseFolderForSelection(last, ".png", currentSelection, new MediaSelectionCallback() {
-                    public void onSelected(ArrayList<String> selectedFiles) {
-                        putString(LEFT_EMOJI_PATHS_KEY, joinPaths(selectedFiles));
-                        tvLeftEmojisCount.setText(selectedFiles.size() + " 个已选");
-                        toast("已保存退群表情选择 (" + selectedFiles.size() + ")");
-                    }
-                });
-            }
-        });
-
-        btnSelectJoinVideos.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
-                String currentSelection = getString(JOIN_VIDEO_PATHS_KEY, "");
-                browseFolderForSelection(last, ".mp4", currentSelection, new MediaSelectionCallback() {
-                    public void onSelected(ArrayList<String> selectedFiles) {
-                        putString(JOIN_VIDEO_PATHS_KEY, joinPaths(selectedFiles));
-                        tvJoinVideosCount.setText(selectedFiles.size() + " 个已选");
-                        toast("已保存进群视频选择 (" + selectedFiles.size() + ")");
-                    }
-                });
-            }
-        });
-        btnSelectLeftVideos.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
-                String currentSelection = getString(LEFT_VIDEO_PATHS_KEY, "");
-                browseFolderForSelection(last, ".mp4", currentSelection, new MediaSelectionCallback() {
-                    public void onSelected(ArrayList<String> selectedFiles) {
-                        putString(LEFT_VIDEO_PATHS_KEY, joinPaths(selectedFiles));
-                        tvLeftVideosCount.setText(selectedFiles.size() + " 个已选");
-                        toast("已保存退群视频选择 (" + selectedFiles.size() + ")");
-                    }
-                });
-            }
-        });
-
-        btnSelectJoinFiles.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
-                String currentSelection = getString(JOIN_FILE_PATHS_KEY, "");
-                browseFolderForSelection(last, "", currentSelection, new MediaSelectionCallback() {
-                    public void onSelected(ArrayList<String> selectedFiles) {
-                        putString(JOIN_FILE_PATHS_KEY, joinPaths(selectedFiles));
-                        tvJoinFilesCount.setText(selectedFiles.size() + " 个已选");
-                        toast("已保存进群文件选择 (" + selectedFiles.size() + ")");
-                    }
-                });
-            }
-        });
-        btnSelectLeftFiles.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                File last = new File(getString(DEFAULT_LAST_FOLDER_SP, ROOT_FOLER));
-                String currentSelection = getString(LEFT_FILE_PATHS_KEY, "");
-                browseFolderForSelection(last, "", currentSelection, new MediaSelectionCallback() {
-                    public void onSelected(ArrayList<String> selectedFiles) {
-                        putString(LEFT_FILE_PATHS_KEY, joinPaths(selectedFiles));
-                        tvLeftFilesCount.setText(selectedFiles.size() + " 个已选");
-                        toast("已保存退群文件选择 (" + selectedFiles.size() + ")");
-                    }
-                });
-            }
-        });
-
-        // 初始化计数显示（读取已有配置）
-        tvJoinImagesCount.setText(countFromString(getString(JOIN_IMAGE_PATHS_KEY, "")) + " 个已选");
-        tvLeftImagesCount.setText(countFromString(getString(LEFT_IMAGE_PATHS_KEY, "")) + " 个已选");
-        tvJoinVoicesCount.setText(countFromString(getString(JOIN_VOICE_PATHS_KEY, "")) + " 个已选");
-        tvLeftVoicesCount.setText(countFromString(getString(LEFT_VOICE_PATHS_KEY, "")) + " 个已选");
-        tvJoinEmojisCount.setText(countFromString(getString(JOIN_EMOJI_PATHS_KEY, "")) + " 个已选");
-        tvLeftEmojisCount.setText(countFromString(getString(LEFT_EMOJI_PATHS_KEY, "")) + " 个已选");
-        tvJoinVideosCount.setText(countFromString(getString(JOIN_VIDEO_PATHS_KEY, "")) + " 个已选");
-        tvLeftVideosCount.setText(countFromString(getString(LEFT_VIDEO_PATHS_KEY, "")) + " 个已选");
-        tvJoinFilesCount.setText(countFromString(getString(JOIN_FILE_PATHS_KEY, "")) + " 个已选");
-        tvLeftFilesCount.setText(countFromString(getString(LEFT_FILE_PATHS_KEY, "")) + " 个已选");
 
         dialog.setOnShowListener(new DialogInterface.OnShowListener() {
             public void onShow(DialogInterface d) {
@@ -1120,7 +1160,6 @@ private void showUnifiedSettingsDialog() {
     }
 }
 
-// 辅助：把路径列表拼接为逗号分隔字符串
 private String joinPaths(ArrayList<String> paths) {
     if (paths == null) return "";
     StringBuilder sb = new StringBuilder();
@@ -1131,37 +1170,12 @@ private String joinPaths(ArrayList<String> paths) {
     return sb.toString();
 }
 
-// 辅助：从配置的逗号分隔路径数出数量
 private int countFromString(String s) {
     if (TextUtils.isEmpty(s)) return 0;
     String[] parts = s.split(",");
     int cnt = 0;
     for (String p : parts) if (!TextUtils.isEmpty(p.trim())) cnt++;
     return cnt;
-}
-
-// 新增：获取显示名称（优先群备注，没有则用昵称）
-// [修复] 改进逻辑：如果传入的 userName 看起来像 wxid（以 "wxid_" 开头），则优先尝试从联系人或群成员获取真实昵称，避免直接使用 wxid 作为昵称
-private String getDisplayName(String userWxid, String groupWxid, String userName) {
-    // 首先检查传入的 userName 是否有效（非空且非 wxid 格式）
-    if (!TextUtils.isEmpty(userName) && !userName.startsWith("wxid_")) {
-        return userName;
-    }
-
-    // 如果 userName 是 wxid 或空，尝试从全局好友昵称获取
-    String globalNickname = getFriendName(userWxid);
-    if (!TextUtils.isEmpty(globalNickname) && !"未设置".equals(globalNickname)) {
-        return globalNickname;
-    }
-
-    // 否则尝试从群内备注获取
-    String groupNickname = getFriendName(userWxid, groupWxid);
-    if (!TextUtils.isEmpty(groupNickname) && !"未设置".equals(groupNickname)) {
-        return groupNickname;
-    }
-
-    // 最终 fallback
-    return "新成员"; // 或返回 userWxid + " (新成员)" 以区分
 }
 
 // UI 美化辅助方法与布局构建
@@ -1221,11 +1235,14 @@ private EditText createStyledEditText(String hint, String initialText) {
     );
     params.setMargins(0, 8, 0, 16);
     editText.setLayoutParams(params);
+    
+    // 跟踪获得焦点的EditText用于变量快捷插入
     editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
         public void onFocusChange(View v, boolean hasFocus) {
             GradientDrawable bg = (GradientDrawable) v.getBackground();
             if (hasFocus) {
-                bg.setStroke(3, Color.parseColor("#7AA6C2")); // 焦点色
+                bg.setStroke(3, Color.parseColor("#7AA6C2")); 
+                currentFocusedEdit = (EditText) v;
             } else {
                 bg.setStroke(2, Color.parseColor("#E6E9EE"));
             }
@@ -1238,12 +1255,11 @@ private LinearLayout horizontalRow(View left, View right) {
     LinearLayout row = new LinearLayout(getTopActivity());
     row.setOrientation(LinearLayout.HORIZONTAL);
     row.setGravity(Gravity.CENTER_VERTICAL);
-    // [V3] 为媒体选择行增加外边距，拉开间距
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT
     );
-    params.setMargins(0, 8, 0, 8); // 增加垂直间距
+    params.setMargins(0, 8, 0, 8); 
     row.setLayoutParams(params);
 
     LinearLayout.LayoutParams lpLeft = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
@@ -1337,14 +1353,13 @@ private void styleRestoreButton(Button button) {
     button.setLayoutParams(params);
 }
 
-// [V3] 优化媒体选择按钮样式
 private void styleMediaSelectionButton(Button button) {
-    button.setTextColor(Color.parseColor("#3B82F6")); // 更鲜艳的蓝色
+    button.setTextColor(Color.parseColor("#3B82F6")); 
     GradientDrawable shape = new GradientDrawable();
     shape.setShape(GradientDrawable.RECTANGLE);
     shape.setCornerRadius(20);
-    shape.setColor(Color.parseColor("#EFF6FF")); // 更清爽的淡蓝色背景
-    shape.setStroke(2, Color.parseColor("#BFDBFE")); // 匹配的边框色
+    shape.setColor(Color.parseColor("#EFF6FF")); 
+    shape.setStroke(2, Color.parseColor("#BFDBFE")); 
     button.setBackground(shape);
     button.setAllCaps(false);
     button.setPadding(20, 12, 20, 12);
@@ -1438,7 +1453,7 @@ private void showActualGroupManagementDialog(final List<GroupInfo> allGroupList,
         dialogLayout.addView(searchEditText);
 
         TextView infoText = new TextView(getTopActivity());
-        infoText.setText("勾选开启监听。长按群聊可单独设置进/退群开关。");
+        infoText.setText("💡 勾选开启监听。长按群聊可单独设置群的进/退提示和内容。");
         infoText.setPadding(8, 0, 8, 16);
         dialogLayout.addView(infoText);
 
@@ -1492,7 +1507,6 @@ private void showActualGroupManagementDialog(final List<GroupInfo> allGroupList,
         });
 
         groupListView.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
-
             public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
                 if (position >= currentFilteredRoomIds.size()) return false;
 
@@ -1500,11 +1514,11 @@ private void showActualGroupManagementDialog(final List<GroupInfo> allGroupList,
                 String fullItemText = currentFilteredNames.get(position);
                 String displayGroupName = fullItemText.split("\n")[0].replace("🏠 ", "").replaceAll(" \\(.*\\)", "").trim();
 
+                currentFocusedEdit = null; // 重置焦点状态
                 showIndividualGroupPromptToggleDialog(selectedId, displayGroupName);
                 return true;
             }
         });
-
 
         builder.setPositiveButton("✅ 保存监听列表", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
@@ -1513,13 +1527,11 @@ private void showActualGroupManagementDialog(final List<GroupInfo> allGroupList,
             }
         });
         builder.setNegativeButton("❌ 关闭", null);
-        builder.setNeutralButton("✨ 全选", null); // Placeholder text, real text set in onShow
+        builder.setNeutralButton("✨ 全选", null); 
 
         final AlertDialog dialog = builder.create();
 
-        // [V4] 改进全选按钮，增加取消全选功能
         dialog.setOnShowListener(new DialogInterface.OnShowListener() {
-            
             public void onShow(DialogInterface d) {
                 GradientDrawable dialogBg = new GradientDrawable();
                 dialogBg.setCornerRadius(48);
@@ -1530,32 +1542,27 @@ private void showActualGroupManagementDialog(final List<GroupInfo> allGroupList,
 
                 final Button selectAllButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
                 if (selectAllButton != null) {
-                    // 检查初始状态并设置按钮文本
                     boolean allSelected = !currentFilteredRoomIds.isEmpty() && selectedGroups.containsAll(currentFilteredRoomIds);
                     selectAllButton.setText(allSelected ? "✨ 取消全选" : "✨ 全选");
 
                     selectAllButton.setOnClickListener(new View.OnClickListener() {
-                        
                         public void onClick(View v) {
-                            // 再次检查当前状态，以决定执行全选还是取消全选
                             boolean allSelectedCurrently = !currentFilteredRoomIds.isEmpty() && selectedGroups.containsAll(currentFilteredRoomIds);
 
                             if (allSelectedCurrently) {
-                                // 如果已是全选状态，则执行取消全选
                                 selectedGroups.removeAll(currentFilteredRoomIds);
                                 for (int i = 0; i < groupListView.getCount(); i++) {
                                     groupListView.setItemChecked(i, false);
                                 }
                                 toast("已取消全选");
-                                selectAllButton.setText("✨ 全选"); // 更新按钮文本为下一次操作
+                                selectAllButton.setText("✨ 全选"); 
                             } else {
-                                // 否则，执行全选
                                 selectedGroups.addAll(currentFilteredRoomIds);
                                 for (int i = 0; i < groupListView.getCount(); i++) {
                                     groupListView.setItemChecked(i, true);
                                 }
                                 toast("已全选当前列表中的 " + currentFilteredRoomIds.size() + " 个群组");
-                                selectAllButton.setText("✨ 取消全选"); // 更新按钮文本为下一次操作
+                                selectAllButton.setText("✨ 取消全选"); 
                             }
                         }
                     });
@@ -1583,34 +1590,349 @@ private void showActualGroupManagementDialog(final List<GroupInfo> allGroupList,
     }
 }
 
-private void showIndividualGroupPromptToggleDialog(final String groupWxid, String groupName) {
+// === 更新的全面专属进退群设置弹窗 (包含全部媒体+精细延迟功能) ===
+private void showIndividualGroupPromptToggleDialog(final String groupWxid, final String groupName) {
     try {
         final Set<String> disabledJoinToggles = getStringSet(JOIN_TOGGLE_KEY, new HashSet<String>());
         final Set<String> disabledLeftToggles = getStringSet(LEFT_TOGGLE_KEY, new HashSet<String>());
 
-        LinearLayout layout = new LinearLayout(getTopActivity());
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(50, 50, 50, 50);
+        ScrollView scrollView = new ScrollView(getTopActivity());
+        LinearLayout rootLayout = new LinearLayout(getTopActivity());
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setPadding(24, 24, 24, 24);
+        rootLayout.setBackgroundColor(Color.parseColor("#FAFBF9"));
+        scrollView.addView(rootLayout);
 
+        // --- 获取全局默认文本，用于专属设置页面的兜底填充 ---
+        final String globalJoinText = getString(JOIN_TEXT_PROMPT_KEY, "[AtWx=%userWxid%]\n欢迎进群\n时间：%time%\n群昵称：%groupName%\n进群者微信昵称：%userName%\n进群者群内昵称：%groupNickname%\n进群者ID：%userWxid%");
+        final String globalLeftText = getString(LEFT_TEXT_PROMPT_KEY, "退群通知：\n时间：%time%\n群昵称：%groupName%\n退群者微信昵称：%userName%\n退群者群内昵称：%groupNickname%\n退群者ID：%userWxid%");
+        
+        final String globalJoinCardTitle = getString(JOIN_CARD_TITLE_KEY, "🎊 欢迎：%userName%");
+        final String globalJoinCardDesc = getString(JOIN_CARD_DESC_KEY, "🆔：%userWxid%\n名片：%groupNickname%\n⏰：%time%");
+        final String globalLeftCardTitle = getString(LEFT_CARD_TITLE_KEY, "💔 离群：%userName%");
+        final String globalLeftCardDesc = getString(LEFT_CARD_DESC_KEY, "🆔：%userWxid%\n名片：%groupNickname%\n⏰：%time%");
+
+        // --- 卡片1: 专属基础开关与模式 ---
+        LinearLayout baseCard = createCardLayout();
+        baseCard.addView(createSectionTitle("⚙️ 本群专属提示设置"));
+        
         final Switch joinSwitch = new Switch(getTopActivity());
-        joinSwitch.setText("开启进群提示  ");
+        joinSwitch.setText("开启本群进群提示  ");
         joinSwitch.setTextSize(16);
-        joinSwitch.setPadding(8, 24, 8, 24);
+        joinSwitch.setPadding(8, 16, 8, 24);
         joinSwitch.setChecked(!disabledJoinToggles.contains(groupWxid));
-        layout.addView(joinSwitch);
-
+        baseCard.addView(joinSwitch);
+        
         final Switch leftSwitch = new Switch(getTopActivity());
-        leftSwitch.setText("开启退群提示  ");
+        leftSwitch.setText("开启本群退群提示  ");
         leftSwitch.setTextSize(16);
-        leftSwitch.setPadding(8, 24, 8, 24);
+        leftSwitch.setPadding(8, 16, 8, 24);
         leftSwitch.setChecked(!disabledLeftToggles.contains(groupWxid));
-        layout.addView(leftSwitch);
+        baseCard.addView(leftSwitch);
+
+        baseCard.addView(newTextView("本群专属文本模式:"));
+        RadioGroup promptTypeGroup = new RadioGroup(getTopActivity());
+        promptTypeGroup.setOrientation(RadioGroup.HORIZONTAL);
+        final RadioButton inheritBtn = new RadioButton(getTopActivity()); inheritBtn.setText("继承全局");
+        final RadioButton textBtn = new RadioButton(getTopActivity()); textBtn.setText("文本");
+        final RadioButton cardBtn = new RadioButton(getTopActivity()); cardBtn.setText("卡片");
+        promptTypeGroup.addView(inheritBtn); promptTypeGroup.addView(textBtn); promptTypeGroup.addView(cardBtn);
+        
+        String currentCustomType = getString(PROMPT_TYPE_KEY + "_" + groupWxid, "global");
+        if ("text".equals(currentCustomType)) textBtn.setChecked(true);
+        else if ("card".equals(currentCustomType)) cardBtn.setChecked(true);
+        else inheritBtn.setChecked(true);
+        baseCard.addView(promptTypeGroup);
+        
+        rootLayout.addView(baseCard);
+
+        // --- 卡片2: 专属文本提示语 ---
+        LinearLayout textPromptCard = createCardLayout();
+        textPromptCard.addView(createSectionTitle("📝 本群专属文本提示语"));
+        textPromptCard.addView(createVariableBar()); 
+        
+        // 关键修复：直接读取群设置，如果没有则使用最新的全局设置进行预填
+        final EditText joinTextEdit = createStyledEditText("自定义进群文本", getString(JOIN_TEXT_PROMPT_KEY + "_" + groupWxid, globalJoinText));
+        joinTextEdit.setLines(4);
+        joinTextEdit.setGravity(Gravity.TOP);
+        textPromptCard.addView(joinTextEdit);
+
+        final EditText leftTextEdit = createStyledEditText("自定义退群文本", getString(LEFT_TEXT_PROMPT_KEY + "_" + groupWxid, globalLeftText));
+        leftTextEdit.setLines(4);
+        leftTextEdit.setGravity(Gravity.TOP);
+        textPromptCard.addView(leftTextEdit);
+
+        Button fillRandomTextButton = new Button(getTopActivity());
+        fillRandomTextButton.setText("💡 随机填充专属欢迎/退群语");
+        styleFillButton(fillRandomTextButton);
+        textPromptCard.addView(fillRandomTextButton);
+
+        Button clearTextButton = new Button(getTopActivity());
+        clearTextButton.setText("🔄 恢复全局");
+        styleRestoreButton(clearTextButton);
+        textPromptCard.addView(clearTextButton);
+        
+        rootLayout.addView(textPromptCard);
+
+        // --- 卡片3: 专属卡片提示语 ---
+        LinearLayout cardPromptCard = createCardLayout();
+        cardPromptCard.addView(createSectionTitle("🖼️ 本群专属卡片提示语"));
+        cardPromptCard.addView(createVariableBar());
+        
+        final EditText joinCardTitleEdit = createStyledEditText("自定义进群卡片标题", getString(JOIN_CARD_TITLE_KEY + "_" + groupWxid, globalJoinCardTitle));
+        cardPromptCard.addView(joinCardTitleEdit);
+        final EditText joinCardDescEdit = createStyledEditText("自定义进群卡片描述", getString(JOIN_CARD_DESC_KEY + "_" + groupWxid, globalJoinCardDesc));
+        joinCardDescEdit.setLines(2); joinCardDescEdit.setGravity(Gravity.TOP);
+        cardPromptCard.addView(joinCardDescEdit);
+
+        final EditText leftCardTitleEdit = createStyledEditText("自定义退群卡片标题", getString(LEFT_CARD_TITLE_KEY + "_" + groupWxid, globalLeftCardTitle));
+        cardPromptCard.addView(leftCardTitleEdit);
+        final EditText leftCardDescEdit = createStyledEditText("自定义退群卡片描述", getString(LEFT_CARD_DESC_KEY + "_" + groupWxid, globalLeftCardDesc));
+        leftCardDescEdit.setLines(2); leftCardDescEdit.setGravity(Gravity.TOP);
+        cardPromptCard.addView(leftCardDescEdit);
+
+        Button fillRandomCardButton = new Button(getTopActivity());
+        fillRandomCardButton.setText("💡 随机填充专属卡片内容");
+        styleFillButton(fillRandomCardButton);
+        cardPromptCard.addView(fillRandomCardButton);
+
+        Button clearCardButton = new Button(getTopActivity());
+        clearCardButton.setText("🔄 恢复全局");
+        styleRestoreButton(clearCardButton);
+        cardPromptCard.addView(clearCardButton);
+
+        rootLayout.addView(cardPromptCard);
+
+        // --- 卡片4: 专属媒体设置 ---
+        LinearLayout mediaCard = createCardLayout();
+        mediaCard.addView(createSectionTitle("📂 本群专属媒体设置"));
+        
+        RadioGroup mediaModeGroup = new RadioGroup(getTopActivity());
+        mediaModeGroup.setOrientation(RadioGroup.HORIZONTAL);
+        final RadioButton inheritMediaBtn = new RadioButton(getTopActivity()); inheritMediaBtn.setText("继承全局");
+        final RadioButton customMediaBtn = new RadioButton(getTopActivity()); customMediaBtn.setText("独立配置");
+        final RadioButton noneMediaBtn = new RadioButton(getTopActivity()); noneMediaBtn.setText("不发媒体");
+        mediaModeGroup.addView(inheritMediaBtn); mediaModeGroup.addView(customMediaBtn); mediaModeGroup.addView(noneMediaBtn);
+        
+        String currentMediaMode = getString("media_mode_" + groupWxid, "global");
+        if ("custom".equals(currentMediaMode)) customMediaBtn.setChecked(true);
+        else if ("none".equals(currentMediaMode)) noneMediaBtn.setChecked(true);
+        else inheritMediaBtn.setChecked(true);
+        mediaCard.addView(mediaModeGroup);
+        
+        // 只有选择“独立配置”时，才展示这些媒体选项
+        final LinearLayout customMediaContainer = new LinearLayout(getTopActivity());
+        customMediaContainer.setOrientation(LinearLayout.VERTICAL);
+        customMediaContainer.setVisibility("custom".equals(currentMediaMode) ? View.VISIBLE : View.GONE);
+        
+        customMediaContainer.addView(newTextView("媒体发送顺序 (英文逗号隔开):"));
+        final EditText customMediaSequenceEdit = createStyledEditText("如: image,voice,video...", getString(SEND_MEDIA_SEQUENCE_KEY + "_" + groupWxid, "image,voice,emoji,video,file"));
+        customMediaContainer.addView(customMediaSequenceEdit);
+
+        RadioGroup customMediaOrderGroup = new RadioGroup(getTopActivity());
+        customMediaOrderGroup.setOrientation(RadioGroup.HORIZONTAL);
+        final RadioButton orderNoneBtn = new RadioButton(getTopActivity()); orderNoneBtn.setText("不发媒体");
+        final RadioButton orderBeforeBtn = new RadioButton(getTopActivity()); orderBeforeBtn.setText("先媒体后提示");
+        final RadioButton orderAfterBtn = new RadioButton(getTopActivity()); orderAfterBtn.setText("先提示后媒体");
+        customMediaOrderGroup.addView(orderNoneBtn); customMediaOrderGroup.addView(orderBeforeBtn); customMediaOrderGroup.addView(orderAfterBtn);
+        
+        String currentCustomOrder = getString(SEND_MEDIA_ORDER_KEY + "_" + groupWxid, "none");
+        if ("before".equals(currentCustomOrder)) orderBeforeBtn.setChecked(true);
+        else if ("after".equals(currentCustomOrder)) orderAfterBtn.setChecked(true);
+        else orderNoneBtn.setChecked(true);
+        customMediaContainer.addView(customMediaOrderGroup);
+        
+        customMediaContainer.addView(createSectionTitle("🗂️ 本群专属媒体文件选择"));
+
+        Button btnSelJoinImages = new Button(getTopActivity()); btnSelJoinImages.setText("进群图片");
+        TextView tvJoinImgCnt = new TextView(getTopActivity());
+        setupMediaButton(btnSelJoinImages, tvJoinImgCnt, JOIN_IMAGE_PATHS_KEY + "_" + groupWxid, ".png", "专属进群图片");
+
+        Button btnSelLeftImages = new Button(getTopActivity()); btnSelLeftImages.setText("退群图片");
+        TextView tvLeftImgCnt = new TextView(getTopActivity());
+        setupMediaButton(btnSelLeftImages, tvLeftImgCnt, LEFT_IMAGE_PATHS_KEY + "_" + groupWxid, ".png", "专属退群图片");
+
+        Button btnSelJoinVoices = new Button(getTopActivity()); btnSelJoinVoices.setText("进群语音");
+        TextView tvJoinVoiceCnt = new TextView(getTopActivity());
+        setupMediaButton(btnSelJoinVoices, tvJoinVoiceCnt, JOIN_VOICE_PATHS_KEY + "_" + groupWxid, "", "专属进群语音");
+
+        Button btnSelLeftVoices = new Button(getTopActivity()); btnSelLeftVoices.setText("退群语音");
+        TextView tvLeftVoiceCnt = new TextView(getTopActivity());
+        setupMediaButton(btnSelLeftVoices, tvLeftVoiceCnt, LEFT_VOICE_PATHS_KEY + "_" + groupWxid, "", "专属退群语音");
+
+        Button btnSelJoinEmojis = new Button(getTopActivity()); btnSelJoinEmojis.setText("进群表情");
+        TextView tvJoinEmojiCnt = new TextView(getTopActivity());
+        setupMediaButton(btnSelJoinEmojis, tvJoinEmojiCnt, JOIN_EMOJI_PATHS_KEY + "_" + groupWxid, ".png", "专属进群表情");
+
+        Button btnSelLeftEmojis = new Button(getTopActivity()); btnSelLeftEmojis.setText("退群表情");
+        TextView tvLeftEmojiCnt = new TextView(getTopActivity());
+        setupMediaButton(btnSelLeftEmojis, tvLeftEmojiCnt, LEFT_EMOJI_PATHS_KEY + "_" + groupWxid, ".png", "专属退群表情");
+
+        Button btnSelJoinVideos = new Button(getTopActivity()); btnSelJoinVideos.setText("进群视频");
+        TextView tvJoinVideoCnt = new TextView(getTopActivity());
+        setupMediaButton(btnSelJoinVideos, tvJoinVideoCnt, JOIN_VIDEO_PATHS_KEY + "_" + groupWxid, ".mp4", "专属进群视频");
+
+        Button btnSelLeftVideos = new Button(getTopActivity()); btnSelLeftVideos.setText("退群视频");
+        TextView tvLeftVideoCnt = new TextView(getTopActivity());
+        // ！！！这里修复了拼写错误 tvLeftVideosCount -> tvLeftVideoCnt ！！！
+        setupMediaButton(btnSelLeftVideos, tvLeftVideoCnt, LEFT_VIDEO_PATHS_KEY + "_" + groupWxid, ".mp4", "专属退群视频");
+
+        Button btnSelJoinFiles = new Button(getTopActivity()); btnSelJoinFiles.setText("进群文件");
+        TextView tvJoinFileCnt = new TextView(getTopActivity());
+        setupMediaButton(btnSelJoinFiles, tvJoinFileCnt, JOIN_FILE_PATHS_KEY + "_" + groupWxid, "", "专属进群文件");
+
+        Button btnSelLeftFiles = new Button(getTopActivity()); btnSelLeftFiles.setText("退群文件");
+        TextView tvLeftFileCnt = new TextView(getTopActivity());
+        setupMediaButton(btnSelLeftFiles, tvLeftFileCnt, LEFT_FILE_PATHS_KEY + "_" + groupWxid, "", "专属退群文件");
+
+        customMediaContainer.addView(horizontalRow(btnSelJoinImages, tvJoinImgCnt));
+        customMediaContainer.addView(horizontalRow(btnSelLeftImages, tvLeftImgCnt));
+        customMediaContainer.addView(horizontalRow(btnSelJoinVoices, tvJoinVoiceCnt));
+        customMediaContainer.addView(horizontalRow(btnSelLeftVoices, tvLeftVoiceCnt));
+        customMediaContainer.addView(horizontalRow(btnSelJoinEmojis, tvJoinEmojiCnt));
+        customMediaContainer.addView(horizontalRow(btnSelLeftEmojis, tvLeftEmojiCnt));
+        customMediaContainer.addView(horizontalRow(btnSelJoinVideos, tvJoinVideoCnt));
+        customMediaContainer.addView(horizontalRow(btnSelLeftVideos, tvLeftVideoCnt));
+        customMediaContainer.addView(horizontalRow(btnSelJoinFiles, tvJoinFileCnt));
+        customMediaContainer.addView(horizontalRow(btnSelLeftFiles, tvLeftFileCnt));
+
+        mediaCard.addView(customMediaContainer);
+
+        mediaModeGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            public void onCheckedChanged(RadioGroup group, int checkedId) {
+                if (checkedId == customMediaBtn.getId()) {
+                    customMediaContainer.setVisibility(View.VISIBLE);
+                } else {
+                    customMediaContainer.setVisibility(View.GONE);
+                }
+            }
+        });
+
+        rootLayout.addView(mediaCard);
+
+        // --- 卡片5: 专属精细延迟设置 ---
+        LinearLayout delayCard = createCardLayout();
+        delayCard.addView(createSectionTitle("⏱️ 本群专属延迟设置"));
+        
+        RadioGroup delayModeGroup = new RadioGroup(getTopActivity());
+        delayModeGroup.setOrientation(RadioGroup.HORIZONTAL);
+        final RadioButton inheritDelayBtn = new RadioButton(getTopActivity()); inheritDelayBtn.setText("继承全局");
+        final RadioButton customDelayBtn = new RadioButton(getTopActivity()); customDelayBtn.setText("独立配置");
+        delayModeGroup.addView(inheritDelayBtn); delayModeGroup.addView(customDelayBtn);
+        
+        String currentDelayMode = getString("delay_mode_" + groupWxid, "global");
+        if ("custom".equals(currentDelayMode)) customDelayBtn.setChecked(true);
+        else inheritDelayBtn.setChecked(true);
+        delayCard.addView(delayModeGroup);
+
+        final LinearLayout customDelayContainer = new LinearLayout(getTopActivity());
+        customDelayContainer.setOrientation(LinearLayout.VERTICAL);
+        customDelayContainer.setVisibility("custom".equals(currentDelayMode) ? View.VISIBLE : View.GONE);
+
+        customDelayContainer.addView(newTextView("提示语延迟 (毫秒):"));
+        final EditText customPromptDelayEdit = createStyledEditText("0", String.valueOf(getInt(PROMPT_DELAY_KEY + "_" + groupWxid, getInt(PROMPT_DELAY_KEY, 0))));
+        customDelayContainer.addView(customPromptDelayEdit);
+        
+        customDelayContainer.addView(newTextView("图片延迟 (毫秒):"));
+        final EditText customImageDelayEdit = createStyledEditText("100", String.valueOf(getInt(IMAGE_DELAY_KEY + "_" + groupWxid, getInt(IMAGE_DELAY_KEY, 100))));
+        customDelayContainer.addView(customImageDelayEdit);
+
+        customDelayContainer.addView(newTextView("语音延迟 (毫秒):"));
+        final EditText customVoiceDelayEdit = createStyledEditText("100", String.valueOf(getInt(VOICE_DELAY_KEY + "_" + groupWxid, getInt(VOICE_DELAY_KEY, 100))));
+        customDelayContainer.addView(customVoiceDelayEdit);
+
+        customDelayContainer.addView(newTextView("表情延迟 (毫秒):"));
+        final EditText customEmojiDelayEdit = createStyledEditText("100", String.valueOf(getInt(EMOJI_DELAY_KEY + "_" + groupWxid, getInt(EMOJI_DELAY_KEY, 100))));
+        customDelayContainer.addView(customEmojiDelayEdit);
+
+        customDelayContainer.addView(newTextView("视频延迟 (毫秒):"));
+        final EditText customVideoDelayEdit = createStyledEditText("100", String.valueOf(getInt(VIDEO_DELAY_KEY + "_" + groupWxid, getInt(VIDEO_DELAY_KEY, 100))));
+        customDelayContainer.addView(customVideoDelayEdit);
+
+        customDelayContainer.addView(newTextView("文件延迟 (毫秒):"));
+        final EditText customFileDelayEdit = createStyledEditText("100", String.valueOf(getInt(FILE_DELAY_KEY + "_" + groupWxid, getInt(FILE_DELAY_KEY, 100))));
+        customDelayContainer.addView(customFileDelayEdit);
+
+        delayCard.addView(customDelayContainer);
+
+        delayModeGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            public void onCheckedChanged(RadioGroup group, int checkedId) {
+                if (checkedId == customDelayBtn.getId()) {
+                    customDelayContainer.setVisibility(View.VISIBLE);
+                } else {
+                    customDelayContainer.setVisibility(View.GONE);
+                }
+            }
+        });
+
+        rootLayout.addView(delayCard);
+
+        // ---- 按钮逻辑 ----
+        fillRandomTextButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                String randomJoin = RANDOM_JOIN_TEXTS_ARRAY[new Random().nextInt(RANDOM_JOIN_TEXTS_ARRAY.length)];
+                String randomLeft = RANDOM_LEFT_TEXTS_ARRAY[new Random().nextInt(RANDOM_LEFT_TEXTS_ARRAY.length)];
+                joinTextEdit.setText(randomJoin);
+                leftTextEdit.setText(randomLeft);
+                toast("已随机填充本群专属欢迎/退群语");
+            }
+        });
+        clearTextButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                joinTextEdit.setText(globalJoinText);
+                leftTextEdit.setText(globalLeftText);
+                toast("文本已重置为全局默认");
+            }
+        });
+
+        fillRandomCardButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                String title = RANDOM_JOIN_CARD_TITLES_ARRAY[new Random().nextInt(RANDOM_JOIN_CARD_TITLES_ARRAY.length)];
+                String desc = RANDOM_JOIN_CARD_DESCS_ARRAY[new Random().nextInt(RANDOM_JOIN_CARD_DESCS_ARRAY.length)];
+                joinCardTitleEdit.setText(title);
+                joinCardDescEdit.setText(desc);
+
+                String ltitle = RANDOM_LEFT_CARD_TITLES_ARRAY[new Random().nextInt(RANDOM_LEFT_CARD_TITLES_ARRAY.length)];
+                String ldesc = RANDOM_LEFT_CARD_DESCS_ARRAY[new Random().nextInt(RANDOM_LEFT_CARD_DESCS_ARRAY.length)];
+                leftCardTitleEdit.setText(ltitle);
+                leftCardDescEdit.setText(ldesc);
+                toast("已随机填充本群专属卡片内容");
+            }
+        });
+        clearCardButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                joinCardTitleEdit.setText(globalJoinCardTitle);
+                joinCardDescEdit.setText(globalJoinCardDesc);
+                leftCardTitleEdit.setText(globalLeftCardTitle);
+                leftCardDescEdit.setText(globalLeftCardDesc);
+                toast("卡片内容已重置为全局默认");
+            }
+        });
+
 
         AlertDialog dialog = new AlertDialog.Builder(getTopActivity())
             .setTitle("🔧 " + groupName)
-            .setView(layout)
-            .setPositiveButton("✅ 保存", new DialogInterface.OnClickListener() {
+            .setView(scrollView)
+            .setPositiveButton("✅ 保存设置", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface dialog, int which) {
+                    
+                    // --- 先做前置检查，防崩溃 ---
+                    int pDelay = 0, iDelay = 0, voDelay = 0, eDelay = 0, viDelay = 0, fDelay = 0;
+                    if (customDelayBtn.isChecked()) {
+                        try {
+                            pDelay = Integer.parseInt(customPromptDelayEdit.getText().toString());
+                            iDelay = Integer.parseInt(customImageDelayEdit.getText().toString());
+                            voDelay = Integer.parseInt(customVoiceDelayEdit.getText().toString());
+                            eDelay = Integer.parseInt(customEmojiDelayEdit.getText().toString());
+                            viDelay = Integer.parseInt(customVideoDelayEdit.getText().toString());
+                            fDelay = Integer.parseInt(customFileDelayEdit.getText().toString());
+                        } catch (NumberFormatException e) {
+                            toast("保存失败：专属延迟必须填写有效的纯数字!");
+                            return; 
+                        }
+                    }
+
+                    // 1. 保存开关状态
                     if (joinSwitch.isChecked()) {
                         disabledJoinToggles.remove(groupWxid);
                     } else {
@@ -1623,14 +1945,57 @@ private void showIndividualGroupPromptToggleDialog(final String groupWxid, Strin
                     }
                     putStringSet(JOIN_TOGGLE_KEY, disabledJoinToggles);
                     putStringSet(LEFT_TOGGLE_KEY, disabledLeftToggles);
-                    toast("已保存 " + groupName + " 的开关设置");
+
+                    // 2. 保存提示语类型
+                    String selectedType = "global";
+                    if (textBtn.isChecked()) selectedType = "text";
+                    else if (cardBtn.isChecked()) selectedType = "card";
+                    putString(PROMPT_TYPE_KEY + "_" + groupWxid, selectedType);
+
+                    // 3. 保存专属内容
+                    putString(JOIN_TEXT_PROMPT_KEY + "_" + groupWxid, joinTextEdit.getText().toString());
+                    putString(JOIN_CARD_TITLE_KEY + "_" + groupWxid, joinCardTitleEdit.getText().toString());
+                    putString(JOIN_CARD_DESC_KEY + "_" + groupWxid, joinCardDescEdit.getText().toString());
+
+                    putString(LEFT_TEXT_PROMPT_KEY + "_" + groupWxid, leftTextEdit.getText().toString());
+                    putString(LEFT_CARD_TITLE_KEY + "_" + groupWxid, leftCardTitleEdit.getText().toString());
+                    putString(LEFT_CARD_DESC_KEY + "_" + groupWxid, leftCardDescEdit.getText().toString());
+
+                    // 4. 保存媒体配置
+                    String mMode = "global";
+                    if (customMediaBtn.isChecked()) mMode = "custom";
+                    else if (noneMediaBtn.isChecked()) mMode = "none";
+                    putString("media_mode_" + groupWxid, mMode);
+                    
+                    if ("custom".equals(mMode)) {
+                        putString(SEND_MEDIA_SEQUENCE_KEY + "_" + groupWxid, customMediaSequenceEdit.getText().toString());
+                        String oMode = "none";
+                        if (orderBeforeBtn.isChecked()) oMode = "before";
+                        else if (orderAfterBtn.isChecked()) oMode = "after";
+                        putString(SEND_MEDIA_ORDER_KEY + "_" + groupWxid, oMode);
+                    }
+
+                    // 5. 保存延迟配置
+                    String dMode = "global";
+                    if (customDelayBtn.isChecked()) dMode = "custom";
+                    putString("delay_mode_" + groupWxid, dMode);
+
+                    if ("custom".equals(dMode)) {
+                        putInt(PROMPT_DELAY_KEY + "_" + groupWxid, pDelay);
+                        putInt(IMAGE_DELAY_KEY + "_" + groupWxid, iDelay);
+                        putInt(VOICE_DELAY_KEY + "_" + groupWxid, voDelay);
+                        putInt(EMOJI_DELAY_KEY + "_" + groupWxid, eDelay);
+                        putInt(VIDEO_DELAY_KEY + "_" + groupWxid, viDelay);
+                        putInt(FILE_DELAY_KEY + "_" + groupWxid, fDelay);
+                    }
+
+                    toast("已保存 " + groupName + " 的专属设置");
                 }
             })
             .setNegativeButton("❌ 取消", null)
             .create();
 
         dialog.setOnShowListener(new DialogInterface.OnShowListener() {
-            
             public void onShow(DialogInterface d) {
                 GradientDrawable dialogBg = new GradientDrawable();
                 dialogBg.setCornerRadius(48);

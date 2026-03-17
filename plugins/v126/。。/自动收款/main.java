@@ -80,7 +80,7 @@ void handleTransfer(final Object msg) {
 
     String myWxid = getLoginWxid();
 
-    // --- 核心修复 1：严格校验收款人身份 ---
+    // --- 核心校验 1：严格校验收款人身份 ---
     String receiver = parseReceiverFromXml(content);
     if (!TextUtils.isEmpty(receiver) && !TextUtils.isEmpty(myWxid)) {
         if (!receiver.equals(myWxid)) {
@@ -89,7 +89,7 @@ void handleTransfer(final Object msg) {
         }
     }
 
-    // --- 核心修复 2：严格校验转账状态 (防止退回消息触发回复) ---
+    // --- 核心校验 2：严格校验转账状态 (防止退回消息触发回复) ---
     // paysubtype: 1=待收款(正常), 3=已收款, 4=已退回/拒收
     String paysubtype = parsePaySubtypeFromXml(content);
     if (!"1".equals(paysubtype)) {
@@ -97,24 +97,67 @@ void handleTransfer(final Object msg) {
         return;
     }
 
-    // 1. 解析信息
+    // 1. 解析基本信息
     final String talker = msg.getTalker(); // 聊天对象
     String payer = "";
     double amount = 0.0;
-    try {
-        // 获取付款人（恢复原逻辑，兼容payerUsername为空的合法转账）
-        payer = msg.getSendTalker();
-        if (TextUtils.isEmpty(payer)) {
-            if (msg.transferMsg != null) payer = msg.transferMsg.payerUsername;
-        }
-        if (TextUtils.isEmpty(payer)) payer = talker; // 私聊兜底
+    
+    // ======== 核心修复 3：动态类型接收参数，解决强转报错 ========
+    String transactionId = "";
+    String transferId = "";
+    String payerUsername = "";
+    Object invalidTime = null; // 【关键】使用 Object 防止 invalidTime 为 int 时报类型错误
 
+    try {
+        payer = msg.getSendTalker();
+        if (msg.transferMsg != null) {
+            Object tmpTxId = msg.transferMsg.transactionId;
+            if (tmpTxId != null) transactionId = tmpTxId.toString();
+            
+            Object tmpTfId = msg.transferMsg.transferId;
+            if (tmpTfId != null) transferId = tmpTfId.toString();
+            
+            // 原封不动接收原始值(自动装箱)
+            invalidTime = msg.transferMsg.invalidTime;
+            
+            Object tmpPayer = msg.transferMsg.payerUsername;
+            if (TextUtils.isEmpty(payer) && tmpPayer != null) {
+                payer = tmpPayer.toString();
+            }
+        }
+    } catch (Throwable t) {
+        // log("提取参数报错: " + t.getMessage());
+    }
+
+    if (TextUtils.isEmpty(payer)) payer = talker; // 私聊兜底
+    payerUsername = payer;
+
+    // 兜底：从 XML 中直接解析转账核心参数 (防止由于版本不兼容导致 msg.transferMsg 为空)
+    if (TextUtils.isEmpty(transactionId)) {
+        transactionId = parseXmlValue(content, "transcationid");
+        if (TextUtils.isEmpty(transactionId)) transactionId = parseXmlValue(content, "transactionid");
+    }
+    if (TextUtils.isEmpty(transferId)) {
+        transferId = parseXmlValue(content, "transferid");
+    }
+    if (invalidTime == null) {
+        String xmlTime = parseXmlValue(content, "invalidtime");
+        if (!TextUtils.isEmpty(xmlTime)) {
+            try {
+                // 尽量转回整数，保持与原接口的类型一致性
+                invalidTime = Integer.parseInt(xmlTime);
+            } catch (Exception e) {
+                invalidTime = xmlTime;
+            }
+        }
+    }
+
+    try {
         // 防止自己转账给自己
         if (!TextUtils.isEmpty(myWxid) && payer.equals(myWxid)) {
             log(">> 付款人是本人，忽略（防止自己转账给自己触发）");
             return;
         }
-
         // 解析金额
         amount = parseAmountFromXml(content);
     } catch (Exception e) {
@@ -128,7 +171,6 @@ void handleTransfer(final Object msg) {
     // 2. 规则判定 (rejectReason不为空则拒收)
     String rejectReason = null;
 
-    // A. 名单检查（优化版：支持群聊白/黑名单）
     int listMode = getInt(KEY_MODE, 0); // 0:全收, 1:白名单, 2:黑名单
     boolean isGroup = !payer.equals(talker);  // 群聊时 payer ≠ talker，私聊时相等
 
@@ -150,7 +192,7 @@ void handleTransfer(final Object msg) {
         }
     }
 
-    // B. 金额检查 (逻辑已修复)
+    // B. 金额检查 
     if (rejectReason == null && getBoolean(KEY_AMT_ENABLE, false)) {
         int cond = getInt(KEY_AMT_COND, 1); // 0:>, 1:<, 2:=
         double limit = Double.parseDouble(getString(KEY_AMT_VAL, "0"));
@@ -160,9 +202,9 @@ void handleTransfer(final Object msg) {
         else if (cond == 1 && amount < limit - 0.001) match = true; // 小于
         else if (cond == 2 && Math.abs(amount - limit) < 0.01) match = true; // 等于
 
-        if (action == 0) { // 动作0: 拒收/忽略 -> 满足条件则拒收 (黑名单逻辑)
+        if (action == 0) { // 动作0: 拒收/忽略 -> 满足条件则拒收
             if (match) rejectReason = "金额(" + amount + ")触发拒收规则";
-        } else { // 动作1: 强制接收 -> 不满足条件则拒收 (白名单逻辑)
+        } else { // 动作1: 强制接收 -> 不满足条件则拒收
             if (!match) rejectReason = "金额(" + amount + ")不满足仅接收条件";
         }
     }
@@ -180,19 +222,32 @@ void handleTransfer(final Object msg) {
     final long delay = getLong(KEY_DELAY, 0);
     final boolean replyEnable = getBoolean(KEY_REPLY_ENABLE, false);
     final String replyText = getString(KEY_REPLY_TEXT, "谢谢老板");
-    final String fPayer = payer;
     final String fTalker = talker;
+    
+    // ======== 准备 final 变量传入子线程 ========
+    final String fTransactionId = transactionId;
+    final String fTransferId = transferId;
+    final String fPayerUsername = payerUsername;
+    final Object fInvalidTime = invalidTime;
 
     if (rejectReason == null) {
         // >> 接收 <<
         log(">> 准备收款: " + amount + "元, 延迟: " + delay + "ms");
+        
+        // 如果提取不到必要单号参数，不执行收款并提示日志
+        if (TextUtils.isEmpty(fTransactionId) || TextUtils.isEmpty(fTransferId)) {
+            log("❌ 收款中断: 无法获取转账单号，可能是当前框架未适配此版本微信结构。");
+            return;
+        }
+
         new Thread(new Runnable() {
             public void run() {
                 try {
                     if (delay > 0) Thread.sleep(delay);
+                    
                     // 调用收款接口
-                    confirmTransfer(msg.transferMsg.transactionId, msg.transferMsg.transferId, msg.transferMsg.payerUsername, msg.transferMsg.invalidTime);
-                    log(">> 收款动作执行完成 (单号:" + msg.transferMsg.transferId + ")");
+                    confirmTransfer(fTransactionId, fTransferId, fPayerUsername, fInvalidTime);
+                    log(">> 收款动作执行完成 (单号:" + fTransferId + ")");
 
                     // 成功后才回复
                     if (replyEnable && !TextUtils.isEmpty(replyText)) {
@@ -200,10 +255,9 @@ void handleTransfer(final Object msg) {
                         sendText(fTalker, replyText);
                         log(">> 已自动回复: " + replyText);
                     }
-                } catch (Exception e) {
-                    final String errorMsg = e.getMessage();
-                    log("❌ 收款异常(可能已被领取或非本人): " + errorMsg);
-                    // --- 特定报错弹窗提示 ---
+                } catch (Throwable e) { 
+                    final String errorMsg = e.toString();
+                    log("❌ 收款异常(可能已被领取或报错): " + errorMsg);
                     if (errorMsg != null && errorMsg.contains("no permission to invoke")) {
                         new Handler(Looper.getMainLooper()).post(new Runnable() {
                             public void run() {
@@ -219,16 +273,30 @@ void handleTransfer(final Object msg) {
         log(">> 忽略/拒收: " + rejectReason);
         if (needRefuse) {
             try {
-                refuseTransfer(msg.transferMsg.transactionId, msg.transferMsg.transferId, msg.transferMsg.payerUsername);
+                if (TextUtils.isEmpty(fTransactionId) || TextUtils.isEmpty(fTransferId)) {
+                    log("❌ 退回失败: 无法获取转账单号");
+                    return;
+                }
+                refuseTransfer(fTransactionId, fTransferId, fPayerUsername);
                 log(">> 已自动退回");
-            } catch (Exception e) {
-                log("退回失败: " + e.getMessage());
+            } catch (Throwable e) {
+                log("退回失败: " + e.toString());
             }
         }
     }
 }
 
 // ================= 解析逻辑 =================
+String parseXmlValue(String xml, String tag) {
+    if (TextUtils.isEmpty(xml)) return "";
+    try {
+        Pattern p = Pattern.compile("<" + tag + "[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?</" + tag + ">");
+        Matcher m = p.matcher(xml);
+        if (m.find()) return m.group(1).trim();
+    } catch (Exception e) {}
+    return "";
+}
+
 String parseReceiverFromXml(String xml) {
     if (xml == null) return "";
     try {
@@ -539,7 +607,7 @@ void styleDialogButtons(AlertDialog dialog) {
     } catch (Exception e) {}
 }
 
-// ================= 名单管理 (核心修复：后台线程加载 + UI分离) =================
+// ================= 名单管理 =================
 void showContactSourceDialog(final Activity ctx, final String title, final String saveKey) {
     String[] items = {"👤 从好友列表选择", "🏠 从群聊列表选择"};
     AlertDialog d = new AlertDialog.Builder(ctx)
@@ -554,7 +622,6 @@ void showContactSourceDialog(final Activity ctx, final String title, final Strin
     d.show();
 }
 
-// 核心修复：防止加载一直转圈
 void loadAndSelect(final Activity ctx, final String title, final String saveKey, final boolean isFriend) {
     final ProgressDialog loading = new ProgressDialog(ctx);
     loading.setMessage("正在加载列表，请稍候...");

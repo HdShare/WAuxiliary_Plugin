@@ -292,6 +292,12 @@ void loadConfiguration() {
         logOutputEnabled = getBoolean("logOutputEnabled", false);
         isTestMode = getBoolean("isTestMode", false);
         pauseAtMaxEnabled = getBoolean("pauseAtMaxEnabled", true);
+
+        ACTIVE_START_HOUR = (int) validateStepRange(getInt("activeStartHour", 7), 0, 23, 7);
+        ACTIVE_START_MINUTE = (int) validateStepRange(getInt("activeStartMinute", 0), 0, 59, 0);
+        ACTIVE_END_HOUR = (int) validateStepRange(getInt("activeEndHour", 22), 0, 23, 22);
+        ACTIVE_END_MINUTE = (int) validateStepRange(getInt("activeEndMinute", 50), 0, 59, 50);
+        normalizeAndRefreshActiveWindow();
         
         currentStep.set(getLong("currentStep", 0));
         currentDay = getInt("currentDay", 0);
@@ -301,6 +307,41 @@ void loadConfiguration() {
     } finally {
         configLock.writeLock().unlock();
     }
+}
+
+void normalizeAndRefreshActiveWindow() {
+    try {
+        ACTIVE_START_TIME = LocalTime.of(ACTIVE_START_HOUR, ACTIVE_START_MINUTE);
+        ACTIVE_END_TIME = LocalTime.of(ACTIVE_END_HOUR, ACTIVE_END_MINUTE);
+        int minutes = (int) java.time.Duration.between(ACTIVE_START_TIME, ACTIVE_END_TIME).toMinutes();
+        if (minutes <= 0) {
+            ACTIVE_START_HOUR = 7;
+            ACTIVE_START_MINUTE = 0;
+            ACTIVE_END_HOUR = 22;
+            ACTIVE_END_MINUTE = 50;
+            ACTIVE_START_TIME = LocalTime.of(ACTIVE_START_HOUR, ACTIVE_START_MINUTE);
+            ACTIVE_END_TIME = LocalTime.of(ACTIVE_END_HOUR, ACTIVE_END_MINUTE);
+            ACTIVE_MINUTES = 950;
+            return;
+        }
+        ACTIVE_MINUTES = minutes;
+    } catch (Exception e) {
+        ACTIVE_START_HOUR = 7;
+        ACTIVE_START_MINUTE = 0;
+        ACTIVE_END_HOUR = 22;
+        ACTIVE_END_MINUTE = 50;
+        ACTIVE_START_TIME = LocalTime.of(ACTIVE_START_HOUR, ACTIVE_START_MINUTE);
+        ACTIVE_END_TIME = LocalTime.of(ACTIVE_END_HOUR, ACTIVE_END_MINUTE);
+        ACTIVE_MINUTES = 950;
+    }
+}
+
+String getActiveWindowText() {
+    return pad2(ACTIVE_START_HOUR) + ":" + pad2(ACTIVE_START_MINUTE) + "-" + pad2(ACTIVE_END_HOUR) + ":" + pad2(ACTIVE_END_MINUTE);
+}
+
+String pad2(int value) {
+    return (value < 10 ? "0" : "") + value;
 }
 
 long validateStepRange(long value, long min, long max, long defaultValue) {
@@ -1498,6 +1539,7 @@ private void showMainSettingsDialog() {
           .append(" (").append(progress).append("%)\n");
         sb.append("时间步数: ").append(timeStepEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
         sb.append("消息步数: ").append(messageStepEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
+        sb.append("活动时间段: ").append(getActiveWindowText()).append("\n");
         sb.append("到上限自动暂停: ").append(pauseAtMaxEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
         sb.append("保底步数: ").append(minGuaranteedStep).append("\n");
         if (targetTimeStep > 0) {
@@ -1531,8 +1573,26 @@ private void showMainSettingsDialog() {
 
     root.addView(uiSectionTitle("🔧 功能开关"));
 
+    LinearLayout switchGrid = new LinearLayout(getTopActivity());
+    switchGrid.setOrientation(LinearLayout.VERTICAL);
+    switchGrid.setPadding(0, 0, 0, 8);
+    root.addView(switchGrid);
+
+    LinearLayout row1 = new LinearLayout(getTopActivity());
+    row1.setOrientation(LinearLayout.HORIZONTAL);
+    switchGrid.addView(row1);
+
+    LinearLayout row2 = new LinearLayout(getTopActivity());
+    row2.setOrientation(LinearLayout.HORIZONTAL);
+    switchGrid.addView(row2);
+
+    LinearLayout row3 = new LinearLayout(getTopActivity());
+    row3.setOrientation(LinearLayout.HORIZONTAL);
+    switchGrid.addView(row3);
+
     final Button timeToggle = new Button(getTopActivity());
     uiApplyToggleStyle(timeToggle, "⏱️ 时间步数", timeStepEnabled);
+    timeToggle.setLayoutParams(uiGridItemLayoutParams(true, false));
     timeToggle.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             boolean newState = !timeStepEnabled;
@@ -1540,10 +1600,11 @@ private void showMainSettingsDialog() {
             uiApplyToggleStyle(timeToggle, "⏱️ 时间步数", newState);
         }
     });
-    root.addView(timeToggle);
+    row1.addView(timeToggle);
 
     final Button msgToggle = new Button(getTopActivity());
     uiApplyToggleStyle(msgToggle, "💬 消息步数", messageStepEnabled);
+    msgToggle.setLayoutParams(uiGridItemLayoutParams(false, false));
     msgToggle.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             boolean newState = !messageStepEnabled;
@@ -1551,10 +1612,11 @@ private void showMainSettingsDialog() {
             uiApplyToggleStyle(msgToggle, "💬 消息步数", newState);
         }
     });
-    root.addView(msgToggle);
+    row1.addView(msgToggle);
 
     final Button logToggle = new Button(getTopActivity());
     uiApplyToggleStyle(logToggle, "📝 日志输出", logOutputEnabled);
+    logToggle.setLayoutParams(uiGridItemLayoutParams(true, false));
     logToggle.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             configLock.writeLock().lock();
@@ -1568,10 +1630,11 @@ private void showMainSettingsDialog() {
             toast(logOutputEnabled ? "日志输出已开启" : "日志输出已关闭");
         }
     });
-    root.addView(logToggle);
+    row2.addView(logToggle);
 
     final Button testToggle = new Button(getTopActivity());
     uiApplyToggleStyle(testToggle, "🧪 测试模式", isTestMode);
+    testToggle.setLayoutParams(uiGridItemLayoutParams(false, false));
     testToggle.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             configLock.writeLock().lock();
@@ -1585,10 +1648,11 @@ private void showMainSettingsDialog() {
             toast(isTestMode ? "测试模式已开启" : "测试模式已关闭");
         }
     });
-    root.addView(testToggle);
+    row2.addView(testToggle);
 
     final Button pauseAtMaxToggle = new Button(getTopActivity());
     uiApplyToggleStyle(pauseAtMaxToggle, "🛑 上限后自动暂停", pauseAtMaxEnabled);
+    pauseAtMaxToggle.setLayoutParams(uiGridItemLayoutParams(true, false));
     pauseAtMaxToggle.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             configLock.writeLock().lock();
@@ -1602,10 +1666,35 @@ private void showMainSettingsDialog() {
             toast(pauseAtMaxEnabled ? "已开启：到达最大步数后暂停插件上传/增长" : "已关闭：到达最大步数后保持封顶上传");
         }
     });
-    root.addView(pauseAtMaxToggle);
+    row3.addView(pauseAtMaxToggle);
+
+    TextView emptySlot = new TextView(getTopActivity());
+    emptySlot.setLayoutParams(uiGridItemLayoutParams(false, false));
+    row3.addView(emptySlot);
 
     root.addView(uiSectionTitle("⚙️ 参数设置"));
     root.addView(uiHintText("👇 点击下方选项可修改对应参数"));
+
+    LinearLayout paramGrid = new LinearLayout(getTopActivity());
+    paramGrid.setOrientation(LinearLayout.VERTICAL);
+    paramGrid.setPadding(0, 0, 0, 8);
+    root.addView(paramGrid);
+
+    LinearLayout paramRow1 = new LinearLayout(getTopActivity());
+    paramRow1.setOrientation(LinearLayout.HORIZONTAL);
+    paramGrid.addView(paramRow1);
+
+    LinearLayout paramRow2 = new LinearLayout(getTopActivity());
+    paramRow2.setOrientation(LinearLayout.HORIZONTAL);
+    paramGrid.addView(paramRow2);
+
+    LinearLayout paramRow3 = new LinearLayout(getTopActivity());
+    paramRow3.setOrientation(LinearLayout.HORIZONTAL);
+    paramGrid.addView(paramRow3);
+
+    LinearLayout paramRow4 = new LinearLayout(getTopActivity());
+    paramRow4.setOrientation(LinearLayout.HORIZONTAL);
+    paramGrid.addView(paramRow4);
 
     final Button maxStepBtn = uiSettingButton("📈 最大步数: " + maxStep);
     final Button rangeBtn = uiSettingButton("📏 每分钟步数范围: " + minTimeStep + " - " + maxTimeStep);
@@ -1613,6 +1702,7 @@ private void showMainSettingsDialog() {
     final Button guaranteedBtn = uiSettingButton("🛡️ 保底步数: " + minGuaranteedStep);
     final Button targetBtn = uiSettingButton("🎯 时间步数目标: " + (targetTimeStep > 0 ? String.valueOf(targetTimeStep) : "未设置"));
     final Button strategyBtn = uiSettingButton("📊 分配策略: " + (distributionStrategy == STRATEGY_EXP ? "指数" : "线性"));
+    final Button activeWindowBtn = uiSettingButton("🕒 活动时间段: " + getActiveWindowText());
     final Runnable[] refreshMainUiHolder = new Runnable[1];
     refreshMainUiHolder[0] = new Runnable() {
         public void run() {
@@ -1625,6 +1715,7 @@ private void showMainSettingsDialog() {
                   .append(" (").append(progress).append("%)\n");
                 sb.append("时间步数: ").append(timeStepEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
                 sb.append("消息步数: ").append(messageStepEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
+                sb.append("活动时间段: ").append(getActiveWindowText()).append("\n");
                 sb.append("到上限自动暂停: ").append(pauseAtMaxEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
                 sb.append("保底步数: ").append(minGuaranteedStep).append("\n");
                 if (targetTimeStep > 0) {
@@ -1640,6 +1731,7 @@ private void showMainSettingsDialog() {
                 guaranteedBtn.setText("🛡️ 保底步数: " + minGuaranteedStep);
                 targetBtn.setText("🎯 时间步数目标: " + (targetTimeStep > 0 ? String.valueOf(targetTimeStep) : "未设置"));
                 strategyBtn.setText("📊 分配策略: " + (distributionStrategy == STRATEGY_EXP ? "指数" : "线性"));
+                activeWindowBtn.setText("🕒 活动时间段: " + getActiveWindowText());
             } finally {
                 configLock.readLock().unlock();
             }
@@ -1662,14 +1754,16 @@ private void showMainSettingsDialog() {
             }, refreshMainUiHolder[0]);
         }
     });
-    root.addView(maxStepBtn);
+    maxStepBtn.setLayoutParams(uiGridItemLayoutParams(true, false));
+    paramRow1.addView(maxStepBtn);
 
     rangeBtn.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             showEditRangeDialog(refreshMainUiHolder[0]);
         }
     });
-    root.addView(rangeBtn);
+    rangeBtn.setLayoutParams(uiGridItemLayoutParams(false, false));
+    paramRow1.addView(rangeBtn);
 
     maxMsgBtn.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
@@ -1688,7 +1782,8 @@ private void showMainSettingsDialog() {
             }, refreshMainUiHolder[0]);
         }
     });
-    root.addView(maxMsgBtn);
+    maxMsgBtn.setLayoutParams(uiGridItemLayoutParams(true, false));
+    paramRow2.addView(maxMsgBtn);
 
     guaranteedBtn.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
@@ -1716,7 +1811,8 @@ private void showMainSettingsDialog() {
             }, refreshMainUiHolder[0]);
         }
     });
-    root.addView(guaranteedBtn);
+    guaranteedBtn.setLayoutParams(uiGridItemLayoutParams(false, false));
+    paramRow2.addView(guaranteedBtn);
 
     targetBtn.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
@@ -1741,20 +1837,45 @@ private void showMainSettingsDialog() {
             }, refreshMainUiHolder[0]);
         }
     });
-    root.addView(targetBtn);
+    targetBtn.setLayoutParams(uiGridItemLayoutParams(true, true));
+    paramRow3.addView(targetBtn);
 
     strategyBtn.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             showStrategySelectionDialog(refreshMainUiHolder[0]);
         }
     });
-    root.addView(strategyBtn);
+    strategyBtn.setLayoutParams(uiGridItemLayoutParams(false, true));
+    paramRow3.addView(strategyBtn);
+
+    activeWindowBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showEditActiveWindowDialog(refreshMainUiHolder[0]);
+        }
+    });
+    activeWindowBtn.setLayoutParams(uiGridItemLayoutParams(true, true));
+    paramRow4.addView(activeWindowBtn);
+
+    TextView paramEmptySlot = new TextView(getTopActivity());
+    paramEmptySlot.setLayoutParams(uiGridItemLayoutParams(false, true));
+    paramRow4.addView(paramEmptySlot);
 
     root.addView(uiSectionTitle("🔄 快捷操作"));
+
+    LinearLayout quickRow = new LinearLayout(getTopActivity());
+    quickRow.setOrientation(LinearLayout.HORIZONTAL);
+    LinearLayout.LayoutParams quickRowParams = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+    );
+    quickRowParams.setMargins(0, 0, 0, 8);
+    quickRow.setLayoutParams(quickRowParams);
+    root.addView(quickRow);
 
     Button manualStepBtn = new Button(getTopActivity());
     manualStepBtn.setText("✏️ 手动修改步数");
     uiStyleButton(manualStepBtn);
+    manualStepBtn.setLayoutParams(uiGridItemLayoutParams(true, true));
     manualStepBtn.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             showEditNumberDialog("✏️ 手动修改步数", "将当前步数设置为指定值", String.valueOf(currentStep.get()), new NumberEditCallback() {
@@ -1773,11 +1894,12 @@ private void showMainSettingsDialog() {
             }, refreshMainUiHolder[0]);
         }
     });
-    root.addView(manualStepBtn);
+    quickRow.addView(manualStepBtn);
 
     Button resetBtn = new Button(getTopActivity());
     resetBtn.setText("🔄 重置今日步数");
     uiStyleButton(resetBtn);
+    resetBtn.setLayoutParams(uiGridItemLayoutParams(false, true));
     GradientDrawable resetBg = (GradientDrawable) resetBtn.getBackground();
     resetBg.setColor(Color.parseColor("#FFF3E0"));
     resetBg.setStroke(3, Color.parseColor("#FFE0B2"));
@@ -1805,7 +1927,7 @@ private void showMainSettingsDialog() {
             confirmDialog.show();
         }
     });
-    root.addView(resetBtn);
+    quickRow.addView(resetBtn);
 
     root.addView(uiHintText("提示: 修改参数后会在当前界面实时刷新"));
 
@@ -1925,6 +2047,81 @@ private void showStrategySelectionDialog(final Runnable onUiUpdated) {
     menuDialog.show();
 }
 
+private void showEditActiveWindowDialog(final Runnable onUiUpdated) {
+    LinearLayout root = new LinearLayout(getTopActivity());
+    root.setPadding(32, 32, 32, 32);
+    root.setOrientation(LinearLayout.VERTICAL);
+
+    root.addView(uiHintText("请输入时间段，格式: HH:mm-HH:mm（开始时间必须早于结束时间）"));
+
+    final EditText rangeEdit = uiStyledEditText("例如: 07:00-22:50", getActiveWindowText());
+    rangeEdit.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+    root.addView(rangeEdit);
+
+    AlertDialog dialog = uiBuildDialog(getTopActivity(), "🕒 活动时间段", root, "保存", new DialogInterface.OnClickListener() {
+        public void onClick(DialogInterface dialog, int which) {
+            try {
+                String text = rangeEdit.getText().toString().trim();
+                if (text.isEmpty()) {
+                    toast("请输入时间段");
+                    return;
+                }
+                String[] parts = text.split("-");
+                if (parts.length != 2) {
+                    toast("格式错误，请使用 HH:mm-HH:mm");
+                    return;
+                }
+                String[] startParts = parts[0].trim().split(":");
+                String[] endParts = parts[1].trim().split(":");
+                if (startParts.length != 2 || endParts.length != 2) {
+                    toast("格式错误，请使用 HH:mm-HH:mm");
+                    return;
+                }
+                int startHour = Integer.parseInt(startParts[0].trim());
+                int startMinute = Integer.parseInt(startParts[1].trim());
+                int endHour = Integer.parseInt(endParts[0].trim());
+                int endMinute = Integer.parseInt(endParts[1].trim());
+
+                if (startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23 ||
+                    startMinute < 0 || startMinute > 59 || endMinute < 0 || endMinute > 59) {
+                    toast("时间范围无效，请检查输入");
+                    return;
+                }
+
+                LocalTime newStart = LocalTime.of(startHour, startMinute);
+                LocalTime newEnd = LocalTime.of(endHour, endMinute);
+                if (!newStart.isBefore(newEnd)) {
+                    toast("开始时间必须早于结束时间");
+                    return;
+                }
+
+                configLock.writeLock().lock();
+                try {
+                    ACTIVE_START_HOUR = startHour;
+                    ACTIVE_START_MINUTE = startMinute;
+                    ACTIVE_END_HOUR = endHour;
+                    ACTIVE_END_MINUTE = endMinute;
+                    normalizeAndRefreshActiveWindow();
+                    putInt("activeStartHour", ACTIVE_START_HOUR);
+                    putInt("activeStartMinute", ACTIVE_START_MINUTE);
+                    putInt("activeEndHour", ACTIVE_END_HOUR);
+                    putInt("activeEndMinute", ACTIVE_END_MINUTE);
+                } finally {
+                    configLock.writeLock().unlock();
+                }
+
+                toast("活动时间段已更新为: " + getActiveWindowText());
+                if (onUiUpdated != null) {
+                    onUiUpdated.run();
+                }
+            } catch (Exception e) {
+                toast("格式错误，请使用 HH:mm-HH:mm");
+            }
+        }
+    }, "取消", null, null, null);
+    dialog.show();
+}
+
 private TextView uiSectionTitle(String text) {
     TextView textView = new TextView(getTopActivity());
     textView.setText(text);
@@ -2002,12 +2199,19 @@ private void uiApplyToggleStyle(Button button, String label, boolean enabled) {
     }
     button.setBackground(shape);
     button.setAllCaps(false);
+}
+
+private LinearLayout.LayoutParams uiGridItemLayoutParams(boolean isLeft, boolean isLastRow) {
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT,
-        LinearLayout.LayoutParams.WRAP_CONTENT
+        0,
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+        1f
     );
-    params.setMargins(0, 6, 0, 6);
-    button.setLayoutParams(params);
+    int left = isLeft ? 0 : 8;
+    int right = isLeft ? 8 : 0;
+    int bottom = isLastRow ? 0 : 8;
+    params.setMargins(left, 0, right, bottom);
+    return params;
 }
 
 private Button uiSettingButton(String text) {

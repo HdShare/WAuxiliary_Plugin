@@ -13,6 +13,18 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.view.View;
+import android.view.Gravity;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.content.Context;
 
 AtomicLong currentStep = new AtomicLong(0);
 volatile int currentDay = 0;
@@ -33,6 +45,7 @@ volatile boolean timeStepEnabled = false;
 volatile boolean messageStepEnabled = false;
 volatile boolean logOutputEnabled = false;
 volatile boolean isTestMode = false;
+volatile boolean pauseAtMaxEnabled = true;
 
 volatile ScheduledExecutorService scheduledExecutor = null;
 volatile ScheduledExecutorService guaranteedStepExecutor = null;
@@ -128,6 +141,14 @@ void onLoad() {
     }
     
     logToFile("插件加载完成");
+}
+
+public boolean onClickSendBtn(String text) {
+    if ("步数设置".equals(text) || "步数管理".equals(text) || "自动步数".equals(text)) {
+        showMainSettingsDialog();
+        return true;
+    }
+    return false;
 }
 
 void checkMemoryUsage() {
@@ -270,6 +291,7 @@ void loadConfiguration() {
         messageStepEnabled = getBoolean("messageStepEnabled", false);
         logOutputEnabled = getBoolean("logOutputEnabled", false);
         isTestMode = getBoolean("isTestMode", false);
+        pauseAtMaxEnabled = getBoolean("pauseAtMaxEnabled", true);
         
         currentStep.set(getLong("currentStep", 0));
         currentDay = getInt("currentDay", 0);
@@ -508,6 +530,9 @@ void executeTimeStepTask() {
 }
 
 void executeNormalTimeStep(LocalDateTime now, long currentTime) {
+    if (isPluginStepPausedAtMax()) {
+        return;
+    }
     int step = calculateCurrentStep(now);
     if (step <= 0) return;
     
@@ -768,6 +793,9 @@ boolean checkAndExecuteMissedTasks(long currentTime) {
 }
 
 boolean processMissedMinutes(int missedMinutes, int validMinutesCounted, long lastTime, long currentTime) {
+    if (isPluginStepPausedAtMax()) {
+        return false;
+    }
     int totalAddedSteps = 0;
     int validMinutesProcessed = 0;
 
@@ -778,6 +806,10 @@ boolean processMissedMinutes(int missedMinutes, int validMinutesCounted, long la
         LocalTime minuteTimeOnly = minuteDateTime.toLocalTime();
  
         if (isActiveMinute(minuteTimeOnly)) {
+            if (isPluginStepPausedAtMax()) {
+                logToFile("补充缺失: 已达最大步数，跳过插件补偿");
+                return true;
+            }
             int step = calculateMissedMinuteStep(validMinutesCounted, validMinutesProcessed);
             if (step <= 0) return true;
             
@@ -904,6 +936,9 @@ void enableMessageStep(boolean enable) {
 
 void updateStepOnMessage() {
     if (isRestrictedTime()) {
+        return;
+    }
+    if (isPluginStepPausedAtMax()) {
         return;
     }
     
@@ -1326,6 +1361,12 @@ void showStepStatusAll(String talker) {
 }
 
 void safeUploadDeviceStep(long step) {
+    if (isPluginStepPausedAtMax()) {
+        pendingStepUpload.set(0);
+        putLong("pendingStepUpload", 0);
+        logToFile("已达最大步数，跳过插件上传，保留微信自然增长");
+        return;
+    }
     try {
         uploadDeviceStep(step);
         long pending = pendingStepUpload.get();
@@ -1357,6 +1398,15 @@ void safeUploadDeviceStep(long step) {
         sb.setLength(0);
         sb.append("记录待上传步数: ").append(step);
         logToFile(sb.toString());
+    }
+}
+
+boolean isPluginStepPausedAtMax() {
+    configLock.readLock().lock();
+    try {
+        return pauseAtMaxEnabled && currentStep.get() >= maxStep;
+    } finally {
+        configLock.readLock().unlock();
     }
 }
 
@@ -1425,6 +1475,602 @@ void logToFile(String message) {
         
     } catch (IOException e) {
         System.err.println("日志写入失败: " + e.getMessage());
+    }
+}
+
+private void showMainSettingsDialog() {
+    ScrollView scrollView = new ScrollView(getTopActivity());
+    LinearLayout root = new LinearLayout(getTopActivity());
+    root.setOrientation(LinearLayout.VERTICAL);
+    root.setPadding(32, 32, 32, 32);
+    root.setBackgroundColor(Color.parseColor("#FAFBF9"));
+    scrollView.addView(root);
+
+    root.addView(uiSectionTitle("📊 运行状态"));
+
+    long curStep = currentStep.get();
+    configLock.readLock().lock();
+    String statusText;
+    try {
+        long progress = maxStep == 0 ? 0 : (curStep * 100 / maxStep);
+        StringBuilder sb = new StringBuilder();
+        sb.append("当前步数: ").append(curStep).append(" / ").append(maxStep)
+          .append(" (").append(progress).append("%)\n");
+        sb.append("时间步数: ").append(timeStepEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
+        sb.append("消息步数: ").append(messageStepEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
+        sb.append("到上限自动暂停: ").append(pauseAtMaxEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
+        sb.append("保底步数: ").append(minGuaranteedStep).append("\n");
+        if (targetTimeStep > 0) {
+            sb.append("时间目标: ").append(targetTimeStep)
+              .append(linearTargetReached ? " (已达成)" : " (进行中)");
+        } else {
+            sb.append("时间目标: 未设置");
+        }
+        statusText = sb.toString();
+    } finally {
+        configLock.readLock().unlock();
+    }
+
+    final TextView statusView = new TextView(getTopActivity());
+    statusView.setText(statusText);
+    statusView.setTextSize(13);
+    statusView.setTextColor(Color.parseColor("#333333"));
+    statusView.setPadding(24, 16, 24, 16);
+    GradientDrawable statusBg = new GradientDrawable();
+    statusBg.setCornerRadius(16);
+    statusBg.setColor(Color.parseColor("#F0F7F0"));
+    statusBg.setStroke(1, Color.parseColor("#C8E6C9"));
+    statusView.setBackground(statusBg);
+    LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+    );
+    statusParams.setMargins(0, 8, 0, 16);
+    statusView.setLayoutParams(statusParams);
+    root.addView(statusView);
+
+    root.addView(uiSectionTitle("🔧 功能开关"));
+
+    final Button timeToggle = new Button(getTopActivity());
+    uiApplyToggleStyle(timeToggle, "⏱️ 时间步数", timeStepEnabled);
+    timeToggle.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            boolean newState = !timeStepEnabled;
+            enableTimeStep(newState);
+            uiApplyToggleStyle(timeToggle, "⏱️ 时间步数", newState);
+        }
+    });
+    root.addView(timeToggle);
+
+    final Button msgToggle = new Button(getTopActivity());
+    uiApplyToggleStyle(msgToggle, "💬 消息步数", messageStepEnabled);
+    msgToggle.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            boolean newState = !messageStepEnabled;
+            enableMessageStep(newState);
+            uiApplyToggleStyle(msgToggle, "💬 消息步数", newState);
+        }
+    });
+    root.addView(msgToggle);
+
+    final Button logToggle = new Button(getTopActivity());
+    uiApplyToggleStyle(logToggle, "📝 日志输出", logOutputEnabled);
+    logToggle.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            configLock.writeLock().lock();
+            try {
+                logOutputEnabled = !logOutputEnabled;
+                putBoolean("logOutputEnabled", logOutputEnabled);
+            } finally {
+                configLock.writeLock().unlock();
+            }
+            uiApplyToggleStyle(logToggle, "📝 日志输出", logOutputEnabled);
+            toast(logOutputEnabled ? "日志输出已开启" : "日志输出已关闭");
+        }
+    });
+    root.addView(logToggle);
+
+    final Button testToggle = new Button(getTopActivity());
+    uiApplyToggleStyle(testToggle, "🧪 测试模式", isTestMode);
+    testToggle.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            configLock.writeLock().lock();
+            try {
+                isTestMode = !isTestMode;
+                putBoolean("isTestMode", isTestMode);
+            } finally {
+                configLock.writeLock().unlock();
+            }
+            uiApplyToggleStyle(testToggle, "🧪 测试模式", isTestMode);
+            toast(isTestMode ? "测试模式已开启" : "测试模式已关闭");
+        }
+    });
+    root.addView(testToggle);
+
+    final Button pauseAtMaxToggle = new Button(getTopActivity());
+    uiApplyToggleStyle(pauseAtMaxToggle, "🛑 上限后自动暂停", pauseAtMaxEnabled);
+    pauseAtMaxToggle.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            configLock.writeLock().lock();
+            try {
+                pauseAtMaxEnabled = !pauseAtMaxEnabled;
+                putBoolean("pauseAtMaxEnabled", pauseAtMaxEnabled);
+            } finally {
+                configLock.writeLock().unlock();
+            }
+            uiApplyToggleStyle(pauseAtMaxToggle, "🛑 上限后自动暂停", pauseAtMaxEnabled);
+            toast(pauseAtMaxEnabled ? "已开启：到达最大步数后暂停插件上传/增长" : "已关闭：到达最大步数后保持封顶上传");
+        }
+    });
+    root.addView(pauseAtMaxToggle);
+
+    root.addView(uiSectionTitle("⚙️ 参数设置"));
+    root.addView(uiHintText("👇 点击下方选项可修改对应参数"));
+
+    final Button maxStepBtn = uiSettingButton("📈 最大步数: " + maxStep);
+    final Button rangeBtn = uiSettingButton("📏 每分钟步数范围: " + minTimeStep + " - " + maxTimeStep);
+    final Button maxMsgBtn = uiSettingButton("💬 最大消息步数: " + maxMessageStep);
+    final Button guaranteedBtn = uiSettingButton("🛡️ 保底步数: " + minGuaranteedStep);
+    final Button targetBtn = uiSettingButton("🎯 时间步数目标: " + (targetTimeStep > 0 ? String.valueOf(targetTimeStep) : "未设置"));
+    final Button strategyBtn = uiSettingButton("📊 分配策略: " + (distributionStrategy == STRATEGY_EXP ? "指数" : "线性"));
+    final Runnable[] refreshMainUiHolder = new Runnable[1];
+    refreshMainUiHolder[0] = new Runnable() {
+        public void run() {
+            long curStep = currentStep.get();
+            configLock.readLock().lock();
+            try {
+                long progress = maxStep == 0 ? 0 : (curStep * 100 / maxStep);
+                StringBuilder sb = new StringBuilder();
+                sb.append("当前步数: ").append(curStep).append(" / ").append(maxStep)
+                  .append(" (").append(progress).append("%)\n");
+                sb.append("时间步数: ").append(timeStepEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
+                sb.append("消息步数: ").append(messageStepEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
+                sb.append("到上限自动暂停: ").append(pauseAtMaxEnabled ? "✅ 已开启" : "❌ 已关闭").append("\n");
+                sb.append("保底步数: ").append(minGuaranteedStep).append("\n");
+                if (targetTimeStep > 0) {
+                    sb.append("时间目标: ").append(targetTimeStep)
+                      .append(linearTargetReached ? " (已达成)" : " (进行中)");
+                } else {
+                    sb.append("时间目标: 未设置");
+                }
+                statusView.setText(sb.toString());
+                maxStepBtn.setText("📈 最大步数: " + maxStep);
+                rangeBtn.setText("📏 每分钟步数范围: " + minTimeStep + " - " + maxTimeStep);
+                maxMsgBtn.setText("💬 最大消息步数: " + maxMessageStep);
+                guaranteedBtn.setText("🛡️ 保底步数: " + minGuaranteedStep);
+                targetBtn.setText("🎯 时间步数目标: " + (targetTimeStep > 0 ? String.valueOf(targetTimeStep) : "未设置"));
+                strategyBtn.setText("📊 分配策略: " + (distributionStrategy == STRATEGY_EXP ? "指数" : "线性"));
+            } finally {
+                configLock.readLock().unlock();
+            }
+        }
+    };
+    maxStepBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showEditNumberDialog("📈 最大步数", "设置每日最大步数上限", String.valueOf(maxStep), new NumberEditCallback() {
+                public void onConfirm(long value) {
+                    if (value < 1) { toast("最大步数必须大于0"); return; }
+                    configLock.writeLock().lock();
+                    try {
+                        maxStep = value;
+                        putLong("maxStep", maxStep);
+                    } finally {
+                        configLock.writeLock().unlock();
+                    }
+                    toast("最大步数已设为: " + value);
+                }
+            }, refreshMainUiHolder[0]);
+        }
+    });
+    root.addView(maxStepBtn);
+
+    rangeBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showEditRangeDialog(refreshMainUiHolder[0]);
+        }
+    });
+    root.addView(rangeBtn);
+
+    maxMsgBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showEditNumberDialog("💬 最大消息步数", "设置消息触发的步数上限", String.valueOf(maxMessageStep), new NumberEditCallback() {
+                public void onConfirm(long value) {
+                    if (value < 0) { toast("值不能为负数"); return; }
+                    configLock.writeLock().lock();
+                    try {
+                        maxMessageStep = value;
+                        putLong("maxMessageStep", maxMessageStep);
+                    } finally {
+                        configLock.writeLock().unlock();
+                    }
+                    toast("最大消息步数已设为: " + value);
+                }
+            }, refreshMainUiHolder[0]);
+        }
+    });
+    root.addView(maxMsgBtn);
+
+    guaranteedBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showEditNumberDialog("🛡️ 保底步数", "22:50时若步数不足将自动补到此值\n设为 0 表示关闭", String.valueOf(minGuaranteedStep), new NumberEditCallback() {
+                public void onConfirm(long value) {
+                    if (value < 0) { toast("值不能为负数"); return; }
+                    configLock.writeLock().lock();
+                    try {
+                        if (value > maxStep) {
+                            toast("不能大于最大步数 " + maxStep);
+                            return;
+                        }
+                        minGuaranteedStep = value;
+                        putLong("minGuaranteedStep", minGuaranteedStep);
+                    } finally {
+                        configLock.writeLock().unlock();
+                    }
+                    if (value > 0) {
+                        startGuaranteedStepTimer();
+                    } else {
+                        stopGuaranteedStepTimer();
+                    }
+                    toast("保底步数已设为: " + value);
+                }
+            }, refreshMainUiHolder[0]);
+        }
+    });
+    root.addView(guaranteedBtn);
+
+    targetBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showEditNumberDialog("🎯 时间步数目标", "在截止时间前需达到的步数\n设为 0 表示取消", String.valueOf(targetTimeStep), new NumberEditCallback() {
+                public void onConfirm(long value) {
+                    if (value < 0) { toast("值不能为负数"); return; }
+                    configLock.writeLock().lock();
+                    try {
+                        if (value > maxStep) {
+                            toast("不能大于最大步数 " + maxStep);
+                            return;
+                        }
+                        targetTimeStep = value;
+                        putLong("targetTimeStep", targetTimeStep);
+                        linearTargetReached = false;
+                        putBoolean("linearTargetReached", false);
+                    } finally {
+                        configLock.writeLock().unlock();
+                    }
+                    toast(value > 0 ? "时间目标已设为: " + value : "已取消时间目标");
+                }
+            }, refreshMainUiHolder[0]);
+        }
+    });
+    root.addView(targetBtn);
+
+    strategyBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showStrategySelectionDialog(refreshMainUiHolder[0]);
+        }
+    });
+    root.addView(strategyBtn);
+
+    root.addView(uiSectionTitle("🔄 快捷操作"));
+
+    Button manualStepBtn = new Button(getTopActivity());
+    manualStepBtn.setText("✏️ 手动修改步数");
+    uiStyleButton(manualStepBtn);
+    manualStepBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showEditNumberDialog("✏️ 手动修改步数", "将当前步数设置为指定值", String.valueOf(currentStep.get()), new NumberEditCallback() {
+                public void onConfirm(long value) {
+                    if (value < 0 || value > maxStep) {
+                        toast("步数必须在 0-" + maxStep + " 之间");
+                        return;
+                    }
+                    long current = currentStep.get();
+                    if (updateStepStateAtomic(current, value, System.currentTimeMillis())) {
+                        safeUploadDeviceStep(value);
+                        toast("步数已修改为: " + value);
+                        logToFile("UI手动修改步数: " + value);
+                    }
+                }
+            }, refreshMainUiHolder[0]);
+        }
+    });
+    root.addView(manualStepBtn);
+
+    Button resetBtn = new Button(getTopActivity());
+    resetBtn.setText("🔄 重置今日步数");
+    uiStyleButton(resetBtn);
+    GradientDrawable resetBg = (GradientDrawable) resetBtn.getBackground();
+    resetBg.setColor(Color.parseColor("#FFF3E0"));
+    resetBg.setStroke(3, Color.parseColor("#FFE0B2"));
+    resetBtn.setTextColor(Color.parseColor("#E65100"));
+    resetBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            AlertDialog.Builder confirm = new AlertDialog.Builder(getTopActivity());
+            confirm.setTitle("重置确认");
+            confirm.setMessage("确定要重置今日步数为 0 吗？\n此操作不可撤销。");
+            confirm.setPositiveButton("确定重置", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface d, int w) {
+                    resetDay(LocalDateTime.now());
+                    safeUploadDeviceStep(0);
+                    toast("今日步数已重置");
+                    refreshMainUiHolder[0].run();
+                }
+            });
+            confirm.setNegativeButton("取消", null);
+            AlertDialog confirmDialog = confirm.create();
+            confirmDialog.setOnShowListener(new DialogInterface.OnShowListener() {
+                public void onShow(DialogInterface d) {
+                    uiStyleDialog((AlertDialog) d);
+                }
+            });
+            confirmDialog.show();
+        }
+    });
+    root.addView(resetBtn);
+
+    root.addView(uiHintText("提示: 修改参数后会在当前界面实时刷新"));
+
+    AlertDialog dialog = uiBuildDialog(getTopActivity(), "⚙️ 自动步数设置", scrollView, "关闭", null, null, null, null, null);
+    dialog.show();
+}
+
+interface NumberEditCallback {
+    void onConfirm(long value);
+}
+
+private void showEditNumberDialog(String title, String hint, String defaultValue, final NumberEditCallback callback, final Runnable onUiUpdated) {
+    LinearLayout root = new LinearLayout(getTopActivity());
+    root.setPadding(32, 32, 32, 32);
+    root.setOrientation(LinearLayout.VERTICAL);
+
+    if (hint != null && !hint.isEmpty()) {
+        root.addView(uiHintText(hint));
+    }
+
+    final EditText editText = uiStyledEditText("请输入数值", defaultValue);
+    editText.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+    root.addView(editText);
+
+    AlertDialog dialog = uiBuildDialog(getTopActivity(), title, root, "确定", new DialogInterface.OnClickListener() {
+        public void onClick(DialogInterface dialog, int which) {
+            String text = editText.getText().toString().trim();
+            if (text.isEmpty()) {
+                toast("请输入数值");
+                return;
+            }
+            try {
+                long value = Long.parseLong(text);
+                callback.onConfirm(value);
+                if (onUiUpdated != null) {
+                    onUiUpdated.run();
+                }
+            } catch (NumberFormatException e) {
+                toast("请输入有效数字");
+            }
+        }
+    }, "取消", null, null, null);
+    dialog.show();
+}
+
+private void showEditRangeDialog(final Runnable onUiUpdated) {
+    LinearLayout root = new LinearLayout(getTopActivity());
+    root.setPadding(32, 32, 32, 32);
+    root.setOrientation(LinearLayout.VERTICAL);
+
+    root.addView(uiHintText("设置时间模式下每分钟增加的步数范围\n预估日步数: " + (minTimeStep * ACTIVE_MINUTES) + " - " + (maxTimeStep * ACTIVE_MINUTES)));
+
+    final EditText minEdit = uiStyledEditText("最小值 (当前: " + minTimeStep + ")", String.valueOf(minTimeStep));
+    minEdit.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+    root.addView(minEdit);
+
+    final EditText maxEdit = uiStyledEditText("最大值 (当前: " + maxTimeStep + ")", String.valueOf(maxTimeStep));
+    maxEdit.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+    root.addView(maxEdit);
+
+    AlertDialog dialog = uiBuildDialog(getTopActivity(), "📏 每分钟步数范围", root, "保存", new DialogInterface.OnClickListener() {
+        public void onClick(DialogInterface dialog, int which) {
+            try {
+                int min = Integer.parseInt(minEdit.getText().toString().trim());
+                int max = Integer.parseInt(maxEdit.getText().toString().trim());
+                if (min < 0 || max <= min) {
+                    toast("最小值须 ≥ 0，最大值须 > 最小值");
+                    return;
+                }
+                configLock.writeLock().lock();
+                try {
+                    minTimeStep = min;
+                    maxTimeStep = max;
+                    putInt("minTimeStep", minTimeStep);
+                    putInt("maxTimeStep", maxTimeStep);
+                } finally {
+                    configLock.writeLock().unlock();
+                }
+                toast("范围: " + min + "-" + max + " (日预估: " + (min * ACTIVE_MINUTES) + "-" + (max * ACTIVE_MINUTES) + ")");
+                if (onUiUpdated != null) {
+                    onUiUpdated.run();
+                }
+            } catch (NumberFormatException e) {
+                toast("请输入有效数字");
+            }
+        }
+    }, "取消", null, null, null);
+    dialog.show();
+}
+
+private void showStrategySelectionDialog(final Runnable onUiUpdated) {
+    String[] options = {"📈 线性分配 — 均匀分配步数到每分钟", "📊 指数分配 — 前期少、后期多"};
+    AlertDialog.Builder builder = new AlertDialog.Builder(getTopActivity());
+    builder.setTitle("选择分配策略");
+    builder.setItems(options, new DialogInterface.OnClickListener() {
+        public void onClick(DialogInterface dialog, int which) {
+            int strategy = (which == 0) ? STRATEGY_LINEAR : STRATEGY_EXP;
+            configLock.writeLock().lock();
+            try {
+                distributionStrategy = strategy;
+                putInt("distributionStrategy", distributionStrategy);
+            } finally {
+                configLock.writeLock().unlock();
+            }
+            toast("分配策略已设为: " + (strategy == STRATEGY_EXP ? "指数" : "线性"));
+            if (onUiUpdated != null) {
+                onUiUpdated.run();
+            }
+        }
+    });
+    AlertDialog menuDialog = builder.create();
+    menuDialog.setOnShowListener(new DialogInterface.OnShowListener() {
+        public void onShow(DialogInterface d) {
+            uiStyleDialog((AlertDialog) d);
+        }
+    });
+    menuDialog.show();
+}
+
+private TextView uiSectionTitle(String text) {
+    TextView textView = new TextView(getTopActivity());
+    textView.setText(text);
+    textView.setTextSize(16);
+    textView.setTextColor(Color.parseColor("#333333"));
+    try { textView.getPaint().setFakeBoldText(true); } catch (Exception e) {}
+    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+    );
+    params.setMargins(0, 16, 0, 12);
+    textView.setLayoutParams(params);
+    return textView;
+}
+
+private TextView uiHintText(String text) {
+    TextView tv = new TextView(getTopActivity());
+    tv.setText(text);
+    tv.setTextSize(13);
+    tv.setTextColor(Color.parseColor("#666666"));
+    tv.setPadding(0, 0, 0, 12);
+    return tv;
+}
+
+private EditText uiStyledEditText(String hint, String initialText) {
+    EditText editText = new EditText(getTopActivity());
+    editText.setHint(hint);
+    editText.setText(initialText);
+    editText.setPadding(32, 28, 32, 28);
+    editText.setTextSize(14);
+    editText.setTextColor(Color.parseColor("#333333"));
+    editText.setHintTextColor(Color.parseColor("#999999"));
+    GradientDrawable shape = new GradientDrawable();
+    shape.setCornerRadius(24);
+    shape.setColor(Color.parseColor("#FFFFFF"));
+    shape.setStroke(2, Color.parseColor("#E0E0E0"));
+    editText.setBackground(shape);
+    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+    );
+    params.setMargins(0, 8, 0, 12);
+    editText.setLayoutParams(params);
+    return editText;
+}
+
+private void uiStyleButton(Button button) {
+    button.setTextColor(Color.parseColor("#4A90E2"));
+    GradientDrawable shape = new GradientDrawable();
+    shape.setCornerRadius(20);
+    shape.setStroke(3, Color.parseColor("#BBD7E6"));
+    shape.setColor(Color.parseColor("#F5FBFF"));
+    button.setBackground(shape);
+    button.setAllCaps(false);
+    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+    );
+    params.setMargins(0, 8, 0, 8);
+    button.setLayoutParams(params);
+}
+
+private void uiApplyToggleStyle(Button button, String label, boolean enabled) {
+    button.setText(label + ": " + (enabled ? "已开启" : "已关闭"));
+    GradientDrawable shape = new GradientDrawable();
+    shape.setCornerRadius(20);
+    if (enabled) {
+        shape.setColor(Color.parseColor("#E8F5E9"));
+        shape.setStroke(3, Color.parseColor("#A5D6A7"));
+        button.setTextColor(Color.parseColor("#2E7D32"));
+    } else {
+        shape.setColor(Color.parseColor("#FAFAFA"));
+        shape.setStroke(3, Color.parseColor("#E0E0E0"));
+        button.setTextColor(Color.parseColor("#757575"));
+    }
+    button.setBackground(shape);
+    button.setAllCaps(false);
+    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+    );
+    params.setMargins(0, 6, 0, 6);
+    button.setLayoutParams(params);
+}
+
+private Button uiSettingButton(String text) {
+    Button button = new Button(getTopActivity());
+    button.setText(text);
+    button.setTextColor(Color.parseColor("#37474F"));
+    button.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+    GradientDrawable shape = new GradientDrawable();
+    shape.setCornerRadius(16);
+    shape.setColor(Color.parseColor("#FFFFFF"));
+    shape.setStroke(2, Color.parseColor("#E0E0E0"));
+    button.setBackground(shape);
+    button.setAllCaps(false);
+    button.setPadding(32, 24, 32, 24);
+    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+    );
+    params.setMargins(0, 4, 0, 4);
+    button.setLayoutParams(params);
+    return button;
+}
+
+private AlertDialog uiBuildDialog(Context context, String title, View view, String positiveBtnText, DialogInterface.OnClickListener positiveListener, String negativeBtnText, DialogInterface.OnClickListener negativeListener, String neutralBtnText, DialogInterface.OnClickListener neutralListener) {
+    AlertDialog.Builder builder = new AlertDialog.Builder(context);
+    builder.setTitle(title);
+    builder.setView(view);
+    if (positiveBtnText != null) builder.setPositiveButton(positiveBtnText, positiveListener);
+    if (negativeBtnText != null) builder.setNegativeButton(negativeBtnText, negativeListener);
+    if (neutralBtnText != null) builder.setNeutralButton(neutralBtnText, neutralListener);
+    final AlertDialog dialog = builder.create();
+    dialog.setOnShowListener(new DialogInterface.OnShowListener() {
+        public void onShow(DialogInterface d) {
+            uiStyleDialog(dialog);
+        }
+    });
+    return dialog;
+}
+
+private void uiStyleDialog(AlertDialog dialog) {
+    try {
+        GradientDrawable dialogBg = new GradientDrawable();
+        dialogBg.setCornerRadius(48);
+        dialogBg.setColor(Color.parseColor("#FAFBF9"));
+        dialog.getWindow().setBackgroundDrawable(dialogBg);
+    } catch (Exception e) {}
+    Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+    if (positiveButton != null) {
+        positiveButton.setTextColor(Color.WHITE);
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(20);
+        shape.setColor(Color.parseColor("#70A1B8"));
+        positiveButton.setBackground(shape);
+        positiveButton.setAllCaps(false);
+    }
+    Button negativeButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+    if (negativeButton != null) {
+        negativeButton.setTextColor(Color.parseColor("#333333"));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(20);
+        shape.setColor(Color.parseColor("#F1F3F5"));
+        negativeButton.setBackground(shape);
+        negativeButton.setAllCaps(false);
     }
 }
 

@@ -131,8 +131,57 @@ private final String EMOJI_DELAY_KEY = "emoji_delay_ms";
 private final String VIDEO_DELAY_KEY = "video_delay_ms";
 private final String FILE_DELAY_KEY = "file_delay_ms";
 
+// 文本+卡片模式的发送顺序
+private final String PROMPT_BOTH_ORDER_KEY = "prompt_both_order";
+
 // 记录当前获得焦点的输入框，用于快捷插入变量
 private EditText currentFocusedEdit = null;
+
+// 辅助方法：获取当前焦点的EditText（通过遍历视图层级查找）
+private EditText getCurrentFocusedEditText() {
+    Activity topActivity = getTopActivity();
+    if (topActivity == null) return currentFocusedEdit;
+    
+    // 直接从Activity获取当前焦点
+    View focusedView = topActivity.getCurrentFocus();
+    if (focusedView instanceof EditText) {
+        return (EditText) focusedView;
+    }
+    
+    // 如果当前焦点不是EditText，尝试在视图树中查找获得焦点的EditText
+    View rootView = topActivity.getWindow().getDecorView();
+    EditText foundEdit = findFocusedEditText(rootView);
+    if (foundEdit != null) {
+        return foundEdit;
+    }
+    
+    // 最后回退到记录的currentFocusedEdit
+    return currentFocusedEdit;
+}
+
+// 递归查找获得焦点的EditText
+private EditText findFocusedEditText(View view) {
+    if (view == null) return null;
+    
+    if (view instanceof EditText) {
+        if (view.hasFocus()) {
+            return (EditText) view;
+        }
+    }
+    
+    if (view instanceof ViewGroup) {
+        ViewGroup viewGroup = (ViewGroup) view;
+        for (int i = 0; i < viewGroup.getChildCount(); i++) {
+            View child = viewGroup.getChildAt(i);
+            EditText result = findFocusedEditText(child);
+            if (result != null) {
+                return result;
+            }
+        }
+    }
+    
+    return null;
+}
 
 // 丰富的随机提示语库（每次填充时随机选一条）
 private final String[] RANDOM_JOIN_TEXTS_ARRAY = new String[] {
@@ -237,16 +286,73 @@ public void onMemberChange(final String type, final String groupWxid, final Stri
             final long fileDelay   = getInt(FILE_DELAY_KEY + delaySuffix, getInt(FILE_DELAY_KEY, 100));
 
             // 3. 创建所有可能的发送任务
-            Runnable promptAction = new Runnable() {
-                public void run() {
-                    if ("card".equals(finalPromptType)) {
-                        handleCardSending(type, groupWxid, userWxid, userName, groupName, currentTime);
-                    } else {
-                        handleTextSending(type, groupWxid, userWxid, userName, groupName, currentTime);
+            SendTask promptTask;
+            if ("both".equals(finalPromptType)) {
+                // 文本+卡片模式，根据顺序设置决定发送顺序
+                // 优先读取专属设置，如果没有则使用全局设置
+                final String customBothOrder = getString(PROMPT_BOTH_ORDER_KEY + "_" + groupWxid, "");
+                final String bothOrder = TextUtils.isEmpty(customBothOrder) ? getString(PROMPT_BOTH_ORDER_KEY, "text_first") : customBothOrder;
+                final String finalType = type;
+                final String finalGroupWxid = groupWxid;
+                final String finalUserWxid = userWxid;
+                final String finalUserName = userName;
+                final String finalGroupName = groupName;
+                final String finalCurrentTime = currentTime;
+                
+                promptTask = new SendTask(new Runnable() {
+                    public void run() {
+                        if ("card_first".equals(bothOrder)) {
+                            // 先卡片后文本
+                            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                public void run() {
+                                    handleCardSending(finalType, finalGroupWxid, finalUserWxid, finalUserName, finalGroupName, finalCurrentTime);
+                                }
+                            });
+                            new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                public void run() {
+                                    handleTextSending(finalType, finalGroupWxid, finalUserWxid, finalUserName, finalGroupName, finalCurrentTime);
+                                }
+                            }, 100);
+                        } else {
+                            // 先文本后卡片
+                            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                public void run() {
+                                    handleTextSending(finalType, finalGroupWxid, finalUserWxid, finalUserName, finalGroupName, finalCurrentTime);
+                                }
+                            });
+                            new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                public void run() {
+                                    handleCardSending(finalType, finalGroupWxid, finalUserWxid, finalUserName, finalGroupName, finalCurrentTime);
+                                }
+                            }, 100);
+                        }
                     }
-                }
-            };
-            SendTask promptTask = new SendTask(promptAction, promptDelay);
+                }, promptDelay);
+            } else if ("card".equals(finalPromptType)) {
+                final String finalType = type;
+                final String finalGroupWxid = groupWxid;
+                final String finalUserWxid = userWxid;
+                final String finalUserName = userName;
+                final String finalGroupName = groupName;
+                final String finalCurrentTime = currentTime;
+                promptTask = new SendTask(new Runnable() {
+                    public void run() {
+                        handleCardSending(finalType, finalGroupWxid, finalUserWxid, finalUserName, finalGroupName, finalCurrentTime);
+                    }
+                }, promptDelay);
+            } else {
+                final String finalType = type;
+                final String finalGroupWxid = groupWxid;
+                final String finalUserWxid = userWxid;
+                final String finalUserName = userName;
+                final String finalGroupName = groupName;
+                final String finalCurrentTime = currentTime;
+                promptTask = new SendTask(new Runnable() {
+                    public void run() {
+                        handleTextSending(finalType, finalGroupWxid, finalUserWxid, finalUserName, finalGroupName, finalCurrentTime);
+                    }
+                }, promptDelay);
+            }
 
             // 媒体任务
             Map<String, SendTask> mediaTasks = new HashMap<>();
@@ -729,11 +835,13 @@ private View createVariableBar() {
         chip.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 if (currentFocusedEdit != null) {
-                    // 第7个按钮（index=6）是"@其他"，需要弹出输入框
-                    if (index == 6) {
+                    String clickedTag = (String) v.getTag();
+                    
+                    if ("[AtWx=]".equals(clickedTag)) {
                         showAtOtherInputDialog();
                     } else {
-                        String realVarToInsert = (String) v.getTag();
+
+                        String realVarToInsert = clickedTag;
                         int start = Math.max(currentFocusedEdit.getSelectionStart(), 0);
                         int end = Math.max(currentFocusedEdit.getSelectionEnd(), 0);
                         Editable editable = currentFocusedEdit.getText();
@@ -755,6 +863,11 @@ private View createVariableBar() {
 
 // === 艾特其他人的输入对话框 ===
 private void showAtOtherInputDialog() {
+    if (currentFocusedEdit == null) {
+        toast("请先点击选中一个输入框");
+        return;
+    }
+    
     AlertDialog.Builder builder = new AlertDialog.Builder(getTopActivity());
     builder.setTitle("艾特其他人");
     builder.setMessage("请输入要艾特的人的微信ID (wxid开头)：");
@@ -792,13 +905,18 @@ private void showAtOtherInputDialog() {
             String wxid = input.getText().toString().trim();
             if (!TextUtils.isEmpty(wxid)) {
                 String atVar = "[AtWx=" + wxid + "]";
-                int start = Math.max(currentFocusedEdit.getSelectionStart(), 0);
-                int end = Math.max(currentFocusedEdit.getSelectionEnd(), 0);
-                Editable editable = currentFocusedEdit.getText();
-                if (editable != null) {
-                    editable.replace(Math.min(start, end), Math.max(start, end), atVar);
+                // 直接使用保存的currentFocusedEdit
+                if (currentFocusedEdit != null) {
+                    int start = Math.max(currentFocusedEdit.getSelectionStart(), 0);
+                    int end = Math.max(currentFocusedEdit.getSelectionEnd(), 0);
+                    Editable editable = currentFocusedEdit.getText();
+                    if (editable != null) {
+                        editable.replace(Math.min(start, end), Math.max(start, end), atVar);
+                        toast("已插入艾特变量: " + atVar);
+                    }
+                } else {
+                    toast("插入失败：无法获取输入框焦点");
                 }
-                toast("已插入艾特变量: " + atVar);
             } else {
                 toast("请输入微信ID");
             }
@@ -863,15 +981,63 @@ private void showUnifiedSettingsDialog() {
         RadioGroup promptTypeGroup = new RadioGroup(getTopActivity());
         promptTypeGroup.setOrientation(RadioGroup.HORIZONTAL);
         final RadioButton textTypeButton = new RadioButton(getTopActivity()); textTypeButton.setText("文本");
+        final RadioButton bothTypeButton = new RadioButton(getTopActivity()); bothTypeButton.setText("文本+卡片");
         final RadioButton cardTypeButton = new RadioButton(getTopActivity()); cardTypeButton.setText("卡片");
         promptTypeGroup.addView(textTypeButton);
+        promptTypeGroup.addView(bothTypeButton);
         promptTypeGroup.addView(cardTypeButton);
-        if ("card".equals(getString(PROMPT_TYPE_KEY, "text"))) {
+        String currentPromptType = getString(PROMPT_TYPE_KEY, "text");
+        if ("card".equals(currentPromptType)) {
             cardTypeButton.setChecked(true);
+        } else if ("both".equals(currentPromptType)) {
+            bothTypeButton.setChecked(true);
         } else {
             textTypeButton.setChecked(true);
         }
         coreSettingsCard.addView(promptTypeGroup);
+        
+        // 当选择"文本+卡片"时显示顺序选择
+        final LinearLayout bothOrderContainer = new LinearLayout(getTopActivity());
+        bothOrderContainer.setOrientation(LinearLayout.VERTICAL);
+        bothOrderContainer.setVisibility(View.GONE);
+        
+        TextView bothOrderLabel = new TextView(getTopActivity());
+        bothOrderLabel.setText("文本+卡片发送顺序:");
+        bothOrderLabel.setTextSize(14);
+        bothOrderLabel.setTextColor(Color.parseColor("#666666"));
+        bothOrderLabel.setPadding(0, 16, 0, 8);
+        bothOrderContainer.addView(bothOrderLabel);
+        
+        RadioGroup bothOrderGroup = new RadioGroup(getTopActivity());
+        bothOrderGroup.setOrientation(RadioGroup.HORIZONTAL);
+        final RadioButton bothTextFirstButton = new RadioButton(getTopActivity()); bothTextFirstButton.setText("先文本后卡片");
+        final RadioButton bothCardFirstButton = new RadioButton(getTopActivity()); bothCardFirstButton.setText("先卡片后文本");
+        bothOrderGroup.addView(bothTextFirstButton);
+        bothOrderGroup.addView(bothCardFirstButton);
+        String currentBothOrder = getString(PROMPT_BOTH_ORDER_KEY, "text_first");
+        if ("card_first".equals(currentBothOrder)) {
+            bothCardFirstButton.setChecked(true);
+        } else {
+            bothTextFirstButton.setChecked(true);
+        }
+        bothOrderContainer.addView(bothOrderGroup);
+        coreSettingsCard.addView(bothOrderContainer);
+        
+        // 监听提示语类型选择，控制顺序选择的显示
+        promptTypeGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            public void onCheckedChanged(RadioGroup group, int checkedId) {
+                if (checkedId == bothTypeButton.getId()) {
+                    bothOrderContainer.setVisibility(View.VISIBLE);
+                } else {
+                    bothOrderContainer.setVisibility(View.GONE);
+                }
+            }
+        });
+        // 初始化显示状态
+        if (bothTypeButton.isChecked()) {
+            bothOrderContainer.setVisibility(View.VISIBLE);
+        }
+        
         rootLayout.addView(coreSettingsCard);
 
         // --- 卡片3: 文本提示语设置 ---
@@ -1039,7 +1205,18 @@ private void showUnifiedSettingsDialog() {
                         int viDelay = Integer.parseInt(videoDelayEdit.getText().toString());
                         int fDelay = Integer.parseInt(fileDelayEdit.getText().toString());
 
-                        putString(PROMPT_TYPE_KEY, textTypeButton.isChecked() ? "text" : "card");
+                        // 保存提示语类型
+                        String promptTypeToSave = "text";
+                        if (cardTypeButton.isChecked()) {
+                            promptTypeToSave = "card";
+                        } else if (bothTypeButton.isChecked()) {
+                            promptTypeToSave = "both";
+                        }
+                        putString(PROMPT_TYPE_KEY, promptTypeToSave);
+                        
+                        // 保存文本+卡片顺序
+                        String bothOrder = bothTextFirstButton.isChecked() ? "text_first" : "card_first";
+                        putString(PROMPT_BOTH_ORDER_KEY, bothOrder);
 
                         putString(JOIN_TEXT_PROMPT_KEY, joinPromptEditText.getText().toString());
                         putString(LEFT_TEXT_PROMPT_KEY, leftPromptEditText.getText().toString());
@@ -1635,14 +1812,63 @@ private void showIndividualGroupPromptToggleDialog(final String groupWxid, final
         promptTypeGroup.setOrientation(RadioGroup.HORIZONTAL);
         final RadioButton inheritBtn = new RadioButton(getTopActivity()); inheritBtn.setText("继承全局");
         final RadioButton textBtn = new RadioButton(getTopActivity()); textBtn.setText("文本");
+        final RadioButton bothBtn = new RadioButton(getTopActivity()); bothBtn.setText("文本+卡片");
         final RadioButton cardBtn = new RadioButton(getTopActivity()); cardBtn.setText("卡片");
-        promptTypeGroup.addView(inheritBtn); promptTypeGroup.addView(textBtn); promptTypeGroup.addView(cardBtn);
+        promptTypeGroup.addView(inheritBtn); promptTypeGroup.addView(textBtn); promptTypeGroup.addView(bothBtn); promptTypeGroup.addView(cardBtn);
         
         String currentCustomType = getString(PROMPT_TYPE_KEY + "_" + groupWxid, "global");
         if ("text".equals(currentCustomType)) textBtn.setChecked(true);
         else if ("card".equals(currentCustomType)) cardBtn.setChecked(true);
+        else if ("both".equals(currentCustomType)) bothBtn.setChecked(true);
         else inheritBtn.setChecked(true);
         baseCard.addView(promptTypeGroup);
+        
+        // 当选择"文本+卡片"时显示顺序选择
+        final LinearLayout bothOrderContainer = new LinearLayout(getTopActivity());
+        bothOrderContainer.setOrientation(LinearLayout.VERTICAL);
+        bothOrderContainer.setVisibility(View.GONE);
+        
+        TextView bothOrderLabel = new TextView(getTopActivity());
+        bothOrderLabel.setText("本群文本+卡片发送顺序:");
+        bothOrderLabel.setTextSize(14);
+        bothOrderLabel.setTextColor(Color.parseColor("#666666"));
+        bothOrderLabel.setPadding(0, 16, 0, 8);
+        bothOrderContainer.addView(bothOrderLabel);
+        
+        RadioGroup bothOrderGroup = new RadioGroup(getTopActivity());
+        bothOrderGroup.setOrientation(RadioGroup.HORIZONTAL);
+        final RadioButton bothTextFirstBtn = new RadioButton(getTopActivity()); bothTextFirstBtn.setText("先文本后卡片");
+        final RadioButton bothCardFirstBtn = new RadioButton(getTopActivity()); bothCardFirstBtn.setText("先卡片后文本");
+        bothOrderGroup.addView(bothTextFirstBtn);
+        bothOrderGroup.addView(bothCardFirstBtn);
+        
+        // 读取本群专属的顺序设置，如果没有则使用全局设置
+        String customBothOrder = getString(PROMPT_BOTH_ORDER_KEY + "_" + groupWxid, "");
+        if (TextUtils.isEmpty(customBothOrder)) {
+            customBothOrder = getString(PROMPT_BOTH_ORDER_KEY, "text_first");
+        }
+        if ("card_first".equals(customBothOrder)) {
+            bothCardFirstBtn.setChecked(true);
+        } else {
+            bothTextFirstBtn.setChecked(true);
+        }
+        bothOrderContainer.addView(bothOrderGroup);
+        baseCard.addView(bothOrderContainer);
+        
+        // 监听提示语类型选择，控制顺序选择的显示
+        promptTypeGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            public void onCheckedChanged(RadioGroup group, int checkedId) {
+                if (checkedId == bothBtn.getId()) {
+                    bothOrderContainer.setVisibility(View.VISIBLE);
+                } else {
+                    bothOrderContainer.setVisibility(View.GONE);
+                }
+            }
+        });
+        // 初始化显示状态
+        if (bothBtn.isChecked()) {
+            bothOrderContainer.setVisibility(View.VISIBLE);
+        }
         
         rootLayout.addView(baseCard);
 
@@ -1949,8 +2175,13 @@ private void showIndividualGroupPromptToggleDialog(final String groupWxid, final
                     // 2. 保存提示语类型
                     String selectedType = "global";
                     if (textBtn.isChecked()) selectedType = "text";
+                    else if (bothBtn.isChecked()) selectedType = "both";
                     else if (cardBtn.isChecked()) selectedType = "card";
                     putString(PROMPT_TYPE_KEY + "_" + groupWxid, selectedType);
+                    
+                    // 3. 保存文本+卡片顺序
+                    String bothOrder = bothTextFirstBtn.isChecked() ? "text_first" : "card_first";
+                    putString(PROMPT_BOTH_ORDER_KEY + "_" + groupWxid, bothOrder);
 
                     // 3. 保存专属内容
                     putString(JOIN_TEXT_PROMPT_KEY + "_" + groupWxid, joinTextEdit.getText().toString());

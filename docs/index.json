@@ -1,7 +1,15 @@
 {
-  "generatedAt": "2026-03-31",
-  "totalPlugins": 47,
+  "generatedAt": "2026-04-01",
+  "totalPlugins": 48,
   "plugins": [
+    {
+      "name": "群聊统计分析",
+      "author": "晚药",
+      "version": "9.1.0",
+      "updateTime": 20260401,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/晚药/群聊统计分析＋定时发送",
+      "downloadUrl": "https://minhaskamal.github.io/DownGit/#/home?url=https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/晚药/群聊统计分析＋定时发送"
+    },
     {
       "name": "进退群配置版",
       "author": "。。",

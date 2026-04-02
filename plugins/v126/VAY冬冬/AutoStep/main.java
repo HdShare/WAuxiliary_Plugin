@@ -20,7 +20,9 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.ListView;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Gravity;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
@@ -121,11 +123,7 @@ String CMD_SET_DISTRIBUTION = "/分配策略 ";
 
 void onLoad() {
     loadConfiguration();
-    
-    LocalDateTime now = LocalDateTime.now();
-    if (now.getDayOfYear() != currentDay) {
-        resetDay(now);
-    }
+    ensureDayRolloverIfNeeded();
     
     long pending = pendingStepUpload.get();
     if (pending > 0) {
@@ -407,6 +405,16 @@ void resetDay(LocalDateTime now) {
     logToFile("新的一天重置完成");
 }
 
+void ensureDayRolloverIfNeeded() {
+    if (currentDay == 0) {
+        loadConfiguration();
+    }
+    LocalDateTime now = LocalDateTime.now();
+    if (now.getDayOfYear() != currentDay) {
+        resetDay(now);
+    }
+}
+
 private long calculateEffectivePerMinute(long stepsNeeded, long remainingMinutes, boolean isExponentialStrategy, int configuredMinTimeStep, int configuredMaxTimeStep, int configuredJitterMax, double configuredExpRatio, int currentDistributionStrategy) {
     long perMinute = computeAllocation(stepsNeeded, remainingMinutes, isExponentialStrategy, configuredMinTimeStep, configuredMaxTimeStep, configuredExpRatio);
 
@@ -535,16 +543,12 @@ void executeTimeStepTask() {
     long startTime = System.currentTimeMillis();
     
     try {
+        ensureDayRolloverIfNeeded();
         if (isRestrictedTime()) {
             return;
         }
 
         LocalDateTime now = LocalDateTime.now();
-        if (now.getDayOfYear() != currentDay) {
-            resetDay(now);
-            return;
-        }
-
         long currentTime = System.currentTimeMillis();
         if (!checkAndExecuteMissedTasks(currentTime)) {
             executeNormalTimeStep(now, currentTime);
@@ -976,19 +980,12 @@ void enableMessageStep(boolean enable) {
 }
 
 void updateStepOnMessage() {
+    ensureDayRolloverIfNeeded();
     if (isRestrictedTime()) {
         return;
     }
     if (isPluginStepPausedAtMax()) {
         return;
-    }
-    
-    LocalDateTime now = LocalDateTime.now();
-    if (currentDay == 0) {
-        loadConfiguration();
-    }
-    if (now.getDayOfYear() != currentDay) {
-        resetDay(now);
     }
     
     ThreadLocalRandom random = ThreadLocalRandom.current();
@@ -1032,6 +1029,8 @@ void onHandleMsg(Object msgInfoBean) {
 
     String content = msgInfoBean.getContent().trim();
     String talker = msgInfoBean.getTalker();
+
+    ensureDayRolloverIfNeeded();
 
     switch (content) {
         case CMD_TIME_STEP_ON:
@@ -1520,6 +1519,7 @@ void logToFile(String message) {
 }
 
 private void showMainSettingsDialog() {
+    ensureDayRolloverIfNeeded();
     ScrollView scrollView = new ScrollView(getTopActivity());
     LinearLayout root = new LinearLayout(getTopActivity());
     root.setOrientation(LinearLayout.VERTICAL);
@@ -1787,7 +1787,7 @@ private void showMainSettingsDialog() {
 
     guaranteedBtn.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
-            showEditNumberDialog("🛡️ 保底步数", "22:50时若步数不足将自动补到此值\n设为 0 表示关闭", String.valueOf(minGuaranteedStep), new NumberEditCallback() {
+            showEditNumberDialog("🛡️ 保底步数", pad2(ACTIVE_END_HOUR) + ":" + pad2(ACTIVE_END_MINUTE) + " 时若步数不足将自动补到此值\n设为 0 表示关闭", String.valueOf(minGuaranteedStep), new NumberEditCallback() {
                 public void onConfirm(long value) {
                     if (value < 0) { toast("值不能为负数"); return; }
                     configLock.writeLock().lock();
@@ -2019,7 +2019,7 @@ private void showEditRangeDialog(final Runnable onUiUpdated) {
 }
 
 private void showStrategySelectionDialog(final Runnable onUiUpdated) {
-    String[] options = {"📈 线性分配 — 均匀分配步数到每分钟", "📊 指数分配 — 前期少、后期多"};
+    final String[] options = {"📈 线性分配 — 均匀分配步数到每分钟", "📊 指数分配 — 前期少、后期多"};
     AlertDialog.Builder builder = new AlertDialog.Builder(getTopActivity());
     builder.setTitle("选择分配策略");
     builder.setItems(options, new DialogInterface.OnClickListener() {
@@ -2041,7 +2041,21 @@ private void showStrategySelectionDialog(final Runnable onUiUpdated) {
     AlertDialog menuDialog = builder.create();
     menuDialog.setOnShowListener(new DialogInterface.OnShowListener() {
         public void onShow(DialogInterface d) {
-            uiStyleDialog((AlertDialog) d);
+            final AlertDialog ad = (AlertDialog) d;
+            uiStyleDialog(ad);
+            final ListView listView = uiFindAlertDialogListView(ad);
+            if (listView != null) {
+                listView.post(new Runnable() {
+                    public void run() {
+                        uiApplyDarkTextToSelectDialogRows(listView);
+                        listView.post(new Runnable() {
+                            public void run() {
+                                uiApplyDarkTextToSelectDialogRows(listView);
+                            }
+                        });
+                    }
+                });
+            }
         }
     });
     menuDialog.show();
@@ -2258,6 +2272,7 @@ private void uiStyleDialog(AlertDialog dialog) {
         dialogBg.setColor(Color.parseColor("#FAFBF9"));
         dialog.getWindow().setBackgroundDrawable(dialogBg);
     } catch (Exception e) {}
+    uiApplyLightPanelDialogTextColors(dialog);
     Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
     if (positiveButton != null) {
         positiveButton.setTextColor(Color.WHITE);
@@ -2276,6 +2291,83 @@ private void uiStyleDialog(AlertDialog dialog) {
         negativeButton.setBackground(shape);
         negativeButton.setAllCaps(false);
     }
+}
+
+private void uiApplyLightPanelDialogTextColors(AlertDialog dialog) {
+    if (dialog == null) return;
+    final int titleColor = Color.parseColor("#212121");
+    final int messageColor = Color.parseColor("#424242");
+    try {
+        int alertTitleId = dialog.getContext().getResources().getIdentifier("alertTitle", "id", "android");
+        if (alertTitleId != 0) {
+            TextView tv = dialog.findViewById(alertTitleId);
+            if (tv != null) tv.setTextColor(titleColor);
+        }
+    } catch (Exception e) {}
+    try {
+        TextView tv = dialog.findViewById(android.R.id.title);
+        if (tv != null) tv.setTextColor(titleColor);
+    } catch (Exception e) {}
+    try {
+        int messageId = dialog.getContext().getResources().getIdentifier("message", "id", "android");
+        if (messageId != 0) {
+            TextView tv = dialog.findViewById(messageId);
+            if (tv != null) tv.setTextColor(messageColor);
+        }
+    } catch (Exception e) {}
+    try {
+        TextView tv = dialog.findViewById(android.R.id.message);
+        if (tv != null) tv.setTextColor(messageColor);
+    } catch (Exception e) {}
+}
+
+private ListView uiFindAlertDialogListView(AlertDialog dialog) {
+    if (dialog == null || dialog.getWindow() == null) return null;
+    try {
+        int listId = dialog.getContext().getResources().getIdentifier("select_dialog_listview", "id", "android");
+        if (listId != 0) {
+            View v = dialog.findViewById(listId);
+            if (v instanceof ListView) return (ListView) v;
+        }
+    } catch (Exception e) {}
+    try {
+        View v = dialog.findViewById(android.R.id.list);
+        if (v instanceof ListView) return (ListView) v;
+    } catch (Exception e) {}
+    try {
+        return uiFindListViewRecursive(dialog.getWindow().getDecorView());
+    } catch (Exception e) {}
+    return null;
+}
+
+private ListView uiFindListViewRecursive(View view) {
+    if (view instanceof ListView) return (ListView) view;
+    if (view instanceof ViewGroup) {
+        ViewGroup vg = (ViewGroup) view;
+        for (int i = 0; i < vg.getChildCount(); i++) {
+            ListView found = uiFindListViewRecursive(vg.getChildAt(i));
+            if (found != null) return found;
+        }
+    }
+    return null;
+}
+
+private void uiApplyDarkTextToSelectDialogRows(ListView listView) {
+    if (listView == null) return;
+    int color = Color.parseColor("#212121");
+    try {
+        int n = listView.getChildCount();
+        for (int i = 0; i < n; i++) {
+            View row = listView.getChildAt(i);
+            if (row == null) continue;
+            TextView tv = row.findViewById(android.R.id.text1);
+            if (tv != null) {
+                tv.setTextColor(color);
+            } else if (row instanceof TextView) {
+                ((TextView) row).setTextColor(color);
+            }
+        }
+    } catch (Exception e) {}
 }
 
 boolean onLongClickSendBtn(String text) {

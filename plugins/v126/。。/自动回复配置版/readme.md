@@ -74,7 +74,12 @@
 ## AI Key 申请
 
 如需使用AI相关功能，请前往以下地址申请 API Key：  
-`https://cloud.siliconflow.cn`
+`https://ai.071129.xyz/`
+`https://ai.xem8k5.top/register?aff=buV5`
+`https://api.xinjianya.top/register?aff=tEi6`
+`https://free.closeai.hk`
+`https://api.maoleio.cn/register?aff=6xD7`
+
 
 管理回复规则需要勾选`智聊ai回复`
 

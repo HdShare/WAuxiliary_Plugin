@@ -58,7 +58,6 @@ void applyDialogStyle(final AlertDialog dialog) {
     });
 }
 
-/* 点击触发 */
 boolean onClickSendBtn(String text) {
     if (!"转换".equals(text)) return false;
     String lastPath = getString(SP_KEY, android.os.Environment.getExternalStorageDirectory().getAbsolutePath());

@@ -123,6 +123,7 @@ private final String XIAOZHI_CONSOLE_KEY = "xiaozhi_console_url";
 // 智聊AI 配置相关的key (移植自旧脚本)
 private final String ZHILIA_AI_API_KEY = "zhilia_ai_api_key";
 private final String ZHILIA_AI_API_URL = "zhilia_ai_api_url";
+private final String ZHILIA_AI_API_PATH = "zhilia_ai_api_path";
 private final String ZHILIA_AI_MODEL_NAME = "zhilia_ai_model_name";
 private final String ZHILIA_AI_SYSTEM_PROMPT = "zhilia_ai_system_prompt";
 private final String ZHILIA_AI_CONTEXT_LIMIT = "zhilia_ai_context_limit";
@@ -1267,6 +1268,7 @@ private void performExportBackup(String backupInfo) {
             JSONObject 智聊AI = new JSONObject();
             智聊AI.put("API密钥", config.zhiliaApiKey);
             智聊AI.put("API地址", config.zhiliaApiUrl);
+            智聊AI.put("API路径", getString(ZHILIA_AI_API_PATH, "/chat/completions"));
             智聊AI.put("模型名称", config.zhiliaModelName);
             智聊AI.put("系统提示", config.zhiliaSystemPrompt);
             智聊AI.put("上下文限制", config.zhiliaContextLimit);
@@ -1807,6 +1809,9 @@ private void doImportBackup(JSONObject backupJson, String filePath,
                     JSONObject zhiliaJson = (JSONObject) zhiliaObj;
                     putString(ZHILIA_AI_API_KEY, zhiliaJson.getString("API密钥"));
                     putString(ZHILIA_AI_API_URL, zhiliaJson.getString("API地址"));
+                    String importPath = zhiliaJson.getString("API路径");
+                    if (TextUtils.isEmpty(importPath)) importPath = "/chat/completions";
+                    putString(ZHILIA_AI_API_PATH, importPath);
                     putString(ZHILIA_AI_MODEL_NAME, zhiliaJson.getString("模型名称"));
                     putString(ZHILIA_AI_SYSTEM_PROMPT, zhiliaJson.getString("系统提示"));
                     putInt(ZHILIA_AI_CONTEXT_LIMIT, zhiliaJson.getIntValue("上下文限制"));
@@ -1814,6 +1819,9 @@ private void doImportBackup(JSONObject backupJson, String filePath,
             } else if (configJson.containsKey("zhiliaApiKey")) {
                 putString(ZHILIA_AI_API_KEY, configJson.getString("zhiliaApiKey"));
                 putString(ZHILIA_AI_API_URL, configJson.getString("zhiliaApiUrl"));
+                String importPath2 = configJson.getString("zhiliaApiPath");
+                if (TextUtils.isEmpty(importPath2)) importPath2 = "/chat/completions";
+                putString(ZHILIA_AI_API_PATH, importPath2);
                 putString(ZHILIA_AI_MODEL_NAME, configJson.getString("zhiliaModelName"));
                 putString(ZHILIA_AI_SYSTEM_PROMPT, configJson.getString("zhiliaSystemPrompt"));
                 putInt(ZHILIA_AI_CONTEXT_LIMIT, configJson.getIntValue("zhiliaContextLimit"));
@@ -2501,6 +2509,23 @@ private void sendMessageToWebSocket(final String talker, String text) {
 
 
 
+
+private String buildZhiliaFinalApiUrl(String baseUrl, String apiPath) {
+    if (TextUtils.isEmpty(baseUrl)) return "";
+    String b = baseUrl.trim();
+    String p = TextUtils.isEmpty(apiPath) ? "/chat/completions" : apiPath.trim();
+
+    while (b.endsWith("/")) {
+        b = b.substring(0, b.length() - 1);
+    }
+
+    if (!p.startsWith("/")) {
+        p = "/" + p;
+    }
+
+    return b + p;
+}
+
 private String extractSseData(String line) {
     if (line == null) return "";
     line = line.trim();
@@ -2603,7 +2628,9 @@ private String callZhiliaStreamOnce(String apiUrl, String apiKey, String modelNa
 
 private void sendZhiliaAiReply(final String talker, String userContent, final boolean replyAsQuote, final long quoteMsgId) {
     String apiKey = getString(ZHILIA_AI_API_KEY, "");
-    String apiUrl = getString(ZHILIA_AI_API_URL, "https://api.siliconflow.cn/v1/chat/completions");
+    String apiBaseUrl = getString(ZHILIA_AI_API_URL, "https://api.siliconflow.cn/v1");
+    String apiPath = getString(ZHILIA_AI_API_PATH, "/chat/completions");
+    String apiUrl = buildZhiliaFinalApiUrl(apiBaseUrl, apiPath);
     String modelName = getString(ZHILIA_AI_MODEL_NAME, "deepseek-ai/DeepSeek-V3");
     String systemPrompt = getString(ZHILIA_AI_SYSTEM_PROMPT, "你是个宝宝");
     int contextLimit = getInt(ZHILIA_AI_CONTEXT_LIMIT, 10);
@@ -4738,6 +4765,7 @@ private void ensureZhiliaDefaultMigrated() {
             one.put("apiKey", getString(ZHILIA_AI_API_KEY, ""));
             one.put("apiUrl", getString(ZHILIA_AI_API_URL, "https://api.siliconflow.cn/v1/chat/completions"));
             one.put("modelName", getString(ZHILIA_AI_MODEL_NAME, "deepseek-ai/DeepSeek-V3"));
+            one.put("apiPath", getString(ZHILIA_AI_API_PATH, "/chat/completions"));
             one.put("systemPrompt", getString(ZHILIA_AI_SYSTEM_PROMPT, "你是个宝宝"));
             one.put("contextLimit", getInt(ZHILIA_AI_CONTEXT_LIMIT, 10));
             all = new JSONObject();
@@ -4758,18 +4786,21 @@ private void syncLegacyZhiliaKeysFromConfig(JSONObject cfg) {
         String apiKey = cfg.getString("apiKey");
         String apiUrl = cfg.getString("apiUrl");
         String modelName = cfg.getString("modelName");
+        String apiPath = cfg.getString("apiPath");
         String systemPrompt = cfg.getString("systemPrompt");
         int contextLimit = cfg.getIntValue("contextLimit");
 
         if (apiKey == null) apiKey = "";
         if (TextUtils.isEmpty(apiUrl)) apiUrl = "https://api.siliconflow.cn/v1/chat/completions";
         if (TextUtils.isEmpty(modelName)) modelName = "deepseek-ai/DeepSeek-V3";
+        if (TextUtils.isEmpty(apiPath)) apiPath = "/chat/completions";
         if (systemPrompt == null) systemPrompt = "你是个宝宝";
         if (contextLimit <= 0) contextLimit = 10;
 
         putString(ZHILIA_AI_API_KEY, apiKey);
         putString(ZHILIA_AI_API_URL, apiUrl);
         putString(ZHILIA_AI_MODEL_NAME, modelName);
+        putString(ZHILIA_AI_API_PATH, apiPath);
         putString(ZHILIA_AI_SYSTEM_PROMPT, systemPrompt);
         putInt(ZHILIA_AI_CONTEXT_LIMIT, contextLimit);
 
@@ -4796,6 +4827,7 @@ private JSONObject getActiveZhiliaConfig() {
         cfg.put("apiKey", "");
         cfg.put("apiUrl", "https://api.siliconflow.cn/v1/chat/completions");
         cfg.put("modelName", "deepseek-ai/DeepSeek-V3");
+        cfg.put("apiPath", "/chat/completions");
         cfg.put("systemPrompt", "你是个宝宝");
         cfg.put("contextLimit", 10);
     }
@@ -5619,6 +5651,13 @@ private void showZhiliaAIConfigDialog() {
         final EditText apiUrlEdit = createStyledEditText("默认为官方API", activeCfg.getString("apiUrl"));
         apiCard.addView(apiUrlEdit);
 
+        apiCard.addView(createTextView(getTopActivity(), "API路径:", 14, 0));
+        final EditText apiPathEdit = createStyledEditText("默认 /chat/completions", activeCfg.getString("apiPath"));
+        if (TextUtils.isEmpty(apiPathEdit.getText().toString().trim())) {
+            apiPathEdit.setText(getString(ZHILIA_AI_API_PATH, "/chat/completions"));
+        }
+        apiCard.addView(apiPathEdit);
+
         apiCard.addView(createTextView(getTopActivity(), "模型名称:", 14, 0));
         final EditText modelNameEdit = createStyledEditText("例如 deepseek-ai/DeepSeek-V3", activeCfg.getString("modelName"));
         apiCard.addView(modelNameEdit);
@@ -5658,6 +5697,7 @@ private void showZhiliaAIConfigDialog() {
                     cfgNameEdit.setText(nowName);
                     apiKeyEdit.setText(now.getString("apiKey"));
                     apiUrlEdit.setText(now.getString("apiUrl"));
+                    apiPathEdit.setText(now.getString("apiPath"));
                     modelNameEdit.setText(now.getString("modelName"));
                     contextLimitEdit.setText(String.valueOf(now.getIntValue("contextLimit")));
                     systemPromptEdit.setText(now.getString("systemPrompt"));
@@ -5786,7 +5826,10 @@ private void showZhiliaAIConfigDialog() {
         testBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 final String key = apiKeyEdit.getText().toString().trim();
-                final String url = apiUrlEdit.getText().toString().trim();
+                final String base = apiUrlEdit.getText().toString().trim();
+                String path = apiPathEdit.getText().toString().trim();
+                if (TextUtils.isEmpty(path)) path = "/chat/completions";
+                final String url = buildZhiliaFinalApiUrl(base, path);
                 final String model = modelNameEdit.getText().toString().trim();
 
                 if (TextUtils.isEmpty(key) || TextUtils.isEmpty(url)) {
@@ -5814,7 +5857,7 @@ private void showZhiliaAIConfigDialog() {
 
                             new Thread(new Runnable() {
                                 public void run() {
-                                    final List<String> models = fetchModelListByApi(url, key);
+                                    final List<String> models = fetchModelListByApi(base, key);
                                     new Handler(Looper.getMainLooper()).post(new Runnable() {
                                         public void run() {
                                             try { loading.dismiss(); } catch (Exception ignore) {}
@@ -5826,7 +5869,7 @@ private void showZhiliaAIConfigDialog() {
                                             final java.util.concurrent.atomic.AtomicReference<String> selectedModelForTest =
                                                 new java.util.concurrent.atomic.AtomicReference<String>(model);
 
-                                            showModelPickerForTestOnly(url, models, model, selectedModelForTest, new Runnable() {
+                                            showModelPickerForTestOnly(base, models, model, selectedModelForTest, new Runnable() {
                                                 public void run() {
                                                     String m2 = selectedModelForTest.get();
                                                     if (TextUtils.isEmpty(m2)) {
@@ -5876,7 +5919,7 @@ private void showZhiliaAIConfigDialog() {
 
                 new Thread(new Runnable() {
                     public void run() {
-                        final List<String> models = fetchModelListByApi(url, key);
+                        final List<String> models = fetchModelListByApi(base, key);
                         new Handler(Looper.getMainLooper()).post(new Runnable() {
                             public void run() {
                                 try { loading.dismiss(); } catch (Exception ignore) {}
@@ -5885,7 +5928,7 @@ private void showZhiliaAIConfigDialog() {
                                     return;
                                 }
 
-                                showModelPickerDialogWithSearchAndFav(url, models, modelNameEdit);
+                                showModelPickerDialogWithSearchAndFav(base, models, modelNameEdit);
                             }
                         });
                     }
@@ -5908,6 +5951,9 @@ btnCard.addView(testBtn);
                 JSONObject one = new JSONObject();
                 one.put("apiKey", apiKeyEdit.getText().toString().trim());
                 one.put("apiUrl", apiUrlEdit.getText().toString().trim());
+                String pathValue = apiPathEdit.getText().toString().trim();
+                if (TextUtils.isEmpty(pathValue)) pathValue = "/chat/completions";
+                one.put("apiPath", pathValue);
                 one.put("modelName", modelNameEdit.getText().toString().trim());
                 one.put("systemPrompt", systemPromptEdit.getText().toString().trim());
 
@@ -5919,6 +5965,7 @@ btnCard.addView(testBtn);
                 saveZhiliaAllConfigs(all);
                 putString(ZHILIA_ACTIVE_CONFIG_NAME_KEY, cfgName);
                 syncLegacyZhiliaKeysFromConfig(one);
+                putString(ZHILIA_AI_API_PATH, pathValue);
                 CheckBox streamCheck = (CheckBox) streamSwitchRow.getChildAt(1);
                 putBoolean(ZHILIA_AI_STREAM_ENABLED_KEY, streamCheck != null && streamCheck.isChecked());
 

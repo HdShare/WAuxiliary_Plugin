@@ -66,6 +66,24 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.TypeReference;
 
+// === 文件/文件夹浏览与多选 ===
+final String DEFAULT_LAST_FOLDER_SP_AUTO = "last_folder_for_media_auto";
+final String ROOT_FOLDER = android.os.Environment.getExternalStorageDirectory().getAbsolutePath();
+
+// 回调接口（必须定义在使用之前）
+interface MediaSelectionCallback { void onSelected(ArrayList<String> selectedFiles); }
+
+/* ========== 单例模式文件夹浏览器全局变量 ========== */
+AlertDialog gFolderDialogAuto = null;
+ArrayAdapter gFolderAdapterAuto = null;
+ArrayList gFolderNamesAuto = new ArrayList();
+ArrayList gFolderFilesAuto = new ArrayList();
+File gCurrentFolderAuto = null;
+String gWantedExtFilterAuto = "";
+String gCurrentSelectionAuto = "";
+MediaSelectionCallback gMediaCallbackAuto = null;
+boolean gAllowFolderSelectAuto = false;
+
 // ==========================================
 // ========== 🕒 微信定时发送助手 (多任务精确版) ==========
 // ==========================================
@@ -1625,57 +1643,187 @@ private void showMultiSelectDialog(String title, List allItems, List idList, Set
 }
 
 // ==========================================
-// ========== 📁 媒体选择功能 ==========
+// ========== 📁 媒体选择功能（单例模式） ==========
 // ==========================================
 
-final String DEFAULT_LAST_FOLDER_SP_AUTO = "last_folder_for_media_auto";
-final String ROOT_FOLDER = "/storage/emulated/0";
-
-interface MediaSelectionCallback { void onSelected(ArrayList<String> selectedFiles); }
-
+/* ========== 打开文件夹浏览器（单例模式） ========== */
 void browseFolderForSelectionAuto(final File startFolder, final String wantedExtFilter, final String currentSelection, final MediaSelectionCallback callback, final boolean allowFolderSelect) {
-    putString(DEFAULT_LAST_FOLDER_SP_AUTO, startFolder.getAbsolutePath());
-    ArrayList<String> names = new ArrayList<String>();
-    final ArrayList<Object> items = new ArrayList<Object>();
+    // 保存回调参数
+    gWantedExtFilterAuto = wantedExtFilter;
+    gCurrentSelectionAuto = currentSelection;
+    gMediaCallbackAuto = callback;
+    gAllowFolderSelectAuto = allowFolderSelect;
+    gCurrentFolderAuto = startFolder;
 
-    if (!startFolder.getAbsolutePath().equals(ROOT_FOLDER)) { names.add("⬆ 上一级"); items.add(startFolder.getParentFile()); }
-    File[] subs = startFolder.listFiles();
-    if (subs != null) {
-        Arrays.sort(subs);
-        for (int i = 0; i < subs.length; i++) {
-            File f = subs[i];
-            if (f.isDirectory()) { names.add("📁 " + f.getName()); items.add(f); }
-        }
+    if (startFolder != null && startFolder.exists() && startFolder.isDirectory()) {
+        putString(DEFAULT_LAST_FOLDER_SP_AUTO, startFolder.getAbsolutePath());
     }
 
+    // 如果已存在对话框，先关闭
+    if (gFolderDialogAuto != null && gFolderDialogAuto.isShowing()) {
+        gFolderDialogAuto.dismiss();
+        gFolderDialogAuto = null;
+    }
+
+    // 准备数据
+    refreshFolderListAuto(startFolder);
+
+    // 创建对话框
     AlertDialog.Builder builder = new AlertDialog.Builder(getTopActivity());
     builder.setTitle("浏览：" + startFolder.getAbsolutePath());
+
+    gFolderAdapterAuto = new ArrayAdapter(getTopActivity(), android.R.layout.simple_list_item_1, gFolderNamesAuto);
     final ListView list = new ListView(getTopActivity());
-    list.setAdapter(new ArrayAdapter<String>(getTopActivity(), android.R.layout.simple_list_item_1, names));
+    list.setAdapter(gFolderAdapterAuto);
     builder.setView(list);
 
-    final AlertDialog dialog = builder.create();
     list.setOnItemClickListener(new AdapterView.OnItemClickListener() {
         public void onItemClick(AdapterView<?> parent, View view, int pos, long id) {
-            dialog.dismiss();
-            Object selected = items.get(pos);
-            if (selected instanceof File && ((File)selected).isDirectory()) {
-                browseFolderForSelectionAuto((File)selected, wantedExtFilter, currentSelection, callback, allowFolderSelect);
+            Object obj = gFolderFilesAuto.get(pos);
+            if (!(obj instanceof File)) return;
+            File selected = (File) obj;
+            if (selected.equals(gCurrentFolderAuto) && gFolderNamesAuto.get(pos).toString().startsWith("⚠")) {
+                toast("该目录不可读，请使用手动输入路径");
+                return;
+            }
+            if (selected.isDirectory()) {
+                gCurrentFolderAuto = selected;
+                putString(DEFAULT_LAST_FOLDER_SP_AUTO, selected.getAbsolutePath());
+                refreshFolderListAuto(selected);
+                gFolderAdapterAuto.notifyDataSetChanged();
+                if (gFolderDialogAuto != null) {
+                    gFolderDialogAuto.setTitle("浏览：" + selected.getAbsolutePath());
+                }
             }
         }
     });
 
     builder.setPositiveButton("在此目录选择文件", new DialogInterface.OnClickListener() {
         public void onClick(DialogInterface d, int which) {
-            d.dismiss(); scanFilesMulti(startFolder, wantedExtFilter, currentSelection, callback);
+            d.dismiss();
+            gFolderDialogAuto = null;
+            scanFilesMulti(gCurrentFolderAuto, gWantedExtFilterAuto, gCurrentSelectionAuto, gMediaCallbackAuto);
         }
     });
-    builder.setNegativeButton("取消", null);
-    final AlertDialog finalDialog = builder.create();
-    finalDialog.setOnShowListener(new DialogInterface.OnShowListener() {
-        public void onShow(DialogInterface d) { setupUnifiedDialog(finalDialog); }
+
+    if (allowFolderSelect) {
+        builder.setNeutralButton("选择此文件夹", new DialogInterface.OnClickListener() {
+            public void onClick(DialogInterface d, int which) {
+                d.dismiss();
+                gFolderDialogAuto = null;
+                ArrayList<String> selected = new ArrayList<String>();
+                selected.add(gCurrentFolderAuto.getAbsolutePath());
+                gMediaCallbackAuto.onSelected(selected);
+            }
+        });
+    }
+
+    builder.setNegativeButton("手动输入路径", new DialogInterface.OnClickListener() {
+        public void onClick(DialogInterface d, int which) {
+            d.dismiss();
+            gFolderDialogAuto = null;
+            showManualPathDialogAuto(gWantedExtFilterAuto, gCurrentSelectionAuto, gMediaCallbackAuto, gAllowFolderSelectAuto);
+        }
     });
-    finalDialog.show();
+
+    gFolderDialogAuto = builder.create();
+    gFolderDialogAuto.setOnShowListener(new DialogInterface.OnShowListener() {
+        public void onShow(DialogInterface d) {
+            setupUnifiedDialog(gFolderDialogAuto);
+        }
+    });
+    gFolderDialogAuto.show();
+}
+
+/* ========== 刷新文件夹列表数据（单例模式） ========== */
+void refreshFolderListAuto(File folder) {
+    gFolderNamesAuto.clear();
+    gFolderFilesAuto.clear();
+
+    if (folder == null || !folder.exists() || !folder.isDirectory()) {
+        gFolderNamesAuto.add("⚠ 路径无效或不可访问");
+        gFolderFilesAuto.add(gCurrentFolderAuto);
+        return;
+    }
+
+    // 只要有父目录就允许上一级
+    if (folder.getParentFile() != null) {
+        gFolderNamesAuto.add("⬆ 上一级");
+        gFolderFilesAuto.add(folder.getParentFile());
+    }
+
+    File[] subs = null;
+    try {
+        subs = folder.listFiles();
+    } catch (Exception e) {
+        subs = null;
+    }
+
+    if (subs == null) {
+        gFolderNamesAuto.add("⚠ 当前目录不可读，请点手动输入路径");
+        gFolderFilesAuto.add(folder);
+        return;
+    }
+
+    // 目录优先排序
+    Arrays.sort(subs, new java.util.Comparator<File>() {
+        public int compare(File a, File b) {
+            if (a.isDirectory() && !b.isDirectory()) return -1;
+            if (!a.isDirectory() && b.isDirectory()) return 1;
+            return a.getName().compareToIgnoreCase(b.getName());
+        }
+    });
+
+    boolean hasDir = false;
+    for (int i = 0; i < subs.length; i++) {
+        File f = subs[i];
+        if (f.isDirectory()) {
+            hasDir = true;
+            gFolderNamesAuto.add("📁 " + f.getName());
+            gFolderFilesAuto.add(f);
+        }
+    }
+
+    if (!hasDir) {
+        gFolderNamesAuto.add("（此目录无子文件夹，可点在此目录选择文件）");
+        gFolderFilesAuto.add(folder);
+    }
+}
+
+private void showManualPathDialogAuto(final String wantedExtFilter, final String currentSelection,
+                                      final MediaSelectionCallback callback, final boolean allowFolderSelect) {
+    android.app.Activity act = getTopActivity();
+    if (act == null) return;
+
+    LinearLayout layout = new LinearLayout(act);
+    layout.setOrientation(LinearLayout.VERTICAL);
+    layout.setPadding(24, 24, 24, 24);
+
+    final EditText pathEdit = createStyledEditText(
+        "输入目录路径（如 /storage/emulated/0/Download）",
+        getString(DEFAULT_LAST_FOLDER_SP_AUTO, ROOT_FOLDER)
+    );
+    layout.addView(pathEdit);
+
+    AlertDialog dialog = buildCommonAlertDialog(
+        act,
+        "手动输入路径",
+        layout,
+        "跳转",
+        new DialogInterface.OnClickListener() {
+            public void onClick(DialogInterface d, int w) {
+                String p = pathEdit.getText().toString().trim();
+                File f = new File(p);
+                if (f.exists() && f.isDirectory()) {
+                    browseFolderForSelectionAuto(f, wantedExtFilter, currentSelection, callback, allowFolderSelect);
+                } else {
+                    toast("路径无效或不可访问");
+                }
+            }
+        },
+        "取消", null, null, null
+    );
+    dialog.show();
 }
 
 void scanFilesMulti(final File folder, final String extFilter, final String currentSelection, final MediaSelectionCallback callback) {

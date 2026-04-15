@@ -1,7 +1,15 @@
 {
-  "generatedAt": "2026-04-12",
-  "totalPlugins": 52,
+  "generatedAt": "2026-04-14",
+  "totalPlugins": 53,
   "plugins": [
+    {
+      "name": "元启Ai回复",
+      "author": "神明佑我",
+      "version": 1.7,
+      "updateTime": 20260415,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/AAZl3l4/YuanQiAiReply",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FAAZl3l4%2FYuanQiAiReply&filename=%E5%85%83%E5%90%AFAi%E5%9B%9E%E5%A4%8D_1.7"
+    },
     {
       "name": "点歌插件",
       "author": "Hd",

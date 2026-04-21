@@ -1839,7 +1839,7 @@ private void showGroupManagementDialog() {
 
 private void showActualGroupManagementDialog(final List<GroupInfo> allGroupList, final Map<String, Integer> groupMemberCounts) {
     try {
-        final Set<String> selectedGroups = getStringSet(LISTEN_GROUPS_KEY, new HashSet<String>());
+        final Set<String> selectedGroups = new HashSet<>(getStringSet(LISTEN_GROUPS_KEY, new HashSet<String>()));
         final List<String> currentFilteredRoomIds = new ArrayList<>();
         final List<String> currentFilteredNames = new ArrayList<>();
 
@@ -1991,8 +1991,9 @@ private void showActualGroupManagementDialog(final List<GroupInfo> allGroupList,
 // === 更新的全面专属进退群设置弹窗 (包含全部媒体+精细延迟功能) ===
 private void showIndividualGroupPromptToggleDialog(final String groupWxid, final String groupName) {
     try {
-        final Set<String> disabledJoinToggles = getStringSet(JOIN_TOGGLE_KEY, new HashSet<String>());
-        final Set<String> disabledLeftToggles = getStringSet(LEFT_TOGGLE_KEY, new HashSet<String>());
+        // SharedPreferences#getStringSet 在部分环境返回不可修改集合，先拷贝避免保存时抛异常
+        final Set<String> disabledJoinToggles = new HashSet<String>(getStringSet(JOIN_TOGGLE_KEY, new HashSet<String>()));
+        final Set<String> disabledLeftToggles = new HashSet<String>(getStringSet(LEFT_TOGGLE_KEY, new HashSet<String>()));
 
         ScrollView scrollView = new ScrollView(getTopActivity());
         LinearLayout rootLayout = new LinearLayout(getTopActivity());
@@ -2362,6 +2363,7 @@ private void showIndividualGroupPromptToggleDialog(final String groupWxid, final
             .setView(scrollView)
             .setPositiveButton("✅ 保存设置", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface dialog, int which) {
+                    try {
                     
                     // --- 先做前置检查，防崩溃 ---
                     int pDelay = 0, iDelay = 0, voDelay = 0, eDelay = 0, viDelay = 0, fDelay = 0;
@@ -2442,6 +2444,9 @@ private void showIndividualGroupPromptToggleDialog(final String groupWxid, final
                     }
 
                     toast("已保存 " + groupName + " 的专属设置");
+                    } catch (Exception e) {
+                        toast("保存失败: " + e.getMessage());
+                    }
                 }
             })
             .setNegativeButton("❌ 取消", null)

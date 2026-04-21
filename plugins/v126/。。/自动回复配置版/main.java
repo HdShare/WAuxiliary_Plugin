@@ -145,6 +145,14 @@ boolean gAllowFolderSelectAuto = false;
 
 // 自动回复配置相关的key
 private final String AUTO_REPLY_RULES_KEY = "auto_reply_rules";
+private final String AUTO_REPLY_RULE_REPLY_COUNT_KEY = "auto_reply_rule_reply_count_v1";
+// 自动回复规则：每条规则按“会话+发送者”统计已回复次数（持久化）
+private final Map<String, Integer> autoReplyRuleReplyCountMap = new HashMap<String, Integer>();
+private boolean autoReplyRuleReplyCountLoaded = false;
+private long autoReplyRuleReplyCountLastPersistMs = 0L;
+private int autoReplyRuleReplyCountDirtyOps = 0;
+private static final long AUTO_REPLY_RULE_REPLY_COUNT_PERSIST_INTERVAL_MS = 5000L;
+private static final int AUTO_REPLY_RULE_REPLY_COUNT_PERSIST_BATCH = 20;
 private final String ENABLE_LOG_KEY = "enable_app_debug_log"; // 新增：日志开关KEY
 // === PATCH_AUTO_REPLY_NOTIFY_KEYS_START ===
 // 自动回复成功通知相关key
@@ -976,6 +984,8 @@ private Map<String, Object> readableJsonToRuleMap(Object obj) {
         long delaySeconds = jLong(obj, "延迟回复秒");
         long mediaDelaySeconds = jLong(obj, "媒体发送间隔秒");
         if (mediaDelaySeconds <= 0) mediaDelaySeconds = 1L;
+        int maxReplyCount = jInt(obj, "最大回复次数");
+        if (maxReplyCount < 0) maxReplyCount = 0;
 
         boolean replyAsQuote = jBool(obj, "是否引用回复");
         String startTime = jStr(obj, "开始时间");
@@ -1066,6 +1076,7 @@ private Map<String, Object> readableJsonToRuleMap(Object obj) {
             excludedGroupIdsForMemberFilter,
             includedGroupIdsForMemberFilter
         );
+        rule.put("maxReplyCount", maxReplyCount);
         compileRegexPatternForRule(rule);
         return rule;
     } catch (Exception e) {
@@ -1151,6 +1162,7 @@ private Object ruleMapToReadableJsonSafe(Map<String, Object> rule) {
     int replyType = (Integer) rule.get("replyType");
     String startTime = (String) rule.get("startTime");
     String endTime = (String) rule.get("endTime");
+    int maxReplyCount = getRuleMaxReplyCount(rule);
 
     Set targetWxids = (Set) rule.get("targetWxids");
     Set excludedWxids = (Set) rule.get("excludedWxids");
@@ -1173,6 +1185,7 @@ private Object ruleMapToReadableJsonSafe(Map<String, Object> rule) {
     jPut(o, "是否引用回复", quote);
     jPut(o, "开始时间", startTime);
     jPut(o, "结束时间", endTime);
+    jPut(o, "最大回复次数", maxReplyCount);
     jPut(o, "媒体路径列表", mediaPaths == null ? new org.json.JSONArray() : mediaPaths);
     jPut(o, "指定目标Wxid", targetWxids == null ? new org.json.JSONArray() : targetWxids);
     jPut(o, "排除目标Wxid", excludedWxids == null ? new org.json.JSONArray() : excludedWxids);
@@ -2912,12 +2925,135 @@ private Map<String, Object> createAutoReplyRuleMap(String keyword, String reply,
     rule.put("includedGroupMemberWxids", includedGroupMemberWxids != null ? includedGroupMemberWxids : new HashSet());
     rule.put("excludedGroupIdsForMemberFilter", excludedGroupIdsForMemberFilter != null ? excludedGroupIdsForMemberFilter : new HashSet());
     rule.put("includedGroupIdsForMemberFilter", includedGroupIdsForMemberFilter != null ? includedGroupIdsForMemberFilter : new HashSet());
+    rule.put("maxReplyCount", 0); // 0 = 不限制
+    rule.put("_ruleStableKey", null);
     rule.put("compiledPattern", null);
     return rule;
 }
 
 private Map<String, Object> createAutoReplyRuleMap(String keyword, String reply, boolean enabled, int matchType, Set targetWxids, int targetType, int atTriggerType, long delaySeconds, boolean replyAsQuote, int replyType, List mediaPaths) {
     return createAutoReplyRuleMap(keyword, reply, enabled, matchType, targetWxids, targetType, atTriggerType, delaySeconds, replyAsQuote, replyType, mediaPaths, "", "", new HashSet(), 1L, PAT_TRIGGER_NONE, new HashSet(), new HashSet(), new HashSet(), new HashSet());
+}
+
+private int getRuleMaxReplyCount(Map<String, Object> rule) {
+    if (rule == null) return 0;
+    Object value = rule.get("maxReplyCount");
+    if (value == null) return 0;
+    int maxReplyCount = 0;
+    try {
+        if (value instanceof Number) maxReplyCount = ((Number) value).intValue();
+        else maxReplyCount = Integer.parseInt(String.valueOf(value));
+    } catch (Exception ignore) {
+        maxReplyCount = 0;
+    }
+    if (maxReplyCount < 0) maxReplyCount = 0;
+    return maxReplyCount;
+}
+
+private String getRuleStableSerializedString(Map<String, Object> rule) {
+    if (rule == null) return "";
+    Object stable = rule.get("_ruleStableKey");
+    if (stable instanceof String && !TextUtils.isEmpty((String) stable)) {
+        return (String) stable;
+    }
+    String serialized = ruleMapToString(rule);
+    rule.put("_ruleStableKey", serialized);
+    return serialized;
+}
+
+private String buildRuleReplyCountKey(Map<String, Object> rule, String talker, String senderWxid) {
+    String ruleKey = getRuleStableSerializedString(rule);
+    return ruleKey + "##" + (talker == null ? "" : talker) + "##" + (senderWxid == null ? "" : senderWxid);
+}
+
+private void ensureAutoReplyRuleReplyCountLoadedLocked() {
+    if (autoReplyRuleReplyCountLoaded) return;
+    autoReplyRuleReplyCountMap.clear();
+    try {
+        String raw = getString(AUTO_REPLY_RULE_REPLY_COUNT_KEY, "");
+        if (!TextUtils.isEmpty(raw)) {
+            org.json.JSONObject obj = jo(raw);
+            Set keys = jKeySet(obj);
+            for (Object keyObj : keys) {
+                String key = (String) keyObj;
+                int value = obj.optInt(key, 0);
+                if (value > 0) autoReplyRuleReplyCountMap.put(key, value);
+            }
+        }
+    } catch (Exception e) {
+        debugLog("[异常] 读取自动回复次数统计失败: " + e.getMessage());
+    }
+    autoReplyRuleReplyCountLoaded = true;
+}
+
+private void persistAutoReplyRuleReplyCountLocked() {
+    try {
+        org.json.JSONObject obj = new org.json.JSONObject();
+        for (Map.Entry<String, Integer> entry : autoReplyRuleReplyCountMap.entrySet()) {
+            Integer value = entry.getValue();
+            if (value != null && value.intValue() > 0) {
+                jPut(obj, entry.getKey(), value.intValue());
+            }
+        }
+        putString(AUTO_REPLY_RULE_REPLY_COUNT_KEY, obj.toString());
+        autoReplyRuleReplyCountLastPersistMs = System.currentTimeMillis();
+        autoReplyRuleReplyCountDirtyOps = 0;
+    } catch (Exception e) {
+        debugLog("[异常] 保存自动回复次数统计失败: " + e.getMessage());
+    }
+}
+
+private void persistAutoReplyRuleReplyCountIfNeededLocked(boolean force) {
+    long now = System.currentTimeMillis();
+    if (force) {
+        persistAutoReplyRuleReplyCountLocked();
+        return;
+    }
+    boolean reachBatch = autoReplyRuleReplyCountDirtyOps >= AUTO_REPLY_RULE_REPLY_COUNT_PERSIST_BATCH;
+    boolean reachInterval = (now - autoReplyRuleReplyCountLastPersistMs) >= AUTO_REPLY_RULE_REPLY_COUNT_PERSIST_INTERVAL_MS;
+    if (reachBatch || reachInterval) {
+        persistAutoReplyRuleReplyCountLocked();
+    }
+}
+
+private int clearRuleReplyCountByRule(Map<String, Object> rule) {
+    if (rule == null) return 0;
+    synchronized (autoReplyRuleReplyCountMap) {
+        ensureAutoReplyRuleReplyCountLoadedLocked();
+        String prefix = ruleMapToString(rule) + "##";
+        int removed = 0;
+        java.util.Iterator<Map.Entry<String, Integer>> it = autoReplyRuleReplyCountMap.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, Integer> entry = it.next();
+            String key = entry.getKey();
+            if (key != null && key.startsWith(prefix)) {
+                it.remove();
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            persistAutoReplyRuleReplyCountIfNeededLocked(true);
+        }
+        return removed;
+    }
+}
+
+private int getRuleReplyCount(String countKey) {
+    synchronized (autoReplyRuleReplyCountMap) {
+        ensureAutoReplyRuleReplyCountLoadedLocked();
+        Integer count = autoReplyRuleReplyCountMap.get(countKey);
+        return count == null ? 0 : count.intValue();
+    }
+}
+
+private void increaseRuleReplyCount(String countKey) {
+    synchronized (autoReplyRuleReplyCountMap) {
+        ensureAutoReplyRuleReplyCountLoadedLocked();
+        Integer count = autoReplyRuleReplyCountMap.get(countKey);
+        autoReplyRuleReplyCountMap.put(countKey, (count == null ? 1 : count.intValue() + 1));
+        autoReplyRuleReplyCountDirtyOps++;
+        persistAutoReplyRuleReplyCountIfNeededLocked(false);
+    }
 }
 
 private void compileRegexPatternForRule(Map<String, Object> rule) {
@@ -2953,6 +3089,7 @@ private String ruleMapToString(Map<String, Object> rule) {
     Set excludedWxids = (Set) rule.get("excludedWxids");
     long mediaDelaySeconds = (Long) rule.get("mediaDelaySeconds");
     int patTriggerType = (Integer) rule.get("patTriggerType");
+    int maxReplyCount = getRuleMaxReplyCount(rule);
 
     String wxidsStr = "";
     if (targetWxids != null && !targetWxids.isEmpty()) {
@@ -3046,7 +3183,7 @@ private String ruleMapToString(Map<String, Object> rule) {
         includedGroupIdsStr = sb.toString();
     }
 
-    return keyword + "||" + reply + "||" + enabled + "||" + matchType + "||" + wxidsStr + "||" + atTriggerType + "||" + delaySeconds + "||" + targetType + "||" + replyAsQuote + "||" + replyType + "||" + mediaPathsStr + "||" + (startTime != null ? startTime : "") + "||" + (endTime != null ? endTime : "") + "||" + excludedStr + "||" + mediaDelaySeconds + "||" + patTriggerType + "||" + excludedGroupMembersStr + "||" + includedGroupMembersStr + "||" + excludedGroupIdsStr + "||" + includedGroupIdsStr;
+    return keyword + "||" + reply + "||" + enabled + "||" + matchType + "||" + wxidsStr + "||" + atTriggerType + "||" + delaySeconds + "||" + targetType + "||" + replyAsQuote + "||" + replyType + "||" + mediaPathsStr + "||" + (startTime != null ? startTime : "") + "||" + (endTime != null ? endTime : "") + "||" + excludedStr + "||" + mediaDelaySeconds + "||" + patTriggerType + "||" + excludedGroupMembersStr + "||" + includedGroupMembersStr + "||" + excludedGroupIdsStr + "||" + includedGroupIdsStr + "||" + maxReplyCount;
 }
 
 private Map<String, Object> ruleFromString(String str) {
@@ -3112,7 +3249,19 @@ private Map<String, Object> ruleFromString(String str) {
             for (String g2 : arr4) if (!TextUtils.isEmpty(g2.trim())) includedGroupIdsForMemberFilter.add(g2.trim());
         }
 
+        int maxReplyCount = 0;
+        if (parts.length > 20 && !TextUtils.isEmpty(parts[20])) {
+            try {
+                maxReplyCount = Integer.parseInt(parts[20]);
+            } catch (Exception ignore) {
+                maxReplyCount = 0;
+            }
+            if (maxReplyCount < 0) maxReplyCount = 0;
+        }
+
         rule = createAutoReplyRuleMap(keyword, reply, enabled, matchType, wxids, targetType, atTriggerType, delaySeconds, replyAsQuote, replyType, parsedMediaPaths, startTime, endTime, excludedWxids, mediaDelaySeconds, patTriggerType, excludedGroupMemberWxids, includedGroupMemberWxids, excludedGroupIdsForMemberFilter, includedGroupIdsForMemberFilter);
+        rule.put("maxReplyCount", maxReplyCount);
+        rule.put("_ruleStableKey", str);
     } catch (Exception e) {
         debugLog("[异常] 从字符串解析规则失败: '" + str + "' -> " + e.getMessage());
         return null;
@@ -3805,6 +3954,17 @@ private void processAutoReply(final Object msgInfoBean) {
             }
 
             if (isMatch) {
+                int maxReplyCount = getRuleMaxReplyCount(rule);
+                if (maxReplyCount > 0) {
+                    String countKey = buildRuleReplyCountKey(rule, talker, actualSenderWxid);
+                    int currentCount = getRuleReplyCount(countKey);
+                    if (currentCount >= maxReplyCount) {
+                        debugLog("[规则限制] 已达到最大回复次数，跳过。limit=" + maxReplyCount + ", talker=" + talker + ", sender=" + actualSenderWxid);
+                        continue;
+                    }
+                    increaseRuleReplyCount(countKey);
+                    debugLog("[规则限制] 已计数回复次数 " + (currentCount + 1) + "/" + maxReplyCount + ", talker=" + talker + ", sender=" + actualSenderWxid);
+                }
                 matchedRules.add(rule);
             }
         }
@@ -4088,6 +4248,13 @@ private String getDisplayNameForWxid(String wxid) {
         String friendName = getFriendDisplayName(wxid);
         return (TextUtils.isEmpty(friendName) || friendName.equals(wxid)) ? wxid : friendName;
     }
+}
+
+// 轻量展示名：不触发好友/群列表查询，避免在弹窗初始化阶段卡主线程
+private String getDisplayNameForWxidLite(String wxid) {
+    if (TextUtils.isEmpty(wxid)) return "";
+    if (wxid.endsWith("@chatroom")) return "群聊(" + wxid + ")";
+    return wxid;
 }
 
 private String buildReplyContent(String template, Object msgInfoBean) {
@@ -6295,7 +6462,7 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
                             StringBuilder previewNames = new StringBuilder();
                             for(int j=0; j<Math.min(2, items.length); j++) {
                                 if(j>0) previewNames.append(",");
-                                previewNames.append(getDisplayNameForWxid(items[j].trim()));
+                                previewNames.append(getDisplayNameForWxidLite(items[j].trim()));
                             }
                             if(items.length > 2) previewNames.append("...");
                             contentPreview = previewNames.toString();
@@ -6577,7 +6744,7 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
             String[] wxidParts = editableItemRef.get().content.split(";;;");
             for (int k = 0; k < wxidParts.length; k++) {
                 if (!TextUtils.isEmpty(wxidParts[k].trim())) {
-                    initialCardDisplay.append(getDisplayNameForWxid(wxidParts[k].trim())).append("\n");
+                    initialCardDisplay.append(getDisplayNameForWxidLite(wxidParts[k].trim())).append("\n");
                 }
             }
         }
@@ -6677,7 +6844,7 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                 displayCardList.clear();
                 for (int k = 0; k < cardWxids.size(); k++) {
                     String wxid = cardWxids.get(k);
-                    String name = getDisplayNameForWxid(wxid);
+                    String name = getDisplayNameForWxidLite(wxid);
                     String display = (k + 1) + ". " + (name.length() > 30 ? name.substring(0, 30) + "..." : name);
                     displayCardList.add(display);
                 }
@@ -6686,7 +6853,7 @@ private void showEditReplyItemDialog(final AcceptReplyItem item, final List item
                 cardListView.requestLayout();
                 StringBuilder cardDisplay = new StringBuilder();
                 for (String wxid : cardWxids) {
-                    cardDisplay.append(getDisplayNameForWxid(wxid)).append("\n");
+                    cardDisplay.append(getDisplayNameForWxidLite(wxid)).append("\n");
                 }
                 currentCardTv.setText(cardDisplay.toString().trim().isEmpty() ? "未选择内容" : cardDisplay.toString().trim());
                 editableItemRef.get().content = TextUtils.join(";;;", cardWxids);
@@ -7148,7 +7315,7 @@ private void showAutoReplyRulesDialog() {
         final ListView rulesListView = new ListView(getTopActivity());
         setupListViewTouchForScroll(rulesListView);
         rulesListView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        LinearLayout.LayoutParams rulesListParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(50));
+        LinearLayout.LayoutParams rulesListParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(220));
         rulesListView.setLayoutParams(rulesListParams);
         final ArrayAdapter rulesAdapter = new ArrayAdapter(getTopActivity(), android.R.layout.simple_list_item_multiple_choice);
         rulesListView.setAdapter(rulesAdapter);
@@ -7167,17 +7334,43 @@ private void showAutoReplyRulesDialog() {
         Button delButton = new Button(getTopActivity());
         delButton.setText("🗑️ 删除");
         styleUtilityButton(delButton);
+        Button enableButton = new Button(getTopActivity());
+        enableButton.setText("✅ 启用");
+        styleUtilityButton(enableButton);
+        Button disableButton = new Button(getTopActivity());
+        disableButton.setText("⛔ 停用");
+        styleUtilityButton(disableButton);
+        Button clearCountButton = new Button(getTopActivity());
+        clearCountButton.setText("🔄 清零次数");
+        styleUtilityButton(clearCountButton);
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         addButton.setLayoutParams(buttonParams);
         editButton.setLayoutParams(buttonParams);
         delButton.setLayoutParams(buttonParams);
+        enableButton.setLayoutParams(buttonParams);
+        disableButton.setLayoutParams(buttonParams);
+        clearCountButton.setLayoutParams(buttonParams);
         buttonsLayout.addView(addButton);
         buttonsLayout.addView(editButton);
         buttonsLayout.addView(delButton);
+        LinearLayout switchButtonsLayout = new LinearLayout(getTopActivity());
+        switchButtonsLayout.setOrientation(LinearLayout.HORIZONTAL);
+        switchButtonsLayout.addView(enableButton);
+        switchButtonsLayout.addView(disableButton);
+        switchButtonsLayout.addView(clearCountButton);
+        switchButtonsLayout.setVisibility(View.GONE);
         rulesCard.addView(buttonsLayout);
+        rulesCard.addView(switchButtonsLayout);
         rootLayout.addView(rulesCard);
 
-        final Set<Map<String, Object>> selectedRules = new HashSet<Map<String, Object>>();
+        final Runnable updateRulesActionButtons = new Runnable() {
+            public void run() {
+                int selectedCount = getSelectedPositions(rulesListView).size();
+                addButton.setVisibility(selectedCount == 0 ? View.VISIBLE : View.GONE);
+                updateReplyButtonsVisibility(editButton, delButton, selectedCount);
+                switchButtonsLayout.setVisibility(selectedCount > 0 ? View.VISIBLE : View.GONE);
+            }
+        };
         final Runnable refreshRulesList = new Runnable() {
             public void run() {
                 rulesAdapter.clear();
@@ -7206,35 +7399,28 @@ private void showAutoReplyRulesDialog() {
                     String mediaDelayInfo = (mediaDelaySeconds > 1) ? " 媒体间隔" + mediaDelaySeconds + "秒" : "";
                     boolean replyAsQuote = (Boolean) rule.get("replyAsQuote");
                     String quoteInfo = replyAsQuote ? " [引用]" : "";
+                    int maxReplyCount = getRuleMaxReplyCount(rule);
+                    String maxReplyInfo = maxReplyCount > 0 ? " 限回" + maxReplyCount + "次" : "";
                     String startTime = (String) rule.get("startTime");
                     String endTime = (String) rule.get("endTime");
                     String timeInfo = getTimeInfo(startTime, endTime);
                     String keyword = (String) rule.get("keyword");
-                    rulesAdapter.add((i + 1) + ". " + status + " [" + matchTypeStr + "] [" + atTriggerStr + "] [" + patTriggerStr + "] " + (matchType == MATCH_TYPE_ANY ? "(任何消息)" : keyword) + " → " + replyTypeStr + replyContentPreview + targetInfo + delayInfo + mediaDelayInfo + quoteInfo + timeInfo);
+                    rulesAdapter.add((i + 1) + ". " + status + " [" + matchTypeStr + "] [" + atTriggerStr + "] [" + patTriggerStr + "] " + (matchType == MATCH_TYPE_ANY ? "(任何消息)" : keyword) + " → " + replyTypeStr + replyContentPreview + targetInfo + delayInfo + mediaDelayInfo + quoteInfo + maxReplyInfo + timeInfo);
                 }
                 rulesAdapter.notifyDataSetChanged();
                 rulesListView.clearChoices();
-                for (int i = 0; i < rules.size(); i++) {
-                    Map<String, Object> rule = (Map<String, Object>) rules.get(i);
-                    if (selectedRules.contains(rule)) {
-                        rulesListView.setItemChecked(i, true);
-                    }
-                }
-                adjustListViewHeight(rulesListView, rules.size());
-                updateReplyButtonsVisibility(editButton, delButton, selectedRules.size());
+                int itemHeight = dpToPx(50);
+                int listHeight = rules.isEmpty() ? dpToPx(220) : Math.min(Math.max(rules.size() * itemHeight, dpToPx(220)), dpToPx(460));
+                rulesListView.getLayoutParams().height = listHeight;
+                rulesListView.requestLayout();
+                updateRulesActionButtons.run();
             }
         };
         refreshRulesList.run();
 
         rulesListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                Map<String, Object> item = (Map<String, Object>) rules.get(position);
-                if (rulesListView.isItemChecked(position)) {
-                    selectedRules.add(item);
-                } else {
-                    selectedRules.remove(item);
-                }
-                updateReplyButtonsVisibility(editButton, delButton, selectedRules.size());
+                updateRulesActionButtons.run();
             }
         });
 
@@ -7247,24 +7433,99 @@ private void showAutoReplyRulesDialog() {
 
         editButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                if (selectedRules.size() == 1) {
-                    Map<String, Object> editRule = selectedRules.iterator().next();
-                    showEditRuleDialog(editRule, rules, refreshRulesList);
+                editButton.setEnabled(false);
+                List<Integer> selectedPositions = getSelectedPositions(rulesListView);
+                if (selectedPositions.size() == 1) {
+                    int pos = selectedPositions.get(0);
+                    if (pos >= 0 && pos < rules.size()) {
+                        Map<String, Object> editRule = (Map<String, Object>) rules.get(pos);
+                        showEditRuleDialog(editRule, rules, refreshRulesList);
+                    } else {
+                        toast("选中项无效，请重新选择");
+                        refreshRulesList.run();
+                    }
                 } else {
                     toast("编辑时只能选择一个规则");
                 }
+                editButton.setEnabled(true);
             }
         });
 
         delButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                if (!selectedRules.isEmpty()) {
-                    rules.removeAll(selectedRules);
-                    selectedRules.clear();
+                List<Integer> selectedPositions = getSelectedPositions(rulesListView);
+                if (!selectedPositions.isEmpty()) {
+                    for (int i = 0; i < selectedPositions.size(); i++) {
+                        int pos = selectedPositions.get(i);
+                        if (pos >= 0 && pos < rules.size()) {
+                            rules.remove(pos);
+                        }
+                    }
                     refreshRulesList.run();
                     toast("选中的规则已删除");
                 } else {
                     toast("请先选择要删除的规则");
+                }
+            }
+        });
+
+        enableButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                List<Integer> selectedPositions = getSelectedPositions(rulesListView);
+                if (!selectedPositions.isEmpty()) {
+                    for (int i = 0; i < selectedPositions.size(); i++) {
+                        int pos = selectedPositions.get(i);
+                        if (pos >= 0 && pos < rules.size()) {
+                            ((Map<String, Object>) rules.get(pos)).put("enabled", true);
+                        }
+                    }
+                    refreshRulesList.run();
+                    toast("已启用选中规则");
+                } else {
+                    toast("请先选择规则");
+                }
+            }
+        });
+
+        disableButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                List<Integer> selectedPositions = getSelectedPositions(rulesListView);
+                if (!selectedPositions.isEmpty()) {
+                    for (int i = 0; i < selectedPositions.size(); i++) {
+                        int pos = selectedPositions.get(i);
+                        if (pos >= 0 && pos < rules.size()) {
+                            ((Map<String, Object>) rules.get(pos)).put("enabled", false);
+                        }
+                    }
+                    refreshRulesList.run();
+                    toast("已停用选中规则");
+                } else {
+                    toast("请先选择规则");
+                }
+            }
+        });
+
+        clearCountButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                List<Integer> selectedPositions = getSelectedPositions(rulesListView);
+                if (!selectedPositions.isEmpty()) {
+                    int hitRuleCount = 0;
+                    for (int i = 0; i < selectedPositions.size(); i++) {
+                        int pos = selectedPositions.get(i);
+                        if (pos >= 0 && pos < rules.size()) {
+                            Map<String, Object> selected = (Map<String, Object>) rules.get(pos);
+                            if (clearRuleReplyCountByRule(selected) > 0) {
+                                hitRuleCount++;
+                            }
+                        }
+                    }
+                    if (hitRuleCount > 0) {
+                        toast("已清零 " + hitRuleCount + " 条规则的回复次数");
+                    } else {
+                        toast("选中规则暂无累计次数");
+                    }
+                } else {
+                    toast("请先选择规则");
                 }
             }
         });
@@ -7385,7 +7646,7 @@ private String getReplyContentPreview(Map<String, Object> rule) {
                 StringBuilder previewNames = new StringBuilder();
                 for(int j=0; j<Math.min(2, items.length); j++) {
                     if(j>0) previewNames.append(",");
-                    previewNames.append(getDisplayNameForWxid(items[j].trim()));
+                    previewNames.append(getDisplayNameForWxidLite(items[j].trim()));
                 }
                 if(items.length > 2) previewNames.append("...");
                 return " (" + items.length + "个): " + previewNames.toString();
@@ -7564,7 +7825,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
             String[] wxidParts = replyStrForCard.split(";;;");
             for (int k = 0; k < wxidParts.length; k++) {
                 if (!TextUtils.isEmpty(wxidParts[k].trim())) {
-                    initialCardDisplay.append(getDisplayNameForWxid(wxidParts[k].trim())).append("\n");
+                    initialCardDisplay.append(getDisplayNameForWxidLite(wxidParts[k].trim())).append("\n");
                 }
             }
         }
@@ -7659,7 +7920,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 displayCardList.clear();
                 for (int k = 0; k < cardWxids.size(); k++) {
                     String wxid = cardWxids.get(k);
-                    String name = getDisplayNameForWxid(wxid);
+                    String name = getDisplayNameForWxidLite(wxid);
                     String display = (k + 1) + ". " + (name.length() > 30 ? name.substring(0, 30) + "..." : name);
                     displayCardList.add(display);
                 }
@@ -7668,7 +7929,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 cardListView.requestLayout();
                 StringBuilder cardDisplay = new StringBuilder();
                 for (String wxid : cardWxids) {
-                    cardDisplay.append(getDisplayNameForWxid(wxid)).append("\n");
+                    cardDisplay.append(getDisplayNameForWxidLite(wxid)).append("\n");
                 }
                 currentCardTv.setText(cardDisplay.toString().trim().isEmpty() ? "未选择内容" : cardDisplay.toString().trim());
                 rule.put("reply", TextUtils.join(";;;", cardWxids));
@@ -8163,6 +8424,15 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         delayCard.addView(delayEdit);
         layout.addView(delayCard);
 
+        LinearLayout maxReplyCountCard = createCardLayout();
+        maxReplyCountCard.addView(createSectionTitle("回复次数限制"));
+        final EditText maxReplyCountEdit = createStyledEditText("输入最大回复次数 (0为不限制)", String.valueOf(getRuleMaxReplyCount(rule)));
+        maxReplyCountEdit.setInputType(InputType.TYPE_CLASS_NUMBER);
+        maxReplyCountCard.addView(maxReplyCountEdit);
+        TextView maxReplyPrompt = createPromptText("⚠️ 达到次数后该规则对该发送者自动停止，重启后仍会继续累计");
+        maxReplyCountCard.addView(maxReplyPrompt);
+        layout.addView(maxReplyCountCard);
+
         LinearLayout timeCard = createCardLayout();
         timeCard.addView(createSectionTitle("生效时间段 (留空则不限制)"));
         LinearLayout timeLayout = new LinearLayout(getTopActivity());
@@ -8331,15 +8601,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         else targetTypeGroup.check(targetTypeNoneRadio.getId());
         updateSelectTargetsButton.run();
 
-        LinearLayout switchCard = createCardLayout();
-        final LinearLayout enabledSwitchRow = createSwitchRow(getTopActivity(), "启用此规则", (Boolean) rule.get("enabled"), new View.OnClickListener() {
-            public void onClick(View v) {}
-        });
-        TextView ruleEnabledPrompt = createPromptText("⚠️ 勾选后启用此规则");
-        switchCard.addView(enabledSwitchRow);
-        switchCard.addView(ruleEnabledPrompt);
-        layout.addView(switchCard);
-
         String keyword = (String) rule.get("keyword");
         String dialogTitle = keyword.isEmpty() ? "➕ 添加规则" : "✏️ 编辑规则";
         String neutralButtonText = keyword.isEmpty() ? null : "🗑️ 删除";
@@ -8352,7 +8613,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
             }
         };
 
-        final CheckBox enabledCheckBox = (CheckBox) enabledSwitchRow.getChildAt(1);
         final CheckBox quoteCheckBox = (CheckBox) replyAsQuoteSwitchRow.getChildAt(1);
 
         final AlertDialog dialog = buildCommonAlertDialog(getTopActivity(), dialogTitle, scrollView, "✅ 保存", new DialogInterface.OnClickListener() {
@@ -8395,7 +8655,6 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                     toast("建议同时设置开始和结束时间，否则视为单点时间（非范围）");
                 }
                 rule.put("keyword", keyword);
-                rule.put("enabled", enabledCheckBox.isChecked());
                 rule.put("matchType", matchType);
 
                 int atTriggerType;
@@ -8411,6 +8670,11 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
 
                 try { rule.put("delaySeconds", Long.parseLong(delayEdit.getText().toString().trim())); }
                 catch (NumberFormatException e) { rule.put("delaySeconds", 0L); }
+                int maxReplyCount;
+                try { maxReplyCount = Integer.parseInt(maxReplyCountEdit.getText().toString().trim()); }
+                catch (NumberFormatException e) { maxReplyCount = 0; }
+                if (maxReplyCount < 0) maxReplyCount = 0;
+                rule.put("maxReplyCount", maxReplyCount);
                 rule.put("replyAsQuote", quoteCheckBox.isChecked());
                 rule.put("startTime", startTime);
                 rule.put("endTime", endTime);
@@ -8438,17 +8702,10 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
 private int getFriendCountInTargetWxids(Set targetWxids) {
     if (targetWxids == null || targetWxids.isEmpty()) return 0;
     int count = 0;
-    if (sCachedFriendList == null) sCachedFriendList = getFriendList();
-    if (sCachedFriendList != null) {
-        for (Object wxidObj : targetWxids) {
-            String wxid = (String) wxidObj;
-            for (int i = 0; i < sCachedFriendList.size(); i++) {
-                if (wxid.equals(((FriendInfo) sCachedFriendList.get(i)).getWxid())) {
-                    count++;
-                    break;
-                }
-            }
-        }
+    for (Object wxidObj : targetWxids) {
+        String wxid = (String) wxidObj;
+        if (TextUtils.isEmpty(wxid)) continue;
+        if (!wxid.endsWith("@chatroom")) count++;
     }
     return count;
 }
@@ -8456,17 +8713,10 @@ private int getFriendCountInTargetWxids(Set targetWxids) {
 private int getGroupCountInTargetWxids(Set targetWxids) {
     if (targetWxids == null || targetWxids.isEmpty()) return 0;
     int count = 0;
-    if (sCachedGroupList == null) sCachedGroupList = getGroupList();
-    if (sCachedGroupList != null) {
-        for (Object wxidObj : targetWxids) {
-            String wxid = (String) wxidObj;
-            for (int i = 0; i < sCachedGroupList.size(); i++) {
-                if (wxid.equals(((GroupInfo) sCachedGroupList.get(i)).getRoomId())) {
-                    count++;
-                    break;
-                }
-            }
-        }
+    for (Object wxidObj : targetWxids) {
+        String wxid = (String) wxidObj;
+        if (TextUtils.isEmpty(wxid)) continue;
+        if (wxid.endsWith("@chatroom")) count++;
     }
     return count;
 }
@@ -8748,6 +8998,29 @@ private void saveAutoReplyRules(List rules) {
         rulesSet.add(ruleMapToString((Map<String, Object>) rules.get(i)));
     }
     putStringSet(AUTO_REPLY_RULES_KEY, rulesSet);
+    synchronized (autoReplyRuleReplyCountMap) {
+        ensureAutoReplyRuleReplyCountLoadedLocked();
+        Set activeRulePrefixSet = new HashSet();
+        for (int i = 0; i < rules.size(); i++) {
+            Map<String, Object> rule = (Map<String, Object>) rules.get(i);
+            activeRulePrefixSet.add(ruleMapToString(rule) + "##");
+        }
+        java.util.Iterator<Map.Entry<String, Integer>> it = autoReplyRuleReplyCountMap.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, Integer> entry = it.next();
+            String key = entry.getKey();
+            boolean keep = false;
+            for (Object prefixObj : activeRulePrefixSet) {
+                String prefix = (String) prefixObj;
+                if (key != null && key.startsWith(prefix)) {
+                    keep = true;
+                    break;
+                }
+            }
+            if (!keep) it.remove();
+        }
+        persistAutoReplyRuleReplyCountLocked();
+    }
 }
 
 // =================================================================================

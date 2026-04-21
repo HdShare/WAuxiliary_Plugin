@@ -94,6 +94,7 @@ List<String> massSendMediaPaths = new ArrayList<String>();
 long massSendInterval = 0; // 发送对象间隔(秒)
 long massSendMediaInterval = 0; // 多媒体文件间隔(秒)
 int massSendRepeatType = 0; // 0:不重复(单次), 1:每天重复, 2:每周重复
+boolean massSendWakeOnTime = false; // 是否到点唤醒微信执行
 
 // 定时任务相关 - 改为多任务支持
 Map scheduledTasks = new HashMap(); // taskId -> JSONObject
@@ -108,6 +109,9 @@ final int SEND_TYPE_VIDEO = 2;
 final int SEND_TYPE_FILE = 3;
 final int SEND_TYPE_EMOJI = 4;
 final int SEND_TYPE_VOICE = 5;
+final int SEND_TYPE_MOMENTS_TEXT = 6;      // 朋友圈纯文本
+final int SEND_TYPE_MOMENTS_IMAGE = 7;     // 朋友圈图文
+final int SEND_TYPE_XML = 8;               // XML消息
 
 // 存储Key
 final String CONFIG_KEY = "scheduled_send_multi_v2";
@@ -159,26 +163,25 @@ private void restoreAllTasks() {
             scheduledTasks.put(taskId, task);
 
             if (now >= planTime) {
-                if (now - planTime < 10 * 60 * 1000) {
+                long missMs = now - planTime;
+                int repeatType = task.optInt("repeatType", 0);
+
+                if (repeatType > 0) {
+                    // 循环任务：只要错过就补发一次，避免直接跳到下一轮导致“第二天不执行”的体感问题。
+                    task.put("status", "pending");
+                    log("检测到错过的循环任务 " + taskId + "（晚点 " + missMs + "ms），准备补发...");
+                    notify("定时发送补发", "检测到循环任务 " + taskId + " 即将补发...");
+                    scheduleTaskWithPrecision(taskId, task, 1000);
+                    restoredCount++;
+                } else if (missMs < 10 * 60 * 1000) {
                     log("检测到错过的任务 " + taskId + "（10分钟内），准备补发...");
                     notify("定时发送补发", "检测到任务 " + taskId + " 即将补发...");
                     scheduleTaskWithPrecision(taskId, task, 1000);
                     restoredCount++;
                 } else {
-                    int repeatType = task.optInt("repeatType", 0);
-                    JSONArray repeatDaysArray = task.optJSONArray("repeatDays");
-                    if (repeatType > 0) {
-                        long nextTime = calculateNextPlanTime(planTime, repeatType, repeatDaysArray);
-                        task.put("planTime", nextTime);
-                        task.put("status", "pending");
-                        log("重复任务 " + taskId + " 恢复并排期至下一次: " + formatTimeWithSeconds(nextTime));
-                        scheduleTaskWithPrecision(taskId, task, nextTime - now);
-                        restoredCount++;
-                    } else {
-                        task.put("status", "expired");
-                        log("任务 " + taskId + " 已过期");
-                        continue;
-                    }
+                    task.put("status", "expired");
+                    log("任务 " + taskId + " 已过期");
+                    continue;
                 }
             } else {
                 long delay = planTime - now;
@@ -231,6 +234,9 @@ private void scheduleTaskWithPrecision(final String taskId, JSONObject task, lon
     cancelTaskTimer(taskId);
 
     final long targetTime = task.optLong("planTime", 0);
+    if (task.optBoolean("wakeOnTime", false)) {
+        setAlarmForTask(taskId, targetTime);
+    }
 
     Runnable runnable = new Runnable() {
         public void run() {
@@ -246,7 +252,7 @@ private void scheduleTaskWithPrecision(final String taskId, JSONObject task, lon
     };
 
     scheduledRunnables.put(taskId, runnable);
-    scheduleHandler.postDelayed(runnable, delayMillis);
+    scheduleHandler.postDelayed(runnable, Math.max(0, delayMillis));
 }
 
 /**
@@ -257,12 +263,10 @@ private void executeTaskSend(final String taskId) {
     if (task == null) return;
 
     long planTime = task.optLong("planTime", 0);
-    if (System.currentTimeMillis() > planTime + 30000) {
-        try {
-            task.put("status", "expired");
-        } catch (Exception e) {}
-        saveAllTasks();
-        return;
+    long nowAtExecute = System.currentTimeMillis();
+    if (planTime > 0 && nowAtExecute > planTime + 30000) {
+        long lateMs = nowAtExecute - planTime;
+        log("任务 " + taskId + " 晚点执行: " + lateMs + "ms，继续尝试发送");
     }
 
     final int type = task.optInt("type", 0);
@@ -302,58 +306,81 @@ private void executeTaskSend(final String taskId) {
             int success = 0;
             int fail = 0;
 
-            for (int i = 0; i < finalTargets.size(); i++) {
-                final String target = finalTargets.get(i);
-                final String name = getContactName(target);
-
-                boolean targetSuccess = true;
-
+            // 朋友圈模式特殊处理
+            if (type == SEND_TYPE_MOMENTS_TEXT || type == SEND_TYPE_MOMENTS_IMAGE) {
                 try {
-                    if (type == SEND_TYPE_TEXT) {
-                        String contentToSend = content.replace("%friendName%", name);
-                        sendText(target, contentToSend);
+                    if (type == SEND_TYPE_MOMENTS_TEXT) {
+                        uploadText(content);
                     } else {
-                        for (int j = 0; j < finalMediaPaths.size(); j++) {
-                            final String path = finalMediaPaths.get(j);
-                            final File f = new File(path);
-                            if (f.exists()) {
-                                switch (type) {
-                                    case SEND_TYPE_IMAGE:
-                                        sendImage(target, path);
-                                        break;
-                                    case SEND_TYPE_VIDEO:
-                                        sendVideo(target, path);
-                                        break;
-                                    case SEND_TYPE_EMOJI:
-                                        sendEmoji(target, path);
-                                        break;
-                                    case SEND_TYPE_FILE:
-                                        shareFile(target, f.getName(), path, "");
-                                        break;
-                                    case SEND_TYPE_VOICE:
-                                        runOnMainSync(new Runnable() {
-                                            public void run() {
-                                                sendVoice(target, path);
-                                            }
-                                        });
-                                        break;
-                                }
-                                if (j < finalMediaPaths.size() - 1) {
-                                    long mInterval = mediaInterval > 0 ? mediaInterval * 1000 : 500;
-                                    Thread.sleep(mInterval);
+                        if (finalMediaPaths.isEmpty()) {
+                            uploadText(content);
+                        } else {
+                            uploadTextAndPicList(content, finalMediaPaths);
+                        }
+                    }
+                    success = 1;
+                    notify("朋友圈发送成功", type == SEND_TYPE_MOMENTS_TEXT ? "已发送纯文本" : "已发送图文");
+                } catch (Exception e) {
+                    fail = 1;
+                    log("朋友圈发送失败: " + e.getMessage());
+                }
+            } else {
+                // 原有的群发逻辑
+                for (int i = 0; i < finalTargets.size(); i++) {
+                    final String target = finalTargets.get(i);
+                    final String name = getContactName(target);
+                    boolean targetSuccess = true;
+
+                    try {
+                        if (type == SEND_TYPE_TEXT) {
+                            String contentToSend = content.replace("%friendName%", name);
+                            sendText(target, contentToSend);
+                        } else if (type == SEND_TYPE_XML) {
+                            String xmlToSend = content.replace("%friendName%", name);
+                            sendXmlMsg(target, xmlToSend);
+                        } else {
+                            for (int j = 0; j < finalMediaPaths.size(); j++) {
+                                final String path = finalMediaPaths.get(j);
+                                final File f = new File(path);
+                                if (f.exists()) {
+                                    switch (type) {
+                                        case SEND_TYPE_IMAGE:
+                                            sendImage(target, path);
+                                            break;
+                                        case SEND_TYPE_VIDEO:
+                                            sendVideo(target, path);
+                                            break;
+                                        case SEND_TYPE_EMOJI:
+                                            sendEmoji(target, path);
+                                            break;
+                                        case SEND_TYPE_FILE:
+                                            shareFile(target, f.getName(), path, "");
+                                            break;
+                                        case SEND_TYPE_VOICE:
+                                            runOnMainSync(new Runnable() {
+                                                public void run() {
+                                                    sendVoice(target, path);
+                                                }
+                                            });
+                                            break;
+                                    }
+                                    if (j < finalMediaPaths.size() - 1) {
+                                        long mInterval = mediaInterval > 0 ? mediaInterval * 1000 : 500;
+                                        Thread.sleep(mInterval);
+                                    }
                                 }
                             }
                         }
+                    } catch (Exception e) {
+                        targetSuccess = false;
+                        log("发送失败: " + target + " - " + e.getMessage());
                     }
-                } catch (Exception e) {
-                    targetSuccess = false;
-                    log("发送失败: " + target + " - " + e.getMessage());
-                }
 
-                if (targetSuccess) success++; else fail++;
+                    if (targetSuccess) success++; else fail++;
 
-                if (i < finalTargets.size() - 1 && interval > 0) {
-                    try { Thread.sleep(interval * 1000); } catch (Exception e) {}
+                    if (i < finalTargets.size() - 1 && interval > 0) {
+                        try { Thread.sleep(interval * 1000); } catch (Exception e) {}
+                    }
                 }
             }
 
@@ -475,6 +502,104 @@ private void cancelTaskTimer(String taskId) {
         scheduleHandler.removeCallbacks(runnable);
         scheduledRunnables.remove(taskId);
     }
+    cancelAlarmForTask(taskId);
+}
+
+/**
+ * 为任务设置系统级闹钟（尽量在后台也能按时唤醒微信）
+ */
+private void setAlarmForTask(String taskId, long triggerTime) {
+    try {
+        Context ctx = getBestContext();
+        if (ctx == null || triggerTime <= 0) return;
+
+        android.content.Intent it = buildWeChatLaunchIntent(ctx);
+        if (it == null) return;
+
+        android.app.PendingIntent pi = buildTaskAlarmPendingIntent(ctx, taskId, it);
+        android.app.AlarmManager am = (android.app.AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+        if (am == null || pi == null) return;
+
+        long alarmAt = Math.max(System.currentTimeMillis(), triggerTime - 1000);
+
+        try { am.cancel(pi); } catch (Exception ignored) {}
+
+        try {
+            if (Build.VERSION.SDK_INT >= 23) {
+                am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, alarmAt, pi);
+            } else if (Build.VERSION.SDK_INT >= 19) {
+                am.setExact(android.app.AlarmManager.RTC_WAKEUP, alarmAt, pi);
+            } else {
+                am.set(android.app.AlarmManager.RTC_WAKEUP, alarmAt, pi);
+            }
+        } catch (SecurityException se) {
+            // Android 12+ 可能因精确闹钟权限限制抛错，退化为非精确闹钟。
+            if (Build.VERSION.SDK_INT >= 23) {
+                am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, alarmAt, pi);
+            } else {
+                am.set(android.app.AlarmManager.RTC_WAKEUP, alarmAt, pi);
+            }
+        }
+    } catch (Exception e) {
+        log("设置系统闹钟失败: " + e.getMessage());
+    }
+}
+
+/**
+ * 取消任务对应的系统级闹钟
+ */
+private void cancelAlarmForTask(String taskId) {
+    try {
+        Context ctx = getBestContext();
+        if (ctx == null) return;
+
+        android.content.Intent it = buildWeChatLaunchIntent(ctx);
+        if (it == null) return;
+
+        android.app.PendingIntent pi = buildTaskAlarmPendingIntent(ctx, taskId, it);
+        android.app.AlarmManager am = (android.app.AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+        if (am != null && pi != null) am.cancel(pi);
+    } catch (Exception ignored) {}
+}
+
+private Context getBestContext() {
+    try {
+        Context c = getTopActivity();
+        if (c != null) return c;
+    } catch (Exception ignored) {}
+    try {
+        Class at = Class.forName("android.app.ActivityThread");
+        java.lang.reflect.Method m = at.getMethod("currentApplication", new Class[0]);
+        Object app = m.invoke(null, new Object[0]);
+        if (app instanceof Context) return (Context) app;
+    } catch (Exception ignored) {}
+    return null;
+}
+
+private android.content.Intent buildWeChatLaunchIntent(Context ctx) {
+    try {
+        android.content.Intent it = ctx.getPackageManager().getLaunchIntentForPackage("com.tencent.mm");
+        if (it == null) {
+            it = new android.content.Intent();
+            it.setClassName("com.tencent.mm", "com.tencent.mm.ui.LauncherUI");
+            it.setAction(android.content.Intent.ACTION_MAIN);
+            it.addCategory(android.content.Intent.CATEGORY_LAUNCHER);
+        }
+        it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        return it;
+    } catch (Exception e) {
+        log("构建微信启动Intent失败: " + e.getMessage());
+        return null;
+    }
+}
+
+private android.app.PendingIntent buildTaskAlarmPendingIntent(Context ctx, String taskId, android.content.Intent launchIntent) {
+    int flags = (Build.VERSION.SDK_INT >= 23)
+            ? (android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE)
+            : android.app.PendingIntent.FLAG_UPDATE_CURRENT;
+    return android.app.PendingIntent.getActivity(ctx, taskId.hashCode(), launchIntent, flags);
 }
 
 /**
@@ -498,6 +623,8 @@ private void saveAllTasks() {
 // 入口函数
 public boolean onClickSendBtn(String text) {
     massSendTargetWxids.clear();
+    massSendTextContent = "";
+    massSendMediaPaths.clear();
     if ("群发助手".equals(text) || "定时发送".equals(text)) {
         showMainDialog();
         return true;
@@ -549,7 +676,7 @@ private void showMainDialog() {
     quickCard.addView(newTaskBtn);
     root.addView(quickCard);
 
-    LinearLayout targetCard = createCardLayout();
+    final LinearLayout targetCard = createCardLayout();
     targetCard.addView(createSectionTitle("👥 发送目标"));
     final TextView targetCountTv = new TextView(getTopActivity());
     updateTargetCountText(targetCountTv);
@@ -608,6 +735,7 @@ private void showMainDialog() {
 
     RadioGroup mainTypeGroup = new RadioGroup(getTopActivity());
     mainTypeGroup.setOrientation(LinearLayout.VERTICAL);
+    
     RadioGroup row1Group = new RadioGroup(getTopActivity());
     row1Group.setOrientation(LinearLayout.HORIZONTAL);
     RadioButton rbText = createRadioButton(getTopActivity(), "📝文本");
@@ -626,14 +754,31 @@ private void showMainDialog() {
     row2Group.addView(rbEmoji);
     row2Group.addView(rbVoice);
 
+    RadioGroup row3Group = new RadioGroup(getTopActivity());
+    row3Group.setOrientation(LinearLayout.HORIZONTAL);
+    RadioButton rbMomentsText = createRadioButton(getTopActivity(), "🌟朋友圈(纯文本)");
+    RadioButton rbMomentsImage = createRadioButton(getTopActivity(), "🌟朋友圈(图文)");
+    row3Group.addView(rbMomentsText);
+    row3Group.addView(rbMomentsImage);
+
+    RadioGroup row4Group = new RadioGroup(getTopActivity());
+    row4Group.setOrientation(LinearLayout.HORIZONTAL);
+    RadioButton rbXml = createRadioButton(getTopActivity(), "🧩XML");
+    row4Group.addView(rbXml);
+
     LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
     );
     rowParams.setMargins(0, 4, 0, 4);
     row1Group.setLayoutParams(rowParams);
     row2Group.setLayoutParams(rowParams);
+    row3Group.setLayoutParams(rowParams);
+    row4Group.setLayoutParams(rowParams);
+    
     mainTypeGroup.addView(row1Group);
     mainTypeGroup.addView(row2Group);
+    mainTypeGroup.addView(row3Group);
+    mainTypeGroup.addView(row4Group);
     contentCard.addView(mainTypeGroup);
 
     final LinearLayout contentContainer = new LinearLayout(getTopActivity());
@@ -642,7 +787,7 @@ private void showMainDialog() {
     contentCard.addView(contentContainer);
     root.addView(contentCard);
 
-    LinearLayout settingCard = createCardLayout();
+    final LinearLayout settingCard = createCardLayout();
     settingCard.addView(createSectionTitle("⚙️ 发送参数设置"));
 
     settingCard.addView(createTextView(getTopActivity(), "⏰ 循环发送设置:", 14, 8));
@@ -656,21 +801,46 @@ private void showMainDialog() {
     repeatGroup.addView(rbWeek);
 
     final LinearLayout weekDaysLayout = new LinearLayout(getTopActivity());
-    weekDaysLayout.setOrientation(LinearLayout.HORIZONTAL);
+    weekDaysLayout.setOrientation(LinearLayout.VERTICAL);
     weekDaysLayout.setPadding(0, 16, 0, 16);
     weekDaysLayout.setVisibility(View.GONE);
+    weekDaysLayout.setBackground(createGradientDrawable("#F8FAFC", 18));
 
     final CheckBox[] weekCbs = new CheckBox[7];
-    String[] weekNames = {"一", "二", "三", "四", "五", "六", "日"};
+    String[] weekNames = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
     int[] weekVals = {Calendar.MONDAY, Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.THURSDAY, Calendar.FRIDAY, Calendar.SATURDAY, Calendar.SUNDAY};
+    LinearLayout weekRow1 = new LinearLayout(getTopActivity());
+    weekRow1.setOrientation(LinearLayout.HORIZONTAL);
+    LinearLayout weekRow2 = new LinearLayout(getTopActivity());
+    weekRow2.setOrientation(LinearLayout.HORIZONTAL);
     for (int i = 0; i < 7; i++) {
-        CheckBox cb = new CheckBox(getTopActivity());
+        final CheckBox cb = new CheckBox(getTopActivity());
         cb.setText(weekNames[i]);
         cb.setTag(new Integer(weekVals[i]));
-        cb.setPadding(4, 0, 16, 0);
+        cb.setButtonDrawable(null);
+        cb.setGravity(Gravity.CENTER);
+        cb.setTextSize(13);
+        cb.setMinWidth(dpToPx(62));
+        cb.setPadding(18, 12, 18, 12);
+        LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+        );
+        chipParams.setMargins(6, 6, 6, 6);
+        cb.setLayoutParams(chipParams);
+        styleWeekDayChip(cb, false);
+        cb.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(android.widget.CompoundButton buttonView, boolean isChecked) {
+                if (buttonView instanceof CheckBox) {
+                    styleWeekDayChip((CheckBox) buttonView, isChecked);
+                }
+            }
+        });
         weekCbs[i] = cb;
-        weekDaysLayout.addView(cb);
+        if (i < 4) weekRow1.addView(cb);
+        else weekRow2.addView(cb);
     }
+    weekDaysLayout.addView(weekRow1);
+    weekDaysLayout.addView(weekRow2);
 
     if (massSendRepeatType == 1) rbDay.setChecked(true);
     else if (massSendRepeatType == 2) {
@@ -695,12 +865,78 @@ private void showMainDialog() {
     settingCard.addView(repeatGroup);
     settingCard.addView(weekDaysLayout);
 
-    settingCard.addView(createTextView(getTopActivity(), "发送对象间隔 (秒):", 14, 8));
+    LinearLayout wakeCard = new LinearLayout(getTopActivity());
+    wakeCard.setOrientation(LinearLayout.VERTICAL);
+    wakeCard.setPadding(24, 20, 24, 20);
+    wakeCard.setBackground(createGradientDrawable("#F4F8FF", 20));
+    LinearLayout.LayoutParams wakeCardParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+    wakeCardParams.setMargins(0, 8, 0, 12);
+    wakeCard.setLayoutParams(wakeCardParams);
+
+    TextView wakeLabel = new TextView(getTopActivity());
+    wakeLabel.setText("到点唤醒微信执行");
+    wakeLabel.setTextSize(15);
+    wakeLabel.setTextColor(Color.parseColor("#1F2937"));
+    try { wakeLabel.getPaint().setFakeBoldText(true); } catch (Exception e) {}
+    wakeCard.addView(wakeLabel);
+
+    final TextView wakeStateTv = new TextView(getTopActivity());
+    wakeStateTv.setTextSize(13);
+    wakeStateTv.setPadding(0, 8, 0, 14);
+    wakeCard.addView(wakeStateTv);
+
+    final Button wakeToggleBtn = new Button(getTopActivity());
+    wakeToggleBtn.setAllCaps(false);
+    wakeToggleBtn.setTextSize(14);
+    wakeToggleBtn.setPadding(20, 12, 20, 12);
+    wakeCard.addView(wakeToggleBtn);
+
+    final Runnable[] refreshWakeUi = new Runnable[1];
+    refreshWakeUi[0] = new Runnable() {
+        public void run() {
+            if (massSendWakeOnTime) {
+                wakeStateTv.setText("当前状态：已开启（到点会尝试拉起微信）");
+                wakeStateTv.setTextColor(Color.parseColor("#0F766E"));
+                GradientDrawable shape = new GradientDrawable();
+                shape.setCornerRadius(20);
+                shape.setColor(Color.parseColor("#DCFCE7"));
+                shape.setStroke(2, Color.parseColor("#4ADE80"));
+                wakeToggleBtn.setBackground(shape);
+                wakeToggleBtn.setTextColor(Color.parseColor("#166534"));
+                wakeToggleBtn.setText("点击关闭唤醒");
+            } else {
+                wakeStateTv.setText("当前状态：已关闭（不会主动拉起微信）");
+                wakeStateTv.setTextColor(Color.parseColor("#9A3412"));
+                GradientDrawable shape = new GradientDrawable();
+                shape.setCornerRadius(20);
+                shape.setColor(Color.parseColor("#FFF7ED"));
+                shape.setStroke(2, Color.parseColor("#FDBA74"));
+                wakeToggleBtn.setBackground(shape);
+                wakeToggleBtn.setTextColor(Color.parseColor("#9A3412"));
+                wakeToggleBtn.setText("点击开启唤醒");
+            }
+        }
+    };
+    refreshWakeUi[0].run();
+
+    wakeToggleBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            massSendWakeOnTime = !massSendWakeOnTime;
+            refreshWakeUi[0].run();
+        }
+    });
+
+    settingCard.addView(wakeCard);
+
+    final TextView intervalLabel = createTextView(getTopActivity(), "发送对象间隔 (秒):", 14, 8);
+    settingCard.addView(intervalLabel);
     final EditText intervalEdit = createStyledEditText("默认 0 秒", String.valueOf(massSendInterval));
     intervalEdit.setInputType(InputType.TYPE_CLASS_NUMBER);
     settingCard.addView(intervalEdit);
 
-    settingCard.addView(createTextView(getTopActivity(), "多媒体文件间隔 (秒):", 14, 8));
+    final TextView mediaIntervalLabel = createTextView(getTopActivity(), "多媒体文件间隔 (秒):", 14, 8);
+    settingCard.addView(mediaIntervalLabel);
     final EditText mediaIntervalEdit = createStyledEditText("默认 0 秒", String.valueOf(massSendMediaInterval));
     mediaIntervalEdit.setInputType(InputType.TYPE_CLASS_NUMBER);
     settingCard.addView(mediaIntervalEdit);
@@ -710,8 +946,21 @@ private void showMainDialog() {
     final Runnable updateContentUI = new Runnable() {
         public void run() {
             contentContainer.removeAllViews();
-            if (massSendType == SEND_TYPE_TEXT) {
-                EditText textEdit = createStyledEditText("请输入要群发的文本内容...", massSendTextContent);
+            
+            // 朋友圈类型仅隐藏目标选择，定时/循环设置仍保留
+            boolean isMoments = (massSendType == SEND_TYPE_MOMENTS_TEXT || massSendType == SEND_TYPE_MOMENTS_IMAGE);
+            targetCard.setVisibility(isMoments ? View.GONE : View.VISIBLE);
+            settingCard.setVisibility(View.VISIBLE);
+            intervalLabel.setVisibility(isMoments ? View.GONE : View.VISIBLE);
+            intervalEdit.setVisibility(isMoments ? View.GONE : View.VISIBLE);
+            mediaIntervalLabel.setVisibility(isMoments ? View.GONE : View.VISIBLE);
+            mediaIntervalEdit.setVisibility(isMoments ? View.GONE : View.VISIBLE);
+            
+            if (massSendType == SEND_TYPE_TEXT || massSendType == SEND_TYPE_MOMENTS_TEXT || massSendType == SEND_TYPE_XML) {
+                String hint = "请输入要群发的文本内容...";
+                if (massSendType == SEND_TYPE_MOMENTS_TEXT) hint = "请输入朋友圈文本内容...";
+                else if (massSendType == SEND_TYPE_XML) hint = "请输入XML内容（如 <msg><appmsg>...</appmsg></msg>）";
+                EditText textEdit = createStyledEditText(hint, massSendTextContent);
                 textEdit.setMinLines(5);
                 textEdit.setGravity(Gravity.TOP);
                 textEdit.addTextChangedListener(new TextWatcher() {
@@ -720,7 +969,87 @@ private void showMainDialog() {
                     public void afterTextChanged(Editable s) { massSendTextContent = s.toString(); }
                 });
                 contentContainer.addView(textEdit);
-                contentContainer.addView(createPromptText("支持变量: %friendName% (好友昵称/备注)"));
+                
+                if (massSendType == SEND_TYPE_TEXT) {
+                    contentContainer.addView(createPromptText("支持变量: %friendName% (好友昵称/备注)"));
+                } else if (massSendType == SEND_TYPE_XML) {
+                    TextView xmlTip = createPromptText("XML将按原文发送给目标会话，支持变量: %friendName%");
+                    xmlTip.setTextColor(Color.parseColor("#1565C0"));
+                    contentContainer.addView(xmlTip);
+                } else {
+                    TextView momentsTip = createPromptText("⚠️ 朋友圈模式：将发送到您的朋友圈，无需选择目标");
+                    momentsTip.setTextColor(Color.parseColor("#FF9800"));
+                    contentContainer.addView(momentsTip);
+                }
+            } else if (massSendType == SEND_TYPE_MOMENTS_IMAGE) {
+                // 朋友圈图文模式
+                TextView momentsTip = createPromptText("⚠️ 朋友圈图文：文本+图片（最多9张）");
+                momentsTip.setTextColor(Color.parseColor("#FF9800"));
+                contentContainer.addView(momentsTip);
+                
+                EditText textEdit = createStyledEditText("输入朋友圈文字（可为空）", massSendTextContent);
+                textEdit.setMinLines(3);
+                textEdit.setGravity(Gravity.TOP);
+                textEdit.addTextChangedListener(new TextWatcher() {
+                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    public void afterTextChanged(Editable s) { massSendTextContent = s.toString(); }
+                });
+                contentContainer.addView(textEdit);
+                
+                TextView pathTv = new TextView(getTopActivity());
+                StringBuilder sb = new StringBuilder();
+                if (massSendMediaPaths.isEmpty()) {
+                    sb.append("🚫 未选择图片");
+                } else {
+                    sb.append("✅ 已选 ").append(massSendMediaPaths.size()).append(" 张图片:\n");
+                    for (int i = 0; i < Math.min(massSendMediaPaths.size(), 5); i++) {
+                        sb.append(new File((String) massSendMediaPaths.get(i)).getName()).append("\n");
+                    }
+                    if (massSendMediaPaths.size() > 5) sb.append("...等");
+                }
+                pathTv.setText(sb.toString());
+                pathTv.setTextColor(Color.parseColor("#333333"));
+                pathTv.setPadding(0, 0, 0, 16);
+                contentContainer.addView(pathTv);
+                
+                Button selMediaBtn = new Button(getTopActivity());
+                selMediaBtn.setText("📂 选择图片 (最多9张)");
+                styleMediaSelectionButton(selMediaBtn);
+                selMediaBtn.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) {
+                        File lastFolder = new File(getString(DEFAULT_LAST_FOLDER_SP_AUTO, ROOT_FOLDER));
+                        browseFolderForSelectionAuto(lastFolder, ".jpg,.png,.jpeg,.gif,.bmp", "", new MediaSelectionCallback() {
+                            public void onSelected(ArrayList<String> selectedFiles) {
+                                if (selectedFiles.size() > 9) {
+                                    toast("朋友圈最多支持9张图片");
+                                    massSendMediaPaths.clear();
+                                    for (int i = 0; i < 9; i++) {
+                                        massSendMediaPaths.add(selectedFiles.get(i));
+                                    }
+                                } else {
+                                    massSendMediaPaths.clear();
+                                    massSendMediaPaths.addAll(selectedFiles);
+                                }
+                                updateContentUI.run();
+                            }
+                        }, false);
+                    }
+                });
+                contentContainer.addView(selMediaBtn);
+                
+                if (!massSendMediaPaths.isEmpty()) {
+                    Button clearMediaBtn = new Button(getTopActivity());
+                    clearMediaBtn.setText("清空已选图片");
+                    styleUtilityButton(clearMediaBtn);
+                    clearMediaBtn.setOnClickListener(new View.OnClickListener() {
+                        public void onClick(View v) {
+                            massSendMediaPaths.clear();
+                            updateContentUI.run();
+                        }
+                    });
+                    contentContainer.addView(clearMediaBtn);
+                }
             } else {
                 TextView pathTv = new TextView(getTopActivity());
                 StringBuilder sb = new StringBuilder();
@@ -786,6 +1115,9 @@ private void showMainDialog() {
         case SEND_TYPE_FILE: rbFile.setChecked(true); break;
         case SEND_TYPE_EMOJI: rbEmoji.setChecked(true); break;
         case SEND_TYPE_VOICE: rbVoice.setChecked(true); break;
+        case SEND_TYPE_MOMENTS_TEXT: rbMomentsText.setChecked(true); break;
+        case SEND_TYPE_MOMENTS_IMAGE: rbMomentsImage.setChecked(true); break;
+        case SEND_TYPE_XML: rbXml.setChecked(true); break;
     }
     updateContentUI.run();
 
@@ -798,11 +1130,14 @@ private void showMainDialog() {
             else if (checkedId == rbImage.getId()) massSendType = SEND_TYPE_IMAGE;
             else if (checkedId == rbVideo.getId()) massSendType = SEND_TYPE_VIDEO;
             row2Group.clearCheck();
+            row3Group.clearCheck();
+            row4Group.clearCheck();
             massSendMediaPaths.clear();
             updateContentUI.run();
             isProcessing[0] = false;
         }
     });
+    
     row2Group.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
         public void onCheckedChanged(RadioGroup group, int checkedId) {
             if (isProcessing[0]) return;
@@ -811,7 +1146,43 @@ private void showMainDialog() {
             else if (checkedId == rbEmoji.getId()) massSendType = SEND_TYPE_EMOJI;
             else if (checkedId == rbVoice.getId()) massSendType = SEND_TYPE_VOICE;
             row1Group.clearCheck();
+            row3Group.clearCheck();
+            row4Group.clearCheck();
             massSendMediaPaths.clear();
+            updateContentUI.run();
+            isProcessing[0] = false;
+        }
+    });
+    
+    row3Group.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+        public void onCheckedChanged(RadioGroup group, int checkedId) {
+            if (isProcessing[0]) return;
+            isProcessing[0] = true;
+            if (checkedId == rbMomentsText.getId()) {
+                massSendType = SEND_TYPE_MOMENTS_TEXT;
+                massSendMediaPaths.clear();
+            } else if (checkedId == rbMomentsImage.getId()) {
+                massSendType = SEND_TYPE_MOMENTS_IMAGE;
+            }
+            row1Group.clearCheck();
+            row2Group.clearCheck();
+            row4Group.clearCheck();
+            updateContentUI.run();
+            isProcessing[0] = false;
+        }
+    });
+    
+    row4Group.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+        public void onCheckedChanged(RadioGroup group, int checkedId) {
+            if (isProcessing[0]) return;
+            isProcessing[0] = true;
+            if (checkedId == rbXml.getId()) {
+                massSendType = SEND_TYPE_XML;
+                massSendMediaPaths.clear();
+            }
+            row1Group.clearCheck();
+            row2Group.clearCheck();
+            row3Group.clearCheck();
             updateContentUI.run();
             isProcessing[0] = false;
         }
@@ -819,9 +1190,10 @@ private void showMainDialog() {
 
     final Runnable saveTaskAction = new Runnable() {
         public void run() {
-            if (massSendTargetWxids.isEmpty()) { toast("请选择发送目标！"); return; }
-            if (massSendType == SEND_TYPE_TEXT && TextUtils.isEmpty(massSendTextContent)) { toast("请输入文本内容！"); return; }
-            if (massSendType != SEND_TYPE_TEXT && massSendType != SEND_TYPE_VOICE && massSendMediaPaths.isEmpty()) { toast("请选择发送文件！"); return; }
+            boolean isMomentsMode = (massSendType == SEND_TYPE_MOMENTS_TEXT || massSendType == SEND_TYPE_MOMENTS_IMAGE);
+            if (!isMomentsMode && massSendTargetWxids.isEmpty()) { toast("请选择发送目标！"); return; }
+            if ((massSendType == SEND_TYPE_TEXT || massSendType == SEND_TYPE_XML) && TextUtils.isEmpty(massSendTextContent)) { toast("请输入文本内容！"); return; }
+            if (massSendType != SEND_TYPE_TEXT && massSendType != SEND_TYPE_XML && massSendType != SEND_TYPE_VOICE && massSendType != SEND_TYPE_MOMENTS_TEXT && massSendType != SEND_TYPE_MOMENTS_IMAGE && massSendMediaPaths.isEmpty()) { toast("请选择发送文件！"); return; }
             if (massSendType == SEND_TYPE_VOICE && massSendMediaPaths.isEmpty()) { toast("请选择语音文件(.silk)！"); return; }
 
             final List<Integer> selectedDays = new ArrayList<Integer>();
@@ -862,9 +1234,10 @@ private void showMainDialog() {
         }
     }, "立即直接发送", new DialogInterface.OnClickListener() {
         public void onClick(DialogInterface dialog, int which) {
-            if (massSendTargetWxids.isEmpty()) { toast("请选择发送目标！"); return; }
-            if (massSendType == SEND_TYPE_TEXT && TextUtils.isEmpty(massSendTextContent)) { toast("请输入文本内容！"); return; }
-            if (massSendType != SEND_TYPE_TEXT && massSendType != SEND_TYPE_VOICE && massSendMediaPaths.isEmpty()) { toast("请选择发送文件！"); return; }
+            boolean isMomentsMode = (massSendType == SEND_TYPE_MOMENTS_TEXT || massSendType == SEND_TYPE_MOMENTS_IMAGE);
+            if (!isMomentsMode && massSendTargetWxids.isEmpty()) { toast("请选择发送目标！"); return; }
+            if ((massSendType == SEND_TYPE_TEXT || massSendType == SEND_TYPE_XML) && TextUtils.isEmpty(massSendTextContent)) { toast("请输入文本内容！"); return; }
+            if (massSendType != SEND_TYPE_TEXT && massSendType != SEND_TYPE_XML && massSendType != SEND_TYPE_VOICE && massSendType != SEND_TYPE_MOMENTS_TEXT && massSendType != SEND_TYPE_MOMENTS_IMAGE && massSendMediaPaths.isEmpty()) { toast("请选择发送文件！"); return; }
             if (massSendType == SEND_TYPE_VOICE && massSendMediaPaths.isEmpty()) { toast("请选择语音文件！"); return; }
 
             try {
@@ -894,6 +1267,7 @@ private void createAndSaveTask(long planTime, List<Integer> repeatDays) {
         task.put("interval", massSendInterval);
         task.put("mediaInterval", massSendMediaInterval);
         task.put("repeatType", massSendRepeatType);
+        task.put("wakeOnTime", massSendWakeOnTime);
 
         if (massSendRepeatType == 2 && repeatDays != null) {
             task.put("repeatDays", listToJsonArray(repeatDays));
@@ -916,6 +1290,7 @@ private void createAndSaveTask(long planTime, List<Integer> repeatDays) {
                 JSONArray arr = listToJsonArray(repeatDays);
                 msg += "\n(循环: 每周 " + formatRepeatDays(arr) + ")";
             }
+            msg += massSendWakeOnTime ? "\n(到点唤醒微信: 开启)" : "\n(到点唤醒微信: 关闭)";
             toast(msg);
         } else {
             toast("⚠️ 时间已过");
@@ -941,7 +1316,35 @@ private void executeImmediateSend() {
         public void run() {
             int success = 0;
             int fail = 0;
-
+            
+            // 朋友圈模式特殊处理
+            if (type == SEND_TYPE_MOMENTS_TEXT || type == SEND_TYPE_MOMENTS_IMAGE) {
+                try {
+                    if (type == SEND_TYPE_MOMENTS_TEXT) {
+                        uploadText(content);
+                    } else {
+                        if (mediaPaths.isEmpty()) {
+                            uploadText(content);
+                        } else {
+                            uploadTextAndPicList(content, mediaPaths);
+                        }
+                    }
+                    success = 1;
+                    notify("朋友圈发送成功", type == SEND_TYPE_MOMENTS_TEXT ? "已发送纯文本" : "已发送图文");
+                } catch (Exception e) {
+                    fail = 1;
+                    log("朋友圈发送失败: " + e.getMessage());
+                }
+                
+                final String report = "成功: " + success + ", 失败: " + fail;
+                notify("发送完成", report);
+                new Handler(Looper.getMainLooper()).post(new Runnable() {
+                    public void run() { toast("✅ 发送完成\n" + report); }
+                });
+                return;
+            }
+            
+            // 原有群发逻辑
             for (int i = 0; i < targets.size(); i++) {
                 final String target = targets.get(i);
                 final String name = getContactName(target);
@@ -951,6 +1354,9 @@ private void executeImmediateSend() {
                     if (type == SEND_TYPE_TEXT) {
                         String finalContent = content.replace("%friendName%", name);
                         sendText(target, finalContent);
+                    } else if (type == SEND_TYPE_XML) {
+                        String xmlToSend = content.replace("%friendName%", name);
+                        sendXmlMsg(target, xmlToSend);
                     } else {
                         for (int j = 0; j < mediaPaths.size(); j++) {
                             final String path = mediaPaths.get(j);
@@ -993,7 +1399,6 @@ private void executeImmediateSend() {
         }
     }).start();
 }
-
 /**
  * 更新任务统计显示
  */
@@ -1069,6 +1474,7 @@ private void showTaskListDialog() {
             int targetCount = targetsArr != null ? targetsArr.length() : 0;
             int type = task.optInt("type", 0);
             int repeatType = task.optInt("repeatType", 0);
+            boolean wakeOnTime = task.optBoolean("wakeOnTime", false);
 
             String typeStr = "";
             switch (type) {
@@ -1078,6 +1484,9 @@ private void showTaskListDialog() {
                 case SEND_TYPE_FILE: typeStr = "📁文件"; break;
                 case SEND_TYPE_EMOJI: typeStr = "😊表情"; break;
                 case SEND_TYPE_VOICE: typeStr = "🎤语音"; break;
+                case SEND_TYPE_MOMENTS_TEXT: typeStr = "🌟朋友圈文本"; break;
+                case SEND_TYPE_MOMENTS_IMAGE: typeStr = "🌟朋友圈图文"; break;
+                case SEND_TYPE_XML: typeStr = "🧩XML"; break;
             }
 
             String statusEmoji = "";
@@ -1091,6 +1500,7 @@ private void showTaskListDialog() {
             else if (repeatType == 2) {
                 repeatStr = " [每周 " + formatRepeatDays(task.optJSONArray("repeatDays")) + "]";
             }
+            if (wakeOnTime) repeatStr += " [唤醒]";
 
             String display = statusEmoji + " " + formatTimeWithSeconds(planTime) + repeatStr + "\n" +
                     typeStr + " | " + targetCount + " 个目标 | " + status;
@@ -1245,14 +1655,6 @@ private void showLabelManagementDialog(final Runnable onUpdateCallback) {
         root.setPadding(32, 32, 32, 32);
         scrollView.addView(root);
 
-        Button createLabelBtn = new Button(getTopActivity());
-        createLabelBtn.setText("➕ 添加新标签");
-        styleMediaSelectionButton(createLabelBtn);
-        GradientDrawable btnBg = (GradientDrawable) createLabelBtn.getBackground();
-        btnBg.setColor(Color.parseColor("#E3F2FD"));
-        btnBg.setStroke(2, Color.parseColor("#90CAF9"));
-        createLabelBtn.setTextColor(Color.parseColor("#1976D2"));
-
         final ListView labelList = new ListView(getTopActivity());
         setupListViewTouchForScroll(labelList);
 
@@ -1267,23 +1669,92 @@ private void showLabelManagementDialog(final Runnable onUpdateCallback) {
         listParams.setMargins(0, 16, 0, 16);
         labelList.setLayoutParams(listParams);
 
-        if (labelNames.isEmpty()) root.addView(createPromptText("暂无标签，请先添加。"));
-        else root.addView(labelList);
+        root.addView(createSectionTitle("➕ 添加新标签"));
+        final Set<String> newLabelMembers = new HashSet<String>();
+        final TextView countTv = createPromptText("当前已选: 0 人");
+        countTv.setTextSize(14);
+        countTv.setTextColor(Color.parseColor("#333333"));
+        root.addView(countTv);
 
-        final Runnable refreshLabelListRunnable = new Runnable() {
-            public void run() { showLabelManagementDialog(onUpdateCallback); }
+        LinearLayout btnRow = new LinearLayout(getTopActivity());
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button addFriendBtn = new Button(getTopActivity());
+        addFriendBtn.setText("👤 添加好友");
+        styleUtilityButton(addFriendBtn);
+        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        p1.setMargins(0, 0, 8, 0);
+        addFriendBtn.setLayoutParams(p1);
+
+        Button addGroupBtn = new Button(getTopActivity());
+        addGroupBtn.setText("🏠 添加群聊");
+        styleUtilityButton(addGroupBtn);
+        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        p2.setMargins(8, 0, 0, 0);
+        addGroupBtn.setLayoutParams(p2);
+
+        btnRow.addView(addFriendBtn);
+        btnRow.addView(addGroupBtn);
+        root.addView(btnRow);
+
+        final Runnable updateCount = new Runnable() {
+            public void run() {
+                countTv.setText("当前已选: " + newLabelMembers.size() + " 人");
+            }
         };
-
-        createLabelBtn.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { showCreateLabelDialog(safeLabelsMap, refreshLabelListRunnable); }
+        addFriendBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { showFriendSelectionDialog(newLabelMembers, updateCount); }
         });
-        root.addView(createLabelBtn);
-        root.addView(createPromptText("点击上方按钮，选择好友/群聊并命名以创建新标签。"));
+        addGroupBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { showGroupSelectionDialog(newLabelMembers, updateCount); }
+        });
+
+        final EditText nameEdit = createStyledEditText("输入标签名称 (如: 家人, 客户组)", "");
+        root.addView(nameEdit);
+
+        final TextView emptyTip = createPromptText("暂无标签，请先添加。");
+        emptyTip.setVisibility(labelNames.isEmpty() ? View.VISIBLE : View.GONE);
+        root.addView(emptyTip);
+
+        Button saveLabelBtn = new Button(getTopActivity());
+        saveLabelBtn.setText("💾 保存标签");
+        styleMediaSelectionButton(saveLabelBtn);
+        saveLabelBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                String name = nameEdit.getText().toString().trim();
+                if (TextUtils.isEmpty(name)) { toast("请输入标签名称"); return; }
+                if (newLabelMembers.isEmpty()) { toast("请至少选择一个成员"); return; }
+                if (safeLabelsMap.has(name)) { toast("标签名 [" + name + "] 已存在"); return; }
+                try {
+                    safeLabelsMap.put(name, setToJsonArray(newLabelMembers));
+                    putString(CONFIG_KEY, KEY_LABELS, safeLabelsMap.toString());
+                    labelNames.add(name);
+                    Collections.sort(labelNames);
+                    adapter.notifyDataSetChanged();
+                    emptyTip.setVisibility(View.GONE);
+                    LinearLayout.LayoutParams lpNew = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(Math.max(labelNames.size() * 50, 100))
+                    );
+                    lpNew.setMargins(0, 16, 0, 16);
+                    labelList.setLayoutParams(lpNew);
+                    nameEdit.setText("");
+                    newLabelMembers.clear();
+                    updateCount.run();
+                    if (onUpdateCallback != null) onUpdateCallback.run();
+                    toast("✅ 标签 [" + name + "] 创建成功！");
+                } catch (Exception e) {
+                    toast("保存标签失败: " + e.getMessage());
+                }
+            }
+        });
+        root.addView(saveLabelBtn);
+        root.addView(createPromptText("在当前窗口内直接选择成员并保存，不会再弹出新窗口。"));
 
         TextView listTitle = createSectionTitle("📂 已有标签列表");
         LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) listTitle.getLayoutParams();
         lp.setMargins(0, 32, 0, 16);
         root.addView(listTitle);
+        root.addView(labelList);
 
         labelList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View view, final int position, long id) {
@@ -1339,6 +1810,7 @@ private void showLabelManagementDialog(final Runnable onUpdateCallback) {
                                 toast("标签已删除");
                                 labelNames.remove(position);
                                 adapter.notifyDataSetChanged();
+                                emptyTip.setVisibility(labelNames.isEmpty() ? View.VISIBLE : View.GONE);
                                 break;
                         }
                     }
@@ -1354,75 +1826,6 @@ private void showLabelManagementDialog(final Runnable onUpdateCallback) {
     } catch (Exception e) {
         toast("无法打开标签管理: " + e.getMessage());
     }
-}
-
-private void showCreateLabelDialog(final JSONObject labelsMap, final Runnable onCreated) {
-    final Set<String> newLabelMembers = new HashSet<String>();
-    final ScrollView scrollView = new ScrollView(getTopActivity());
-    final LinearLayout root = new LinearLayout(getTopActivity());
-    root.setOrientation(LinearLayout.VERTICAL);
-    root.setPadding(32, 32, 32, 32);
-    scrollView.addView(root);
-
-    root.addView(createSectionTitle("1. 添加标签成员"));
-    final TextView countTv = createPromptText("当前已选: 0 人");
-    countTv.setTextSize(14);
-    countTv.setTextColor(Color.parseColor("#333333"));
-    root.addView(countTv);
-
-    LinearLayout btnRow = new LinearLayout(getTopActivity());
-    btnRow.setOrientation(LinearLayout.HORIZONTAL);
-    Button addFriendBtn = new Button(getTopActivity());
-    addFriendBtn.setText("👤 添加好友");
-    styleUtilityButton(addFriendBtn);
-    LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-    p1.setMargins(0, 0, 8, 0);
-    addFriendBtn.setLayoutParams(p1);
-
-    Button addGroupBtn = new Button(getTopActivity());
-    addGroupBtn.setText("🏠 添加群聊");
-    styleUtilityButton(addGroupBtn);
-    LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-    p2.setMargins(8, 0, 0, 0);
-    addGroupBtn.setLayoutParams(p2);
-
-    btnRow.addView(addFriendBtn);
-    btnRow.addView(addGroupBtn);
-    root.addView(btnRow);
-
-    final Runnable updateCount = new Runnable() {
-        public void run() {
-            countTv.setText("当前已选: " + newLabelMembers.size() + " 人");
-        }
-    };
-    addFriendBtn.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showFriendSelectionDialog(newLabelMembers, updateCount); } });
-    addGroupBtn.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showGroupSelectionDialog(newLabelMembers, updateCount); } });
-
-    TextView title2 = createSectionTitle("2. 命名并保存");
-    LinearLayout.LayoutParams lp2 = (LinearLayout.LayoutParams) title2.getLayoutParams();
-    lp2.setMargins(0, 32, 0, 16);
-    root.addView(title2);
-
-    final EditText nameEdit = createStyledEditText("输入标签名称 (如: 家人, 客户组)", "");
-    root.addView(nameEdit);
-
-    AlertDialog dialog = buildCommonAlertDialog(getTopActivity(), "➕ 新建标签", scrollView, "💾 保存标签", new DialogInterface.OnClickListener() {
-        public void onClick(DialogInterface dialog, int which) {
-            String name = nameEdit.getText().toString().trim();
-            if (TextUtils.isEmpty(name)) { toast("请输入标签名称"); return; }
-            if (newLabelMembers.isEmpty()) { toast("请至少选择一个成员"); return; }
-            if (labelsMap.has(name)) { toast("标签名 [" + name + "] 已存在"); return; }
-            try {
-                labelsMap.put(name, setToJsonArray(newLabelMembers));
-                putString(CONFIG_KEY, KEY_LABELS, labelsMap.toString());
-                toast("✅ 标签 [" + name + "] 创建成功！");
-                if (onCreated != null) onCreated.run();
-            } catch (Exception e) {
-                toast("保存标签失败: " + e.getMessage());
-            }
-        }
-    }, "取消", null, null, null);
-    dialog.show();
 }
 
 private void showLabelMembers(final String labelName, final List<String> wxids) {
@@ -1946,6 +2349,7 @@ private Object[] getMediaSelectTagForMassSend(int type) {
         case SEND_TYPE_EMOJI: extFilter = ".gif"; break;
         case SEND_TYPE_FILE: extFilter = ""; break;
         case SEND_TYPE_VOICE: extFilter = ".silk"; break;
+        case SEND_TYPE_MOMENTS_IMAGE: extFilter = ".jpg,.png,.jpeg,.gif,.bmp"; break;
     }
     return new Object[]{extFilter, false, false, true};
 }
@@ -2112,6 +2516,21 @@ private RadioButton createRadioButton(Context context, String text) {
     return radioButton;
 }
 
+private void styleWeekDayChip(CheckBox cb, boolean selected) {
+    GradientDrawable shape = new GradientDrawable();
+    shape.setCornerRadius(18);
+    if (selected) {
+        shape.setColor(Color.parseColor("#DCFCE7"));
+        shape.setStroke(2, Color.parseColor("#4ADE80"));
+        cb.setTextColor(Color.parseColor("#166534"));
+    } else {
+        shape.setColor(Color.parseColor("#FFFFFF"));
+        shape.setStroke(2, Color.parseColor("#D1D5DB"));
+        cb.setTextColor(Color.parseColor("#374151"));
+    }
+    cb.setBackground(shape);
+}
+
 private AlertDialog buildCommonAlertDialog(Context context, String title, View view, String posBtn, DialogInterface.OnClickListener posLsn, String negBtn, DialogInterface.OnClickListener negLsn, String neuBtn, DialogInterface.OnClickListener neuLsn) {
     AlertDialog.Builder builder = new AlertDialog.Builder(context);
     builder.setTitle(title);
@@ -2164,7 +2583,7 @@ private void showLoadingDialog(String title, String message, final Runnable data
     initialLayout.addView(progressBar);
     TextView loadingText = new TextView(getTopActivity());
     loadingText.setText(message);
-    loadingText.setPadding(20, 0, 0, 0);
+    loadingText.setPadding(20, 0, 0, 0);  // ← 修复这里
     initialLayout.addView(loadingText);
     final AlertDialog loadingDialog = buildCommonAlertDialog(getTopActivity(), title, initialLayout, null, null, "❌ 取消", new DialogInterface.OnClickListener() {
         public void onClick(DialogInterface d, int w) { d.dismiss(); }
@@ -2185,7 +2604,6 @@ private void showLoadingDialog(String title, String message, final Runnable data
         }
     }).start();
 }
-
 private int dpToPx(int dp) {
     return (int) (dp * getTopActivity().getResources().getDisplayMetrics().density);
 }

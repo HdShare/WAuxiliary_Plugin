@@ -1273,7 +1273,7 @@ void applyDialogSize(AlertDialog d, float widthRatio, float heightRatio) {
         d.getWindow().setGravity(Gravity.CENTER);
         d.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         d.getWindow().setDimAmount(0f);
-        d.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+        d.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
     } catch (Throwable ignored) {}
 }
 
@@ -1285,6 +1285,35 @@ void hideSoftInput(Activity ctx) {
         View focus = ctx.getCurrentFocus();
         if (focus == null) focus = new View(ctx);
         imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
+    } catch (Throwable ignored) {}
+}
+
+void showSoftInputForView(Activity ctx, View v) {
+    try {
+        if (ctx == null || v == null) return;
+        v.requestFocus();
+        InputMethodManager imm = (InputMethodManager) ctx.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm == null) return;
+        imm.showSoftInput(v, InputMethodManager.SHOW_IMPLICIT);
+    } catch (Throwable ignored) {}
+}
+
+void prepareSearchInput(final Activity ctx, final EditText et) {
+    try {
+        if (et == null) return;
+        et.setFocusable(true);
+        et.setFocusableInTouchMode(true);
+        et.setClickable(true);
+        et.setCursorVisible(true);
+        et.setInputType(InputType.TYPE_CLASS_TEXT);
+        et.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { showSoftInputForView(ctx, et); }
+        });
+        et.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            public void onFocusChange(View v, boolean hasFocus) {
+                if (hasFocus) showSoftInputForView(ctx, et);
+            }
+        });
     } catch (Throwable ignored) {}
 }
 
@@ -1712,11 +1741,12 @@ void showGroupMemberPickerDialog(final Activity ctx, final String groupId, final
                     etSearch.setTextSize(14f);
                     etSearch.setTextColor(Color.parseColor("#0F172A"));
                     etSearch.setHintTextColor(Color.parseColor("#94A3B8"));
-                    GradientDrawable searchBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
-                    searchBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
-                    etSearch.setBackground(searchBg);
-                    etSearch.setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10));
-                    LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(-1, -2);
+    GradientDrawable searchBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
+    searchBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
+    etSearch.setBackground(searchBg);
+    etSearch.setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10));
+    prepareSearchInput(ctx, etSearch);
+    LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(-1, -2);
                     searchLp.topMargin = dp(ctx, 12);
                     card.addView(etSearch, searchLp);
 
@@ -1864,10 +1894,15 @@ void showGroupMemberPickerDialog(final Activity ctx, final String groupId, final
                         w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
                         w.setGravity(Gravity.CENTER);
                         w.setDimAmount(0.25f);
-                        w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+                        w.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+                        w.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+                        w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                     }
 
                     dlg.show();
+                    etSearch.postDelayed(new Runnable() {
+                        public void run() { etSearch.requestFocus(); }
+                    }, 120);
                     card.setAlpha(0f);
                     card.setTranslationY(dp(ctx, 20));
                     card.animate().alpha(1f).translationY(0).setDuration(180).start();
@@ -1978,6 +2013,7 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
     searchBg.setStroke(dp(ctx, 1), Color.parseColor("#E5E9F0"));
     etSearch.setBackground(searchBg);
     etSearch.setPadding(dp(ctx, 16), dp(ctx, 10), dp(ctx, 16), dp(ctx, 10));
+    prepareSearchInput(ctx, etSearch);
     LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(-1, -2);
     searchLp.topMargin = dp(ctx, 12);
     root.addView(etSearch, searchLp);
@@ -2103,8 +2139,16 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
     final AlertDialog listDialog = new AlertDialog.Builder(ctx).create();
     listDialog.show();
     listDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+    if (listDialog.getWindow() != null) {
+        listDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+        listDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        listDialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+    }
     listDialog.setContentView(root);
     applyDialogSize(listDialog, 0.96f, 0.90f);
+    etSearch.postDelayed(new Runnable() {
+        public void run() { showSoftInputForView(ctx, etSearch); }
+    }, 120);
 
     tvCancel.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) { listDialog.dismiss(); }

@@ -1,6 +1,4 @@
 
-import me.hd.wauxv.plugin.api.callback.PluginCallBack
-
 void sendMp4(String talker) {
     var api = "https://api.mmp.cc/api/miss?type=mp4"
     var path = "${cacheDir}/video${System.currentTimeMillis()}.mp4"

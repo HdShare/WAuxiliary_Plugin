@@ -87,7 +87,7 @@ public void onLoad() {
     toast("私聊AI回复插件启用成功 | 引用：" + quoteStatus + " | 角色设定：" + systemStatus);
 }
 
-public void onUnLoad() {
+public void onUnload() {
 
     userChatHistory.clear();
     log("私聊AI回复插件已卸载，上下文记忆已清空");

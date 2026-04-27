@@ -1,9 +1,7 @@
 
-import me.hd.wauxv.plugin.api.callback.PluginCallBack
-
 void sendToday(String talker) {
     var api = "https://v2.xxapi.cn/api/historypic"
-    get(api, null, (respCode, respContent) -> {
+    get(api, null, respContent -> {
         var jsonObj = new JSONObject(respContent)
         var code = jsonObj.optInt("code")
         if (code == 200) {

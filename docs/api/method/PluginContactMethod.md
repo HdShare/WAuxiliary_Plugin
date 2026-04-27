@@ -1,7 +1,7 @@
 # 联系方法
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.7.r1342 版本
+本文档适用于 WAuxiliary v1.2.7.r1357 版本
 :::
 
 ## 取当前登录Wxid
@@ -37,12 +37,19 @@ String getFriendNickName(String friendWxid);
 ## 取好友备注
 
 ```beanshell
-String getFriendRemark(String friendWxid);
+String getFriendRemarkName(String friendWxid);
 ```
 
-## 取好友显示昵称
+## 取好友群内昵称
 
 ```beanshell
+String getFriendDisplayName(String friendWxid, String roomId);
+```
+
+## 取好友昵称(后续废弃及移除)
+
+```beanshell
+// 好友备注 > 群内昵称 > 好友昵称
 String getFriendName(String friendWxid);
 
 String getFriendName(String friendWxid, String roomId);

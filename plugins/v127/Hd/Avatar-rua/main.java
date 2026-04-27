@@ -1,6 +1,4 @@
 
-import me.hd.wauxv.plugin.api.callback.PluginCallBack
-
 void onHandleMsg(Object msgInfoBean) {
     if (msgInfoBean.isSend() && msgInfoBean.isQuote()) {
         var talker = msgInfoBean.getTalker()

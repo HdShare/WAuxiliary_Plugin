@@ -1217,7 +1217,7 @@ try{
     }catch(Throwable e){ log2("showScheduleDialog err: "+e); }
 }});}
 void onLoad(){ try{ putBoolean(KEY_MOMENT_SAFE, true);}catch(Exception __ignored){} startSchedulerIfNeed(); }
-void onUnLoad(){
+void onUnload(){
  stopScheduler();
  try{ if(THUMB_POOL!=null){ THUMB_POOL.shutdownNow(); THUMB_POOL=null; } }catch(Exception __ignored){}
  try{ if(THUMB_CACHE!=null){ THUMB_CACHE.evictAll(); THUMB_CACHE=null; } }catch(Exception __ignored){}

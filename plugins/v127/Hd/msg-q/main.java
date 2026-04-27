@@ -1,6 +1,4 @@
 
-import me.hd.wauxv.plugin.api.callback.PluginCallBack
-
 void saveMsgToFile(String outputPath, String avatarPath, String name, String msg) {
     try {
         // 昵称长度

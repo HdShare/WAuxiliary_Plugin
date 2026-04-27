@@ -2,7 +2,7 @@
 
 ## 简介
 
-使用emojik.vercel.app
+更精确的 emoji 判断逻辑
 
 ## 用法
 

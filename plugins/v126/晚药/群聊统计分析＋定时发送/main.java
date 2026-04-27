@@ -67,7 +67,7 @@ void onLoad() {
     initDefaultConfig();
 }
 
-void onUnLoad() {
+void onUnload() {
     log("群聊统计&AI分析插件已卸载");
     if (timer != null) {
         timer.cancel();

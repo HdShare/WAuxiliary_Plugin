@@ -1,6 +1,4 @@
 
-import me.hd.wauxv.plugin.api.callback.PluginCallBack
-
 boolean onClickSendBtn(String text) {
     if (!text.startsWith("举牌 ")) return false
 

@@ -1,8 +1,14 @@
 # 回调方法
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.7.r1342 版本
+本文档适用于 WAuxiliary v1.2.7.r1357 版本
 :::
+
+## 插件设置
+
+```beanshell
+void openSettings();
+```
 
 ## 插件加载
 
@@ -13,7 +19,7 @@ void onLoad();
 ## 插件卸载
 
 ```beanshell
-void onUnLoad();
+void onUnload();
 ```
 
 ## 监听收到消息

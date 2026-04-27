@@ -1,6 +1,4 @@
 
-import me.hd.wauxv.plugin.api.callback.PluginCallBack
-
 var host = "https://api.openai.com"
 var api = "/v1/chat/completions"
 var model = "模型名称"
@@ -110,7 +108,7 @@ Map getOpenAiHeader() {
 }
 
 void sendOpenAiResp(String talker, String content) {
-    post(host + api, getOpenAiParam(content), getOpenAiHeader(), (respCode, respContent) -> {
+    post(host + api, getOpenAiParam(content), getOpenAiHeader(), respContent -> {
                 var jsonObj = new JSONObject(respContent)
                 var choices = jsonObj.optJSONArray("choices")
                 var fristJsonObj = choices.optJSONObject(0)

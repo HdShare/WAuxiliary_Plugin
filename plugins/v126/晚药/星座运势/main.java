@@ -5,7 +5,7 @@ void onLoad() {
 }
 
 // 插件卸载回调 - 禁用时执行
-void onUnLoad() {
+void onUnload() {
     log("【星座插件】已卸载");
     toast("星座运势插件已禁用");
 }

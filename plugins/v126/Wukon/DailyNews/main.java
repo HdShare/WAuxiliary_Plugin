@@ -840,7 +840,7 @@ void onLoad() {
     logToFile("插件已加载");
 }
 
-void onUnLoad() {
+void onUnload() {
     stopScheduler();
     logToFile("插件已卸载");
 }

@@ -16,23 +16,23 @@ void onHandleMsg(Object msgInfoBean) {
     if (msgInfoBean.isSend()) return
 
     if (msgInfoBean.isAtMe()) { // 艾特我
-        String content = msgInfoBean.getContent() // 消息内容
-        String talker = msgInfoBean.getTalker() // 聊天Id
-        String sendTalker = msgInfoBean.getSendTalker() // 发送者Id
+        var content = msgInfoBean.getContent() // 消息内容
+        var talker = msgInfoBean.getTalker() // 聊天Id
+        var sendTalker = msgInfoBean.getSendTalker() // 发送者Id
         sendText(talker, "[AtWx=${sendTalker}] 艾特我干啥?")
     } else if (msgInfoBean.isText()) { // 文本消息
-        String content = msgInfoBean.getContent() // 消息内容
-        String talker = msgInfoBean.getTalker() // 聊天Id
-        String sendTalker = msgInfoBean.getSendTalker() // 发送者Id
+        var content = msgInfoBean.getContent() // 消息内容
+        var talker = msgInfoBean.getTalker() // 聊天Id
+        var sendTalker = msgInfoBean.getSendTalker() // 发送者Id
         if (content.equals("在吗")) {
             sendText(talker, "不在")
         } else if (content.equals("我要进群")) {
             inviteChatroomMember("demo@chatroom", sendTalker) // 邀请群成员
         }
     } else if (msgInfoBean.isPat()) { // 拍一拍消息
-        String myWxid = getLoginWxid() // 当前登录Wxid
-        String fromUser = msgInfoBean.getPatMsg().getFromUser() // 发起者Id
-        String pattedUser = msgInfoBean.getPatMsg().getPattedUser() // 被拍者Id
+        var myWxid = getLoginWxid() // 当前登录Wxid
+        var fromUser = msgInfoBean.getPatMsg().getFromUser() // 发起者Id
+        var pattedUser = msgInfoBean.getPatMsg().getPattedUser() // 被拍者Id
         if (!fromUser.equals(myWxid) && pattedUser.equals(myWxid)) { // 非自拍 且 被拍头
             sendText(msgInfoBean.getTalker(), "[AtWx=${fromUser}] 拍我干啥?")
         }

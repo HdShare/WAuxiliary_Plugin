@@ -986,8 +986,8 @@ void clickView(final View view) {
     });
 }
 
-void onUnLoad() {
-    logx(">> onUnLoad开始执行");
+void onUnload() {
+    logx(">> onUnload开始执行");
     for (Object h : allHooks) {
         try {
             if (h != null) {
@@ -1009,7 +1009,7 @@ void onUnLoad() {
     sProcessedRedBags.clear();
     sCachedFriendList = null;
     sCachedGroupList = null;
-    logx(">> onUnLoad执行完成");
+    logx(">> onUnload执行完成");
 }
 
 boolean checkUserInList(String user, String key) {

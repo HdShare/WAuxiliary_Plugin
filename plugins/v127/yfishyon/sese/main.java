@@ -1,6 +1,4 @@
 
-import me.hd.wauxv.plugin.api.callback.PluginCallBack
-
 boolean onClickSendBtn(String text) {
     var name = when(text) {
         "黑丝" ->"heisi"
@@ -10,7 +8,7 @@ boolean onClickSendBtn(String text) {
     if (name.equals("")) return false
 
     var apiUrl = "https://api.yujn.cn/api/${name}.php?type=json"
-    get(apiUrl, null, (respCode, respContent) -> {
+    get(apiUrl, null, respContent -> {
         var jsonObj = new JSONObject(respContent)
         var code = jsonObj.getInt("code")
         if (code = 1) {

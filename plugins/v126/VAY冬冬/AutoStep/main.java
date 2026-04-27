@@ -262,7 +262,7 @@ void performHealthCheck() {
     lastHealthCheck = currentTime;
 }
 
-void onUnLoad() {
+void onUnload() {
     stopTimeStepTimer();
     stopGuaranteedStepTimer();
 }

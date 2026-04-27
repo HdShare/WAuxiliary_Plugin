@@ -53,10 +53,9 @@ boolean onClickSendBtn(String text) {
             if (code.equals("0")) {
                 var url = jsonObj.optString("url")
                 var path = "${cacheDir}/voice.silk"
-                download(url, path, null, cacheFile -> {
+                download(url, path, null, file -> {
                     var talker = getTargetTalker()
-                    sendVoice(talker, cacheFile.getAbsolutePath())
-                    cacheFile.delete()
+                    sendVoice(talker, file.getAbsolutePath())
                 })
             }
         })

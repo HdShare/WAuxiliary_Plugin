@@ -15,10 +15,9 @@ void handleSendMusic(String talker, String title) {
         var musicUrl = data.optString("url")
 
         var cachePath = "${cacheDir}/thumbImg${id}.png"
-        download(thumbUrl, cachePath, null, cacheFile -> {
-            var thumbData = Files.readAllBytes(cacheFile.toPath())
+        download(thumbUrl, cachePath, null, file -> {
+            var thumbData = Files.readAllBytes(file.toPath())
             shareMusic(talker, songName, songDesc, musicLink, musicUrl, thumbData, "wx8dd6ecd81906fd84")
-            cacheFile.delete()
         })
     })
 }

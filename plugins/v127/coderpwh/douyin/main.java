@@ -24,15 +24,15 @@ void handleDouyinLink(String talker, String linkUrl) {
             var id = jsonObj.optString("aweme_id")
             if (type.equals("video")) {
                 var videoUrl = jsonObj.optString("video_url")
-                download(videoUrl, "${cacheDir}/dyVideo${id}.mp4", null, cacheFile -> {
-                    sendVideo(talker, cacheFile.getAbsolutePath())
+                download(videoUrl, "${cacheDir}/dyVideo${id}.mp4", null, file -> {
+                    sendVideo(talker, file.getAbsolutePath())
                 })
             } else if (type.equals("img")) {
                 val imageUrlList = jsonObj.optJSONArray("image_url_list")
                 for (int i = 0; i < imageUrlList.length(); i++) {
                     val imgUrl = imageUrlList.optString(i)
-                    download(imgUrl, "${cacheDir}/dyImg${i}.jpg", null, cacheFile -> {
-                        sendImage(talker, cacheFile.getAbsolutePath())
+                    download(imgUrl, "${cacheDir}/dyImg${i}.jpg", null, file -> {
+                        sendImage(talker, file.getAbsolutePath())
                     })
                 }
             } else {

@@ -44,7 +44,6 @@ void sendTextImg(String title, String subTitle) {
         bitmap.recycle()
 
         sendImage(getTargetTalker(), path, "wxe3ad19e142df87b3")
-        new File(path).delete()
     } catch (IOException e) {
     }
 }

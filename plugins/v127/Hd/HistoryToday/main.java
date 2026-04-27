@@ -7,9 +7,8 @@ void sendToday(String talker) {
         if (code == 200) {
             var url = jsonObj.optString("data")
             var path = "${cacheDir}/image.png"
-            download(url, path, null, cacheFile -> {
-                sendImage(talker, cacheFile.getAbsolutePath())
-                cacheFile.delete()
+            download(url, path, null, file -> {
+                sendImage(talker, file.getAbsolutePath())
             })
         }
     })

@@ -15,9 +15,8 @@ boolean onClickSendBtn(String text) {
     var id = new Random().nextInt(31) + 1
 
     var apiUrl = "https://api.zxz.ee/api/jupai/?id=${id}&wb1=${wb1}&wb2=${wb2}&wb3=${wb3}&wb4=${wb4}"
-    download(apiUrl, "${cacheDir}/jupai.jpg", null, cacheFile -> {
-        sendImage(getTargetTalker(), cacheFile.getAbsolutePath(), "wxe3ad19e142df87b3")
-        cacheFile.delete()
+    download(apiUrl, "${cacheDir}/jupai.jpg", null, file -> {
+        sendImage(getTargetTalker(), file.getAbsolutePath(), "wxe3ad19e142df87b3")
     })
 
     return true

@@ -13,9 +13,8 @@ boolean onClickSendBtn(String text) {
         var code = jsonObj.getInt("code")
         if (code = 1) {
             var url = jsonObj.getString("img")
-            download(url, "${cacheDir}/${name}.jpg", null, cacheFile -> {
-                sendImage(getTargetTalker(), cacheFile.getAbsolutePath(), "wxe3ad19e142df87b3")
-                cacheFile.delete()
+            download(url, "${cacheDir}/${name}.jpg", null, file -> {
+                sendImage(getTargetTalker(), file.getAbsolutePath(), "wxe3ad19e142df87b3")
             })
         }
     })

@@ -89,11 +89,9 @@ void onHandleMsg(Object msgInfoBean) {
             if (!quoteMsgAvatarUrl.equals("")) {
                 var avatarTmpPath = "${cacheDir}/avatar.png"
                 var messageTmpPath = "${cacheDir}/message.png"
-                download(quoteMsgAvatarUrl, avatarTmpPath, null, cacheFile -> {
+                download(quoteMsgAvatarUrl, avatarTmpPath, null, file -> {
                     saveMsgToFile(messageTmpPath, avatarTmpPath, quoteMsgDisplayName, quoteMsgContent)
                     sendImage(talker, messageTmpPath)
-                    new File(avatarTmpPath).delete()
-                    new File(messageTmpPath).delete()
                 })
             } else {
                 sendText(talker, "获取头像异常")

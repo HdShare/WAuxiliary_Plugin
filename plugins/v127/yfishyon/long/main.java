@@ -6,9 +6,8 @@ boolean onClickSendBtn(String text) {
             var code = jsonObj.optInt("code")
             if (code == 200) {
                 var url = jsonObj.getString("data")
-                download(url, "${cacheDir}/long.jpg", null, cacheFile -> {
-                    sendEmoji(getTargetTalker(), cacheFile.getAbsolutePath())
-                    cacheFile.delete()
+                download(url, "${cacheDir}/long.jpg", null, file -> {
+                    sendEmoji(getTargetTalker(), file.getAbsolutePath())
                 })
             }
         })

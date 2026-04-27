@@ -8,9 +8,8 @@ void sendKitchen(String emoji1, String emoji2, String talker) {
             var data = jsonObj.optJSONObject("data")
             var url = data.optString("url")
             var path = "${cacheDir}/emoji.png"
-            download(url, path, null, cacheFile -> {
-                sendEmoji(talker, cacheFile.getAbsolutePath())
-                cacheFile.delete()
+            download(url, path, null, file -> {
+                sendEmoji(talker, file.getAbsolutePath())
             })
         } else {
             var msg = jsonObj.optString("message")

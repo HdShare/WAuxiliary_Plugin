@@ -9,9 +9,8 @@ void onHandleMsg(Object msgInfoBean) {
             if (!avatarUrl.equals("")) {
                 var api = "https://api.52vmy.cn/api/avath/rua?url=${avatarUrl}"
                 var path = "${cacheDir}/avatar.gif"
-                download(api, path, null, cacheFile -> {
-                    sendEmoji(talker, cacheFile.getAbsolutePath())
-                    cacheFile.delete()
+                download(api, path, null, file -> {
+                    sendEmoji(talker, file.getAbsolutePath())
                 })
             } else {
                 sendText(talker, "[摸头插件]获取异常")

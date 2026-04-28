@@ -2,13 +2,13 @@
 # 相关结构
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.6 版本
+本文档适用于 WAuxiliary v1.2.7.r1357 版本
 :::
 
 ## 消息结构
 
-```java
-MsgInfo {
+```beanshell
+MsgInfoBean {
     long getMsgId();// 消息Id
     int getType();// 消息类型
     long getCreateTime();// 创建时间
@@ -49,6 +49,7 @@ MsgInfo {
     boolean isVoipVoice();// 语音通话
     boolean isVoipVideo();// 视频通话
     boolean isSystem();// 系统
+    boolean isRecalled();// 撤回
     boolean isLink();// 链接
     boolean isTransfer();// 转账
     boolean isRedBag();// 红包

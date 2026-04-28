@@ -1,41 +1,47 @@
 # 回调方法
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.6 版本
+本文档适用于 WAuxiliary v1.2.7.r1357 版本
 :::
+
+## 插件设置
+
+```beanshell
+void openSettings();
+```
 
 ## 插件加载
 
-```java
+```beanshell
 void onLoad();
 ```
 
 ## 插件卸载
 
-```java
-void onUnLoad();
+```beanshell
+void onUnload();
 ```
 
 ## 监听收到消息
 
-```java
+```beanshell
 void onHandleMsg(Object msgInfoBean);
 ```
 
 ## 单击发送按钮
 
-```java
+```beanshell
 boolean onClickSendBtn(String text);
 ```
 
 ## 监听成员变动
 
-```java
+```beanshell
 void onMemberChange(String type, String groupWxid, String userWxid, String userName);
 ```
 
 ## 监听好友申请
 
-```java
+```beanshell
 void onNewFriend(String wxid, String ticket, int scene);
 ```

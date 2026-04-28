@@ -1,12 +1,12 @@
 # 配置方法
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.6 版本
+本文档适用于 WAuxiliary v1.2.7.r1357 版本
 :::
 
 ## 读取方法
 
-```java
+```beanshell
 String getString(String key, String defValue);
 
 Set getStringSet(String key, Set defValue);
@@ -22,7 +22,7 @@ long getLong(String key, long defValue);
 
 ## 写入方法
 
-```java
+```beanshell
 void putString(String key, String value);
 
 void putStringSet(String key, Set value);

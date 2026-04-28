@@ -20,7 +20,7 @@ void onLoad() {
     log("记事本插件已加载（纯净版）。发送 /使用手册 查看说明。");
 }
 
-void onUnLoad() {
+void onUnload() {
     log("记事本插件已卸载");
 }
 

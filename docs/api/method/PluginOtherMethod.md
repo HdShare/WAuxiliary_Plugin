@@ -1,53 +1,59 @@
 # 其他方法
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.6 版本
+本文档适用于 WAuxiliary v1.2.7.r1357 版本
 :::
 
 ## 执行
 
-```java
+```beanshell
 void eval(String code);
 ```
 
 ## 导入Java
 
-```java
+```beanshell
 void loadJava(String path);
 ```
 
 ## 导入Dex
 
-```java
+```beanshell
 void loadDex(String path);
 ```
 
 ## 日志
 
-```java
+```beanshell
 void log(Object msg);
+```
+
+## 延迟
+
+```beanshell
+void delay(long millis, Runnable action);
 ```
 
 ## 提示
 
-```java
+```beanshell
 void toast(String text);
 ```
 
 ## 通知
 
-```java
+```beanshell
 void notify(String title, String text);
 ```
 
 ## 取顶部Activity
 
-```java
+```beanshell
 Activity getTopActivity();
 ```
 
 ## 上传设备步数
 
-```java
+```beanshell
 void uploadDeviceStep(long step);
 ```

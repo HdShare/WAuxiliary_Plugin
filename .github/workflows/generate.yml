@@ -5,6 +5,7 @@ on:
     branches: [ main ]
     paths:
       - ".github/workflows/generate.js"
+      - "docs/api/**"
       - "plugins/v126/**"
       - "plugins/v127/**"
   workflow_dispatch:
@@ -53,7 +54,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "文档: 自动构建插件列表"
+            git commit -m "文档: 构建插件列表及接口文档"
             git push
           fi
 

@@ -1,29 +1,29 @@
 # 网络方法
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.6 版本
+本文档适用于 WAuxiliary v1.2.7.r1357 版本
 :::
 
 ## get
 
-```java
-void get(String url, Map<String, String> headerMap, PluginCallBack.HttpCallback callback);
+```beanshell
+void get(String url, Map<String, String> headerMap, Consumer<String> callback);
 
-void get(String url, Map<String, String> headerMap, long timeout, PluginCallBack.HttpCallback callback);
+void get(String url, Map<String, String> headerMap, long timeout, Consumer<String> callback);
 ```
 
 ## post
 
-```java
-void post(String url, Map<String, String> paramMap, Map<String, String> headerMap, PluginCallBack.HttpCallback callback);
+```beanshell
+void post(String url, Map<String, String> paramMap, Map<String, String> headerMap, Consumer<String> callback);
 
-void post(String url, Map<String, String> paramMap, Map<String, String> headerMap, long timeout, PluginCallBack.HttpCallback callback);
+void post(String url, Map<String, String> paramMap, Map<String, String> headerMap, long timeout, Consumer<String> callback);
 ```
 
 ## download
 
-```java
-void download(String url, String path, Map<String, String> headerMap, PluginCallBack.DownloadCallback callback);
+```beanshell
+void download(String url, String path, Map<String, String> headerMap, Consumer<File> callback);
 
-void download(String url, String path, Map<String, String> headerMap, long timeout, PluginCallBack.DownloadCallback callback);
+void download(String url, String path, Map<String, String> headerMap, long timeout, Consumer<File> callback);
 ```

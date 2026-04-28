@@ -178,7 +178,7 @@ void onLoad() {
     checkAndSendNightMessage();
 }
 
-void onUnLoad() {
+void onUnload() {
     log("好友消息统计助手已卸载");
 }
 

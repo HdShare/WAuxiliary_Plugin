@@ -1,12 +1,12 @@
 # 朋友圈方法
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.6 版本
+本文档适用于 WAuxiliary v1.2.7.r1357 版本
 :::
 
 ## 上传文字
 
-```java
+```beanshell
 void uploadText(String content);
 
 void uploadText(String content, String sdkId, String sdkAppName);
@@ -16,7 +16,7 @@ void uploadText(JSONObject jsonObj);
 
 ## 上传图文
 
-```java
+```beanshell
 void uploadTextAndPicList(String content, String picPath);
 
 void uploadTextAndPicList(String content, String picPath, String sdkId, String sdkAppName);

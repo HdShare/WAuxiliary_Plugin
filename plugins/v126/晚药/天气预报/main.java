@@ -1115,6 +1115,6 @@ public void onLoad() {
 /**
  * 插件卸载时执行
  */
-public void onUnLoad() {
+public void onUnload() {
     System.out.println("天气查询插件已卸载");
 }

@@ -1347,8 +1347,8 @@ String callAI(String message, String imageUrl, String sender) {
 
         if (conn.getResponseCode() != 200) return null;
 
-        InputStream is = conn.getInputStream();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(is, "UTF-8"));
+        InputStream inputStream = conn.getInputStream();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, "UTF-8"));
         StringBuilder sb = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) sb.append(line);

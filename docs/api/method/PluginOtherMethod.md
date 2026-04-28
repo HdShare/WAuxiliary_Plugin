@@ -28,6 +28,12 @@ void loadDex(String path);
 void log(Object msg);
 ```
 
+## 延迟
+
+```beanshell
+void delay(long millis, Runnable action);
+```
+
 ## 提示
 
 ```beanshell

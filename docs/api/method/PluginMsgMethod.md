@@ -96,3 +96,9 @@ void revokeMsg(long msgId);
 ```beanshell
 void insertSystemMsg(String talker, String content, long createTime);
 ```
+
+## 查询历史消息
+
+```beanshell
+List<MsgInfoBean> queryHistoryMsg(String talker, long startTime, int count);
+```

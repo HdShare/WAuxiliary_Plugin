@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 String RULES_KEY = "rules";
-String DEFAULT_API_URL = "http://47.105.51.84/api/relay/call";
+String DEFAULT_API_URL = "https://91yq.top/api/relay/call";
 
 final int BG_PANEL = Color.parseColor("#2A2A2A");
 final int BG_CARD = Color.parseColor("#3A3A3A");
@@ -50,6 +50,8 @@ final int ACCENT_GOLD = Color.parseColor("#FFD93D");
 final int DIVIDER = Color.parseColor("#444444");
 
 Map<String, Long> paiLastReplyTime = new HashMap<>();
+Map<String, Long> voiceLastReplyTime = new HashMap<>();
+final int VOICE_COOLDOWN = 10;
 
 ScheduledThreadPoolExecutor timerScheduler = new ScheduledThreadPoolExecutor(2);
 Map<String, JSONObject> allTimerTasks = new ConcurrentHashMap<>();
@@ -240,6 +242,7 @@ void showMainMenu() {
                     content.addView(createToggleItem(activity, "回复自己消息", isReplySelf(scopeKey), "reply_self_" + scopeKey));
                 }
                 content.addView(createToggleItem(activity, "拍一拍回复", isPaiReply(scopeKey), "pai_reply_" + scopeKey));
+                content.addView(createVoiceReplyItem(activity, scopeKey));
 
                 content.addView(createSectionTitle(activity, "定时任务"));
                 content.addView(createTimerTaskEntry(activity, scopeKey, isGroup, dialog));
@@ -310,6 +313,78 @@ View createToggleItem(final Context ctx, String label, boolean checked, final St
             toggle.setBackground(createChipBg(ctx, newValue));
         }
     });
+
+    return item;
+}
+
+View createVoiceReplyItem(final Context ctx, final String scopeKey) {
+    LinearLayout item = new LinearLayout(ctx);
+    item.setOrientation(LinearLayout.VERTICAL);
+    item.setBackground(createCardBg(ctx));
+    item.setPadding(dp(16), dp(14), dp(16), dp(14));
+    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    params.bottomMargin = dp(8);
+    item.setLayoutParams(params);
+
+    LinearLayout row = new LinearLayout(ctx);
+    row.setOrientation(LinearLayout.HORIZONTAL);
+    row.setGravity(Gravity.CENTER_VERTICAL);
+
+    TextView labelTv = new TextView(ctx);
+    labelTv.setText("语音回复");
+    labelTv.setTextSize(14);
+    labelTv.setTextColor(TEXT_MAIN);
+    labelTv.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+    row.addView(labelTv);
+
+    final String[] options = {"关", "男", "女"};
+    final String[] values = {"off", "male", "female"};
+    String currentValue = getVoiceReply(scopeKey);
+    int selectedIndex = 0;
+    for (int i = 0; i < values.length; i++) {
+        if (values[i].equals(currentValue)) {
+            selectedIndex = i;
+            break;
+        }
+    }
+
+    LinearLayout chipsRow = new LinearLayout(ctx);
+    chipsRow.setOrientation(LinearLayout.HORIZONTAL);
+
+    final TextView[] chipTvs = new TextView[3];
+    for (int i = 0; i < 3; i++) {
+        TextView chip = new TextView(ctx);
+        chip.setText(options[i]);
+        chip.setTextSize(11);
+        chip.setTextColor(i == selectedIndex ? TEXT_MAIN : TEXT_SUB);
+        chip.setBackground(createChipBg(ctx, i == selectedIndex));
+        chip.setPadding(dp(10), dp(4), dp(10), dp(4));
+        chip.setTag(Integer.valueOf(i));
+        LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        if (i > 0) chipParams.leftMargin = dp(6);
+        chip.setLayoutParams(chipParams);
+        chip.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                int clickedIdx = ((Integer) v.getTag()).intValue();
+                setVoiceReply(scopeKey, values[clickedIdx]);
+                for (int j = 0; j < 3; j++) {
+                    chipTvs[j].setTextColor(j == clickedIdx ? TEXT_MAIN : TEXT_SUB);
+                    chipTvs[j].setBackground(createChipBg(ctx, j == clickedIdx));
+                }
+            }
+        });
+        chipTvs[i] = chip;
+        chipsRow.addView(chip);
+    }
+    row.addView(chipsRow);
+    item.addView(row);
+
+    TextView hintTv = new TextView(ctx);
+    hintTv.setText("开启语音回复后回复会非常慢，并限速10秒只能回复一个语音");
+    hintTv.setTextSize(10);
+    hintTv.setTextColor(TEXT_HINT);
+    hintTv.setPadding(0, dp(4), 0, 0);
+    item.addView(hintTv);
 
     return item;
 }
@@ -656,6 +731,80 @@ void showApiKeyDialog(final Activity activity) {
     cooldownCard.addView(cooldownInput);
     content.addView(cooldownCard);
 
+    LinearLayout voiceSpeedCard = new LinearLayout(activity);
+    voiceSpeedCard.setOrientation(LinearLayout.VERTICAL);
+    voiceSpeedCard.setBackground(createCardBg(activity));
+    voiceSpeedCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+    LinearLayout.LayoutParams cardParamsVs = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    cardParamsVs.bottomMargin = dp(12);
+    voiceSpeedCard.setLayoutParams(cardParamsVs);
+
+    TextView voiceSpeedLabel = new TextView(activity);
+    voiceSpeedLabel.setText("语音回复语速");
+    voiceSpeedLabel.setTextSize(12);
+    voiceSpeedLabel.setTextColor(TEXT_SUB);
+    voiceSpeedCard.addView(voiceSpeedLabel);
+
+    TextView voiceSpeedHint = new TextView(activity);
+    voiceSpeedHint.setText("语音回复的播放速度，范围-100到100，负数减速正数加速");
+    voiceSpeedHint.setTextSize(10);
+    voiceSpeedHint.setTextColor(TEXT_HINT);
+    voiceSpeedHint.setPadding(0, dp(4), 0, dp(8));
+    voiceSpeedCard.addView(voiceSpeedHint);
+
+    LinearLayout voiceSpeedRow = new LinearLayout(activity);
+    voiceSpeedRow.setOrientation(LinearLayout.HORIZONTAL);
+    voiceSpeedRow.setGravity(Gravity.CENTER_VERTICAL);
+
+    int currentSpeed = getVoiceSpeed();
+    final int[] selectedSign = {currentSpeed >= 0 ? 1 : 0};
+    
+    final TextView[] signChips = new TextView[2];
+    for (int i = 0; i < 2; i++) {
+        TextView signChip = new TextView(activity);
+        signChip.setText(i == 0 ? "-" : "+");
+        signChip.setTextSize(12);
+        signChip.setTextColor(i == selectedSign[0] ? TEXT_MAIN : TEXT_SUB);
+        signChip.setBackground(createChipBg(activity, i == selectedSign[0]));
+        signChip.setPadding(dp(14), dp(6), dp(14), dp(6));
+        signChip.setTag(Integer.valueOf(i));
+        LinearLayout.LayoutParams signChipParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        if (i > 0) signChipParams.leftMargin = dp(6);
+        signChip.setLayoutParams(signChipParams);
+        signChip.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                int clickedIdx = ((Integer) v.getTag()).intValue();
+                selectedSign[0] = clickedIdx;
+                for (int j = 0; j < 2; j++) {
+                    signChips[j].setTextColor(j == clickedIdx ? TEXT_MAIN : TEXT_SUB);
+                    signChips[j].setBackground(createChipBg(activity, j == clickedIdx));
+                }
+            }
+        });
+        signChips[i] = signChip;
+        voiceSpeedRow.addView(signChip);
+    }
+
+    final EditText speedInput = new EditText(activity);
+    speedInput.setText(String.valueOf(Math.abs(currentSpeed)));
+    speedInput.setTextColor(TEXT_MAIN);
+    speedInput.setHint("0-100");
+    speedInput.setHintTextColor(TEXT_HINT);
+    speedInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+    speedInput.setBackground(createInputBg(activity));
+    speedInput.setPadding(dp(16), dp(12), dp(16), dp(12));
+    speedInput.setFocusable(true);
+    speedInput.setFocusableInTouchMode(true);
+    speedInput.setClickable(true);
+    speedInput.setLongClickable(true);
+    LinearLayout.LayoutParams speedInputParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+    speedInputParams.leftMargin = dp(8);
+    speedInput.setLayoutParams(speedInputParams);
+    voiceSpeedRow.addView(speedInput);
+    
+    voiceSpeedCard.addView(voiceSpeedRow);
+    content.addView(voiceSpeedCard);
+
     LinearLayout errorCard = new LinearLayout(activity);
     errorCard.setOrientation(LinearLayout.VERTICAL);
     errorCard.setBackground(createCardBg(activity));
@@ -944,6 +1093,17 @@ void showApiKeyDialog(final Activity activity) {
             putString("error_reply", errorReply);
             putInt("context_rounds", contextRounds);
             putInt("pai_cooldown", cooldown);
+            
+            String speedStr = speedInput.getText().toString().trim();
+            int speedValue = 5;
+            try {
+                speedValue = Integer.parseInt(speedStr);
+            } catch (Throwable ignore) {}
+            if (speedValue < 0) speedValue = 0;
+            if (speedValue > 100) speedValue = 100;
+            int finalSpeed = selectedSign[0] == 0 ? -speedValue : speedValue;
+            setVoiceSpeed(finalSpeed);
+            
             toast("设置已保存");
             dialog.dismiss();
         }
@@ -1259,6 +1419,10 @@ void onHandleMsg(Object msgInfoBean) {
             }
         }
 
+        if (trySendVoiceReply(scopeKey, talker, reply)) {
+            return;
+        }
+
         if (isGroupChat) {
             if (isAutoQuote(scopeKey) && msgId > 0) {
                 sendQuoteMsg(talker, msgId, reply);
@@ -1295,7 +1459,7 @@ void handlePatMessage(Object msgInfoBean) {
         boolean isSelfPai = fromUser.equals(pattedUser);
         if (isSelfPai && !isReplySelf(scopeKey)) return;
 
-        String reply = callAI("拍一拍", null, fromUser);
+        String reply = callAI("[拍了你一下]", null, fromUser);
         if (isEmpty(reply)) {
             String errorReply = getErrorReply();
             if (isEmpty(errorReply)) return;
@@ -1303,6 +1467,11 @@ void handlePatMessage(Object msgInfoBean) {
         }
 
         updatePaiReplyTime(scopeKey);
+
+        String targetTalker = isGroupChat ? talker : fromUser;
+        if (trySendVoiceReply(scopeKey, targetTalker, reply)) {
+            return;
+        }
 
         if (isGroupChat) {
             sendPat(talker, fromUser);
@@ -1452,6 +1621,15 @@ boolean isPaiReply(String scopeKey) {
     return getBoolean("pai_reply_" + scopeKey, false);
 }
 
+String getVoiceReply(String scopeKey) {
+    String value = getString("voice_reply_" + scopeKey, "off");
+    return isEmpty(value) ? "off" : value;
+}
+
+void setVoiceReply(String scopeKey, String value) {
+    putString("voice_reply_" + scopeKey, value);
+}
+
 boolean useKnowledgeBase() {
     return getBoolean("use_knowledge_base", false);
 }
@@ -1483,6 +1661,35 @@ boolean canPaiReply(String scopeKey) {
 
 void updatePaiReplyTime(String scopeKey) {
     paiLastReplyTime.put(scopeKey, System.currentTimeMillis());
+}
+
+int getVoiceSpeed() {
+    int speed = getInt("voice_speed", -5);
+    if (speed < -100) speed = -100;
+    if (speed > 100) speed = 100;
+    return speed;
+}
+
+void setVoiceSpeed(int speed) {
+    if (speed < -100) speed = -100;
+    if (speed > 100) speed = 100;
+    putInt("voice_speed", speed);
+}
+
+String getVoiceSpeedParam() {
+    int speed = getVoiceSpeed();
+    String sign = speed >= 0 ? "%2B" : "%2D";
+    return sign + Math.abs(speed) + "%";
+}
+
+boolean canVoiceReply(String scopeKey) {
+    Long lastTime = voiceLastReplyTime.get(scopeKey);
+    if (lastTime == null) return true;
+    return (System.currentTimeMillis() - lastTime) > (VOICE_COOLDOWN * 1000);
+}
+
+void updateVoiceReplyTime(String scopeKey) {
+    voiceLastReplyTime.put(scopeKey, System.currentTimeMillis());
 }
 
 boolean getBoolean(Object obj, String methodName) {
@@ -1551,6 +1758,117 @@ GradientDrawable createChipBg(Context ctx, boolean active) {
     }
     gd.setCornerRadius(dp(99));
     return gd;
+}
+
+String downloadTtsVoice(String text, String voiceModel) {
+    try {
+        String encodedText = java.net.URLEncoder.encode(text, "UTF-8");
+        String speedParam = getVoiceSpeedParam();
+        String ttsUrl = "https://91yq.top/tts?text=" + encodedText + "&voice=" + voiceModel + "&rate=" + speedParam;
+        
+        String mp3Path = pluginDir + "/tts_" + System.currentTimeMillis() + ".mp3";
+        
+        HttpURLConnection conn = null;
+        InputStream inputStream = null;
+        java.io.FileOutputStream fos = null;
+        
+        try {
+            URL url = new URL(ttsUrl);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
+            
+            int responseCode = conn.getResponseCode();
+            if (responseCode != 200) {
+                log("TTS响应码: " + responseCode);
+                return null;
+            }
+            
+            String contentType = conn.getContentType();
+            if (contentType == null || !contentType.contains("audio")) {
+                log("TTS非音频响应: " + contentType);
+                return null;
+            }
+            
+            inputStream = conn.getInputStream();
+            fos = new java.io.FileOutputStream(mp3Path);
+            
+            byte[] buffer = new byte[4096];
+            int len;
+            while ((len = inputStream.read(buffer)) != -1) {
+                fos.write(buffer, 0, len);
+            }
+            fos.flush();
+            
+            String silkPath = mp3ToSilkPath(mp3Path);
+            
+            try {
+                new java.io.File(mp3Path).delete();
+            } catch (Throwable ignore) {}
+            
+            return silkPath;
+        } finally {
+            if (inputStream != null) try { inputStream.close(); } catch (Throwable ignore) {}
+            if (fos != null) try { fos.close(); } catch (Throwable ignore) {}
+            if (conn != null) try { conn.disconnect(); } catch (Throwable ignore) {}
+        }
+    } catch (Throwable e) {
+        log("TTS异常: " + e.getMessage());
+        return null;
+    }
+}
+
+void sendVoiceAndDelete(String talker, String silkPath) {
+    try {
+        Activity activity = getTopActivity();
+        if (activity != null) {
+            activity.runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        sendVoice(talker, silkPath);
+                    } catch (Throwable e) {
+                        log("UI线程发送语音失败: " + e.getMessage());
+                    }
+                }
+            });
+        } else {
+            sendVoice(talker, silkPath);
+        }
+        
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    Thread.sleep(1000);
+                    new java.io.File(silkPath).delete();
+                } catch (Throwable ignore) {}
+            }
+        }).start();
+    } catch (Throwable e) {
+        log("发送语音失败: " + e.getMessage());
+    }
+}
+
+boolean trySendVoiceReply(String scopeKey, String talker, String text) {
+    String voiceSetting = getVoiceReply(scopeKey);
+    if ("off".equals(voiceSetting)) {
+        return false;
+    }
+    
+    if (!canVoiceReply(scopeKey)) {
+        return false;
+    }
+    
+    String voiceModel = "male".equals(voiceSetting) ? "zh-CN-YunxiNeural" : "zh-CN-XiaoxiaoNeural";
+    
+    String silkPath = downloadTtsVoice(text, voiceModel);
+    if (silkPath == null) {
+        return false;
+    }
+    
+    updateVoiceReplyTime(scopeKey);
+    sendVoiceAndDelete(talker, silkPath);
+    return true;
 }
 
 GradientDrawable createSelectableChipBg(Context ctx, boolean selected, String mode) {

@@ -15,6 +15,8 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
@@ -81,20 +83,94 @@ boolean quickReplyReceiverRegistered = false;
 // 【安全优化2】采用线程安全的 CopyOnWriteArrayList，防止读写并发导致微信崩溃
 List targetNameList = new CopyOnWriteArrayList();
 Map sNoArgMethodCache = new ConcurrentHashMap();
+Set sNoArgMethodMissCache = Collections.synchronizedSet(new HashSet());
+Map sTitleNormCache = Collections.synchronizedMap(new HashMap());
+int sTitleNormCacheMax = 256;
+Map sGroupTitleTalkerCache = Collections.synchronizedMap(new HashMap());
+long sGroupTitleTalkerCacheTtlMs = 45000L;
+int sGroupTitleTalkerCacheMax = 128;
+final Handler sMainHandler = new Handler(Looper.getMainLooper());
+ExecutorService sQuickReplyExecutor = Executors.newSingleThreadExecutor();
 
 // 全局联系人缓存 (提速)
 List sCachedFriendNames = null;
 List sCachedFriendIds = null;
 List sCachedGroupNames = null;
 List sCachedGroupIds = null;
-long sLastGroupCacheLoadAt = 0L;
+long sLastWarmupAt = 0L;
+boolean sNotifyHookInstalled = false;
+boolean sActivityResultHookInstalled = false;
+String sBootNonce = "";
+long sLastAutoReloadAt = 0L;
 
 // ================= 生命周期 =================
+void warmupTalkerChannelsOnce() {
+    try {
+        if (Build.VERSION.SDK_INT < 26) return;
+        NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        if (cacheTargetSet == null || cacheTargetSet.isEmpty()) return;
+
+        Object[] ids = cacheTargetSet.toArray();
+        for (int i = 0; i < ids.length; i++) {
+            String talker = String.valueOf(ids[i]);
+            if (TextUtils.isEmpty(talker)) continue;
+
+            Map cfg = getTalkerCfg(talker);
+            int talkerMode = cfgGetInt(cfg, "mode", cacheMode);
+            if (talkerMode == 0) continue;
+
+            boolean talkerVibrate = cfgGetBool(cfg, "vibrate", cacheVibrate);
+            boolean talkerSound = cfgGetBool(cfg, "sound", cacheSound);
+            String talkerRing = cfgGet(cfg, "ringtone", "");
+            talkerRing = TextUtils.isEmpty(talkerRing) ? "" : talkerRing;
+
+            boolean useManualCustomSound = talkerSound && !TextUtils.isEmpty(talkerRing);
+            String sTag = talkerSound ? (useManualCustomSound ? "M" : "S") : "N";
+            String vTag = talkerVibrate ? "V" : "N";
+            String talkerChannelId = "jay_chn_v9_" + sTag + "_" + vTag + "_" + talkerRing.hashCode();
+
+            ensureNotifyChannel(nm, talkerChannelId, talkerVibrate, useManualCustomSound ? false : talkerSound, talkerRing);
+        }
+    } catch (Throwable ignored) {}
+}
+
 void onLoad() {
+    try { sBootNonce = String.valueOf(System.currentTimeMillis()); } catch (Throwable ignored) { sBootNonce = "0"; }
     loadConfigToCache();
     hookSystemNotification();
     hookActivityResultForRingtone();
     registerQuickReplyReceiver();
+
+    // 延后做名称预热，避开插件打开瞬间卡顿
+    try {
+        sMainHandler.postDelayed(new Runnable() {
+            public void run() {
+                try {
+                    loadConfigToCache();
+                } catch (Throwable ignored) {}
+            }
+        }, 600);
+    } catch (Throwable ignored) {}
+
+    // 延后预热已配置会话的通知通道（仅一次，避免重复重建引入竞态）
+    try {
+        sMainHandler.postDelayed(new Runnable() {
+            public void run() {
+                warmupTalkerChannelsOnce();
+            }
+        }, 1200);
+    } catch (Throwable ignored) {}
+}
+
+void ensureConfigLoadedForRuntime() {
+    try {
+        if (!cacheTargetSet.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        if (now - sLastAutoReloadAt < 1200L) return;
+        sLastAutoReloadAt = now;
+        loadConfigToCache();
+    } catch (Throwable ignored) {}
 }
 
 void onUnload() {
@@ -124,6 +200,15 @@ void onUnload() {
     targetNameList.clear();
     cacheTalkerCfgMap.clear();
     sNoArgMethodCache.clear();
+    try { sNoArgMethodMissCache.clear(); } catch (Throwable ignored) {}
+    try { sTitleNormCache.clear(); } catch (Throwable ignored) {}
+    try { sGroupTitleTalkerCache.clear(); } catch (Throwable ignored) {}
+    try {
+        if (sQuickReplyExecutor != null) {
+            sQuickReplyExecutor.shutdownNow();
+        }
+    } catch (Throwable ignored) {}
+    sQuickReplyExecutor = Executors.newSingleThreadExecutor();
     globalRingtoneValueView = null;
     globalRingtoneValueRef = null;
     globalSettingActivity = null;
@@ -163,7 +248,18 @@ void loadConfigToCache() {
     for (int i = 0; i < targetArr.length; i++) {
         String talkerId = String.valueOf(targetArr[i]);
         String rawCfg = getString(CFG_TALKER_CFG_PREFIX + talkerId, "");
-        cacheTalkerCfgMap.put(talkerId, parseTalkerCfg(rawCfg));
+        Map one = parseTalkerCfg(rawCfg);
+        try {
+            String oldRing = cfgGet(one, "ringtone", "");
+            if (!TextUtils.isEmpty(oldRing)) {
+                String newRing = freezeRingtoneUri(oldRing);
+                if (!TextUtils.isEmpty(newRing) && !newRing.equals(oldRing)) {
+                    one.put("ringtone", newRing);
+                    putString(CFG_TALKER_CFG_PREFIX + talkerId, encodeTalkerCfg(one));
+                }
+            }
+        } catch (Throwable ignored) {}
+        cacheTalkerCfgMap.put(talkerId, one);
     }
     
     String sTag = cacheSound ? "S" : "N";
@@ -171,6 +267,12 @@ void loadConfigToCache() {
     currentChannelId = "jay_chn_v9_" + sTag + "_" + vTag;
     rebuildNotificationChannel();
     
+    try {
+        long nowWarm = System.currentTimeMillis();
+        if (nowWarm - sLastWarmupAt < 1200L) return;
+        sLastWarmupAt = nowWarm;
+    } catch (Throwable ignored) {}
+
     new Thread(new Runnable() {
         public void run() {
             try {
@@ -197,17 +299,28 @@ void registerQuickReplyReceiver() {
                 try {
                     if (intent == null) return;
                     if (!ACTION_QUICK_REPLY.equals(intent.getAction())) return;
-                    String talker = intent.getStringExtra(EXTRA_TALKER);
+                    final String talker = intent.getStringExtra(EXTRA_TALKER);
                     if (TextUtils.isEmpty(talker)) return;
                     Bundle results = RemoteInput.getResultsFromIntent(intent);
                     CharSequence cs = null;
                     if (results != null) cs = results.getCharSequence("key_reply_content");
                     if (cs == null) cs = intent.getCharSequenceExtra("key_reply_content");
-                    String reply = cs == null ? "" : cs.toString().trim();
+                    final String reply = cs == null ? "" : cs.toString().trim();
                     if (TextUtils.isEmpty(reply)) return;
-                    sendText(talker, reply);
-                    NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (nm != null) nm.cancel(talker.hashCode());
+
+                    // 异步发送，避免阻塞广播主线程导致卡顿或个别机型闪退
+                    if (sQuickReplyExecutor == null || sQuickReplyExecutor.isShutdown()) {
+                        sQuickReplyExecutor = Executors.newSingleThreadExecutor();
+                    }
+                    sQuickReplyExecutor.execute(new Runnable() {
+                        public void run() {
+                            try { sendText(talker, reply); } catch (Throwable ignored) {}
+                            try {
+                                NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
+                                if (nm != null) nm.cancel(talker.hashCode());
+                            } catch (Throwable ignored) {}
+                        }
+                    });
                 } catch (Throwable ignored) {}
             }
         };
@@ -290,7 +403,25 @@ boolean cfgGetBool(Map m, String k, boolean def) {
 Map getTalkerCfg(String talker) {
     if (TextUtils.isEmpty(talker)) return new HashMap();
     if (cacheTalkerCfgMap.containsKey(talker)) return (Map) cacheTalkerCfgMap.get(talker);
+    try {
+        // 冷启动时兜底：按会话ID实时回源读取，避免必须进一次设置页才恢复单聊配置
+        String rawCfg = getString(CFG_TALKER_CFG_PREFIX + talker, "");
+        Map parsed = parseTalkerCfg(rawCfg);
+        cacheTalkerCfgMap.put(talker, parsed);
+        return parsed;
+    } catch (Throwable ignored) {}
     return new HashMap();
+}
+
+void ensureTalkerCfgLoaded(String talker) {
+    if (TextUtils.isEmpty(talker)) return;
+    try {
+        Map cfg = getTalkerCfg(talker);
+        if (cfg == null || cfg.isEmpty()) {
+            String rawCfg = getString(CFG_TALKER_CFG_PREFIX + talker, "");
+            cacheTalkerCfgMap.put(talker, parseTalkerCfg(rawCfg));
+        }
+    } catch (Throwable ignored) {}
 }
 
 boolean isNowInMuteWindowByCfg(Map cfg) {
@@ -560,6 +691,50 @@ String prettyAudioNameFromUri(Uri uri) {
     return "";
 }
 
+String freezeRingtoneUri(String rawUri) {
+    if (TextUtils.isEmpty(rawUri)) return "";
+    try {
+        Uri src = Uri.parse(rawUri);
+        if (src == null) return rawUri;
+        String scheme = src.getScheme();
+        if (TextUtils.isEmpty(scheme)) return rawUri;
+        if ("file".equalsIgnoreCase(scheme)) return rawUri;
+        if (!"content".equalsIgnoreCase(scheme)) return rawUri;
+        if (hostContext == null) return rawUri;
+
+        java.io.InputStream in = null;
+        java.io.FileOutputStream out = null;
+        try {
+            in = hostContext.getContentResolver().openInputStream(src);
+            if (in == null) return rawUri;
+
+            java.io.File dir = new java.io.File("/storage/emulated/0/Android/media/com.tencent.mm/WAuxiliary/Plugin/ringtones");
+            if (!dir.exists()) dir.mkdirs();
+
+            String base = prettyAudioNameFromUri(src);
+            if (TextUtils.isEmpty(base)) base = "ringtone_" + System.currentTimeMillis();
+            base = base.replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
+            if (TextUtils.isEmpty(base)) base = "ringtone_" + System.currentTimeMillis();
+            String low = base.toLowerCase();
+            if (!(low.endsWith(".mp3") || low.endsWith(".m4a") || low.endsWith(".aac") || low.endsWith(".wav") || low.endsWith(".ogg") || low.endsWith(".flac"))) {
+                base = base + ".mp3";
+            }
+
+            java.io.File dst = new java.io.File(dir, base);
+            out = new java.io.FileOutputStream(dst, false);
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            out.flush();
+            return Uri.fromFile(dst).toString();
+        } finally {
+            try { if (in != null) in.close(); } catch (Throwable ignored) {}
+            try { if (out != null) out.close(); } catch (Throwable ignored) {}
+        }
+    } catch (Throwable ignored) {}
+    return rawUri;
+}
+
 String getFriendDisplayNameById(String wxid) {
     if (TextUtils.isEmpty(wxid)) return "";
     String n = getFriendName(wxid);
@@ -574,6 +749,9 @@ void putInt(String key, int v) {
 // ================= 核心 1：原生通知强力拦截器 =================
 void hookSystemNotification() {
     try {
+        if (sNotifyHookInstalled) return;
+        sNotifyHookInstalled = true;
+
         Method[] methods = NotificationManager.class.getDeclaredMethods();
         for (int i = 0; i < methods.length; i++) {
             final Method m = methods[i];
@@ -585,6 +763,7 @@ void hookSystemNotification() {
             Object unhook = XposedBridge.hookMethod(m, new XC_MethodHook() {
                 protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
                     try {
+                        ensureConfigLoadedForRuntime();
                         if (cacheTargetSet.isEmpty()) return;
 
                         Object[] args = param.args;
@@ -640,11 +819,14 @@ void hookSystemNotification() {
             });
             if (unhook != null) notifyUnhooks.add(unhook);
         }
-    } catch (Throwable ignored) {}
+    } catch (Throwable ignored) {
+        sNotifyHookInstalled = false;
+    }
 }
 
 // ================= 核心 2：自定义通知发送器 =================
 void onHandleMsg(Object msg) {
+    ensureConfigLoadedForRuntime();
     if (cacheTargetSet.isEmpty()) {
         return;
     }
@@ -666,6 +848,8 @@ void onHandleMsg(Object msg) {
         }
 
         Map cfg = getTalkerCfg(talker);
+        ensureTalkerCfgLoaded(talker);
+        cfg = getTalkerCfg(talker);
         int talkerMode = cfgGetInt(cfg, "mode", cacheMode);
         boolean inMuteWindow = isNowInMuteWindowByCfg(cfg);
         boolean showDetail = cfgGetBool(cfg, "showDetail", cacheShowDetail);
@@ -714,6 +898,27 @@ void rebuildNotificationChannel() {
 if (chId != null && (chId.startsWith("jay_chn_v7") || chId.startsWith("jay_chn_v8"))) {
     nm.deleteNotificationChannel(chId);
 }
+                    }
+                }
+            } catch (Throwable ignored) {}
+
+            // 额外清理：限制 v9 通道总量，避免长期堆积导致系统通知管理变慢
+            try {
+                List channels2 = (List) nm.getClass().getMethod("getNotificationChannels").invoke(nm);
+                if (channels2 != null && channels2.size() > 0) {
+                    List v9Ids = new ArrayList();
+                    for (int i = 0; i < channels2.size(); i++) {
+                        NotificationChannel ch2 = (NotificationChannel) channels2.get(i);
+                        if (ch2 == null) continue;
+                        String id2 = ch2.getId();
+                        if (id2 != null && id2.startsWith("jay_chn_v9_")) v9Ids.add(id2);
+                    }
+                    int keepMax = 100;
+                    int extra = v9Ids.size() - keepMax;
+                    if (extra > 0) {
+                        for (int i = 0; i < extra; i++) {
+                            try { nm.deleteNotificationChannel(String.valueOf(v9Ids.get(i))); } catch (Throwable ignored) {}
+                        }
                     }
                 }
             } catch (Throwable ignored) {}
@@ -786,7 +991,7 @@ void playCustomRingtoneFallback(final String uriStr) {
         lastManualRingAt = now;
     } catch (Throwable ignored) {}
 
-    new Handler(Looper.getMainLooper()).post(new Runnable() {
+    sMainHandler.post(new Runnable() {
         public void run() {
             try {
                 Uri uri = Uri.parse(uriStr);
@@ -794,7 +999,7 @@ void playCustomRingtoneFallback(final String uriStr) {
                 if (rt == null) return;
                 try { rt.setStreamType(android.media.AudioManager.STREAM_NOTIFICATION); } catch (Throwable ignored) {}
                 rt.play();
-                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                sMainHandler.postDelayed(new Runnable() {
                     public void run() {
                         try {
                             if (rt.isPlaying()) rt.stop();
@@ -806,18 +1011,53 @@ void playCustomRingtoneFallback(final String uriStr) {
     });
 }
 
+void playNotifySoundByConfig(boolean useSound, String ringtoneUri) {
+    if (!useSound) return;
+    String ring = TextUtils.isEmpty(ringtoneUri) ? "" : ringtoneUri;
+    if (!TextUtils.isEmpty(ring)) {
+        playCustomRingtoneFallback(ring);
+        return;
+    }
+    try {
+        Uri def = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+        if (def != null) playCustomRingtoneFallback(def.toString());
+    } catch (Throwable ignored) {}
+}
+
+boolean ensureUriReadable(String uriStr) {
+    if (TextUtils.isEmpty(uriStr)) return false;
+    try {
+        Uri u = Uri.parse(uriStr);
+        if (u == null) return false;
+        String sch = u.getScheme();
+        if (TextUtils.isEmpty(sch)) return false;
+        if ("file".equalsIgnoreCase(sch)) return true;
+        if (!"content".equalsIgnoreCase(sch)) return true;
+
+        if (hostContext == null) return false;
+        try {
+            if (hostContext.getContentResolver().openInputStream(u) == null) return false;
+            return true;
+        } catch (Throwable ignored3) {
+            return false;
+        }
+    } catch (Throwable ignored) {}
+    return false;
+}
+
 void sendCustomNotification(String talker, String title, String text, boolean useVibrate, boolean useSound, String ringtoneUri, boolean enableQuickReply) {
     try {
         NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
         Notification.Builder builder;
         String talkerChannelId = currentChannelId;
         String talkerRing = TextUtils.isEmpty(ringtoneUri) ? "" : ringtoneUri;
-        boolean useManualCustomSound = Build.VERSION.SDK_INT >= 26 && useSound && !TextUtils.isEmpty(talkerRing);
+        boolean useManualCustomSound = Build.VERSION.SDK_INT >= 26 && useSound; // 8+ 一律手动播放，规避ROM回写通道声音
         if (Build.VERSION.SDK_INT >= 26) {
-            String sTag = useSound ? (useManualCustomSound ? "M" : "S") : "N";
+            String sTag = useSound ? "M" : "N";
             String vTag = useVibrate ? "V" : "N";
             talkerChannelId = "jay_chn_v9_" + sTag + "_" + vTag + "_" + talkerRing.hashCode();
-            ensureNotifyChannel(nm, talkerChannelId, useVibrate, useManualCustomSound ? false : useSound, talkerRing);
+            // 8+ 通道保持静音，声音由插件手动播放，避免被系统/ROM改回默认声
+            ensureNotifyChannel(nm, talkerChannelId, useVibrate, false, talkerRing);
             builder = new Notification.Builder(hostContext, talkerChannelId);
         } else {
             builder = new Notification.Builder(hostContext);
@@ -835,7 +1075,7 @@ void sendCustomNotification(String talker, String title, String text, boolean us
         long[] vibPattern = useVibrate ? new long[]{0, 250, 250, 250} : new long[]{0};
         try { builder.setVibrate(vibPattern); } catch (Throwable ignored) {}
 
-        Uri soundUri = resolveNotifySoundUri(useManualCustomSound ? false : useSound, talkerRing);
+        Uri soundUri = resolveNotifySoundUri(Build.VERSION.SDK_INT >= 26 ? false : (useManualCustomSound ? false : useSound), talkerRing);
         try { builder.setSound(soundUri); } catch (Throwable ignored) {}
 
         Bundle extras = new Bundle();
@@ -883,7 +1123,16 @@ void sendCustomNotification(String talker, String title, String text, boolean us
         int notifyId = talker.hashCode();
         nm.notify(notifyId, builder.build()); // 直接覆盖发送即可，系统会完美处理过渡
 
-        if (useManualCustomSound) playCustomRingtoneFallback(talkerRing);
+        // 8+ 声音统一手动播放（含默认通知声/自定义铃声）
+        if (Build.VERSION.SDK_INT >= 26) {
+            String playableRing = talkerRing;
+            if (!TextUtils.isEmpty(playableRing) && !ensureUriReadable(playableRing)) {
+                playableRing = "";
+            }
+            playNotifySoundByConfig(useSound, playableRing);
+        } else {
+            if (useManualCustomSound) playCustomRingtoneFallback(talkerRing);
+        }
     } catch (Throwable ignored) {}
 }
 
@@ -897,11 +1146,26 @@ void hookActivityResultForRingtone() {
                     Uri uri = null;
                     if (data != null && requestCode == REQ_PICK_RINGTONE_SYSTEM) {
                         try { uri = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI); } catch (Throwable ignored) {}
+                        try {
+                            if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
+                                final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+                                hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                            }
+                        } catch (Throwable ignored) {}
                     }
                     if (data != null && uri == null && requestCode == REQ_PICK_RINGTONE_FILE) {
                         try { uri = data.getData(); } catch (Throwable ignored) {}
+                        try {
+                            if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
+                                final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+                                hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                            }
+                        } catch (Throwable ignored) {}
                     }
                     String ring = uri == null ? "" : uri.toString();
+                    if (!TextUtils.isEmpty(ring)) {
+                        ring = freezeRingtoneUri(ring);
+                    }
                     if (globalRingtoneValueRef != null && globalRingtoneValueRef.length > 0) {
                         globalRingtoneValueRef[0] = ring;
                     }
@@ -939,8 +1203,15 @@ String findChatroomInString(String s) {
 String normalizeTitleKey(String s) {
     if (s == null) return "";
     try {
+        String cacheKey = "k|" + s;
+        Object cached = sTitleNormCache.get(cacheKey);
+        if (cached != null) return String.valueOf(cached);
+
         String t = s.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ').replace((char) 12288, ' ');
         t = t.replaceAll("\\s+", "").trim().toLowerCase();
+
+        if (sTitleNormCache.size() >= sTitleNormCacheMax) sTitleNormCache.clear();
+        sTitleNormCache.put(cacheKey, t);
         return t;
     } catch (Throwable ignored) {}
     return "";
@@ -949,10 +1220,17 @@ String normalizeTitleKey(String s) {
 String normalizeTitleLooseKey(String s) {
     if (s == null) return "";
     try {
+        String cacheKey = "l|" + s;
+        Object cached = sTitleNormCache.get(cacheKey);
+        if (cached != null) return String.valueOf(cached);
+
         String t = normalizeTitleKey(s);
         if (TextUtils.isEmpty(t)) return "";
         // 去掉大部分符号/emoji，只保留中文、字母、数字，提升特殊昵称匹配稳定性
         t = t.replaceAll("[^\\u4e00-\\u9fa5a-z0-9]+", "");
+
+        if (sTitleNormCache.size() >= sTitleNormCacheMax) sTitleNormCache.clear();
+        sTitleNormCache.put(cacheKey, t);
         return t;
     } catch (Throwable ignored) {}
     return "";
@@ -1005,13 +1283,39 @@ String findTalkerByGroupTitle(String title) {
     if (TextUtils.isEmpty(title)) return null;
     String base = stripWechatTitleSuffix(title);
     if (TextUtils.isEmpty(base)) return null;
+
+    String cacheKey = normalizeTitleLooseKey(base);
+    if (TextUtils.isEmpty(cacheKey)) cacheKey = normalizeTitleKey(base);
+    if (!TextUtils.isEmpty(cacheKey)) {
+        try {
+            Object cv = sGroupTitleTalkerCache.get(cacheKey);
+            if (cv instanceof String[]) {
+                String[] pair = (String[]) cv;
+                if (pair.length >= 2) {
+                    long ts = 0L;
+                    try { ts = Long.parseLong(pair[1]); } catch (Throwable ignored) {}
+                    if (System.currentTimeMillis() - ts <= sGroupTitleTalkerCacheTtlMs) {
+                        String hit = pair[0];
+                        if (!TextUtils.isEmpty(hit)) return hit;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
     try {
         if (sCachedGroupIds != null && sCachedGroupNames != null && sCachedGroupIds.size() == sCachedGroupNames.size()) {
             for (int i = 0; i < sCachedGroupIds.size(); i++) {
                 String gid = String.valueOf(sCachedGroupIds.get(i));
                 String gname = String.valueOf(sCachedGroupNames.get(i));
                 if (TextUtils.isEmpty(gid) || TextUtils.isEmpty(gname) || "null".equalsIgnoreCase(gname)) continue;
-                if (titleMaybeMatchName(base, gname) || titleMaybeMatchName(title, gname)) return gid;
+                if (titleMaybeMatchName(base, gname) || titleMaybeMatchName(title, gname)) {
+                    if (!TextUtils.isEmpty(cacheKey)) {
+                        if (sGroupTitleTalkerCache.size() >= sGroupTitleTalkerCacheMax) sGroupTitleTalkerCache.clear();
+                        sGroupTitleTalkerCache.put(cacheKey, new String[]{gid, String.valueOf(System.currentTimeMillis())});
+                    }
+                    return gid;
+                }
             }
         }
     } catch (Throwable ignored) {}
@@ -1034,6 +1338,10 @@ String findTalkerByGroupTitle(String title) {
                 if (titleMaybeMatchName(base, gname) || titleMaybeMatchName(title, gname)) {
                     sCachedGroupIds = ids;
                     sCachedGroupNames = names;
+                    if (!TextUtils.isEmpty(cacheKey)) {
+                        if (sGroupTitleTalkerCache.size() >= sGroupTitleTalkerCacheMax) sGroupTitleTalkerCache.clear();
+                        sGroupTitleTalkerCache.put(cacheKey, new String[]{gid, String.valueOf(System.currentTimeMillis())});
+                    }
                     return gid;
                 }
             }
@@ -1118,6 +1426,22 @@ String extractTalkerFromNotification(Notification n) {
             }
         }
     } catch (Throwable ignored) {}
+
+    // 深扫 PendingIntent extras，提升部分 ROM/版本下重启早期 talker 提取成功率
+    try {
+        PendingIntent[] pis = new PendingIntent[]{n.contentIntent, n.deleteIntent, n.fullScreenIntent};
+        for (int i = 0; i < pis.length; i++) {
+            PendingIntent pi = pis[i];
+            if (pi == null) continue;
+            try {
+                Intent it = null;
+                try { it = (Intent) pi.getClass().getMethod("getIntent").invoke(pi); } catch (Throwable ignored2) {}
+                if (it == null) continue;
+                String t = scanBundleForTalker(it.getExtras());
+                if (t != null) return t;
+            } catch (Throwable ignored3) {}
+        }
+    } catch (Throwable ignored) {}
     return null;
 }
 Object safeInvoke(Object obj, String methodName) {
@@ -1125,6 +1449,9 @@ Object safeInvoke(Object obj, String methodName) {
     try {
         Class c = obj.getClass();
         String key = c.getName() + "#" + methodName;
+
+        if (sNoArgMethodMissCache.contains(key)) return null;
+
         Method cached = (Method) sNoArgMethodCache.get(key);
         if (cached != null) {
             return cached.invoke(obj);
@@ -1137,6 +1464,8 @@ Object safeInvoke(Object obj, String methodName) {
             sNoArgMethodCache.put(key, m);
             return m.invoke(obj);
         }
+
+        sNoArgMethodMissCache.add(key);
     } catch (Throwable ignored) {}
     return null;
 }
@@ -1344,9 +1673,11 @@ void showRingtonePickStyleDialog(final Activity ctx, final String[] tmpRingtone,
         btnFile.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 try {
-                    Intent fileIntent = new Intent(Intent.ACTION_GET_CONTENT);
+                    Intent fileIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                     fileIntent.setType("audio/*");
                     fileIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                    fileIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    fileIntent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                     ctx.startActivityForResult(Intent.createChooser(fileIntent, "选择铃声文件"), REQ_PICK_RINGTONE_FILE);
                 } catch (Throwable ignored) {}
                 try { pickDialog.dismiss(); } catch (Throwable ignored) {}

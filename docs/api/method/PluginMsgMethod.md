@@ -1,7 +1,7 @@
 # 消息方法
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.7.r1357 版本
+本文档适用于 WAuxiliary v1.2.7.r1368 版本
 :::
 
 ## 发送文本消息
@@ -101,4 +101,12 @@ void insertSystemMsg(String talker, String content, long createTime);
 
 ```beanshell
 List<MsgInfoBean> queryHistoryMsg(String talker, long startTime, int count);
+```
+
+## 下载图片
+
+```beanshell
+void downloadImg(String md5, String cdnUrl, String aesKey, String savePath);
+
+void downloadImg(MsgInfoBean.ImageMsg imageMsg, String savePath);
 ```

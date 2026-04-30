@@ -520,6 +520,31 @@ void handleDatabaseInsert(MethodHookParam param) throws Throwable {
     }, delay);
 }
 
+Method findMethodInHierarchy(Class<?> clazz, String methodName, Class<?>... parameterTypes) throws NoSuchMethodException {
+    Class<?> current = clazz;
+    while (current != null) {
+        try {
+            Method method = current.getDeclaredMethod(methodName, parameterTypes);
+            method.setAccessible(true);
+            return method;
+        } catch (NoSuchMethodException ignored) {}
+        current = current.getSuperclass();
+    }
+    throw new NoSuchMethodException(clazz.getName() + "." + methodName + " " + Arrays.toString(parameterTypes));
+}
+
+void logMethodCandidates(Class<?> clazz, String methodName) {
+    if (clazz == null || TextUtils.isEmpty(methodName)) return;
+    try {
+        Method[] methods = clazz.getDeclaredMethods();
+        for (Method m : methods) {
+            if (methodName.equals(m.getName())) {
+                logx(">> 候选方法: " + clazz.getName() + "." + m.getName() + " " + Arrays.toString(m.getParameterTypes()));
+            }
+        }
+    } catch (Throwable ignored) {}
+}
+
 void hookAllReceiveActivities() {
     String[] activityClasses = {
         "com.tencent.mm.plugin.luckymoney.ui.LuckyMoneyNewReceiveUI",
@@ -530,7 +555,7 @@ void hookAllReceiveActivities() {
         try {
             Class<?> clazz = XposedHelpers.findClass(className, hostContext.getClassLoader());
             try {
-                Method initView = clazz.getDeclaredMethod("initView");
+                Method initView = findMethodInHierarchy(clazz, "initView");
                 Object hook = XposedBridge.hookMethod(initView, new XC_MethodHook() {
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         logx(">> 领取页initView触发: " + param.thisObject.getClass().getName());
@@ -567,9 +592,10 @@ void hookAllReceiveActivities() {
                 logx(">> 成功Hook领取页: " + className + ".initView");
             } catch (Throwable e) {
                 logx("ERROR: Hook领取页initView失败: " + className + " | " + e.getMessage());
+                logMethodCandidates(clazz, "initView");
             }
             try {
-                Method onCreate = clazz.getDeclaredMethod("onCreate", Bundle.class);
+                Method onCreate = findMethodInHierarchy(clazz, "onCreate", Bundle.class);
                 Object hook = XposedBridge.hookMethod(onCreate, new XC_MethodHook() {
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         logx(">> 领取页onCreate触发: " + param.thisObject.getClass().getName());
@@ -585,9 +611,10 @@ void hookAllReceiveActivities() {
                 allHooks.add(hook);
             } catch (Throwable e) {
                 logx("ERROR: Hook领取页onCreate失败: " + className + " | " + e.getMessage());
+                logMethodCandidates(clazz, "onCreate");
             }
             try {
-                Method onResume = clazz.getDeclaredMethod("onResume");
+                Method onResume = findMethodInHierarchy(clazz, "onResume");
                 Object hook = XposedBridge.hookMethod(onResume, new XC_MethodHook() {
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         logx(">> 领取页onResume触发: " + param.thisObject.getClass().getName());
@@ -612,9 +639,10 @@ void hookAllReceiveActivities() {
                 allHooks.add(hook);
             } catch (Throwable e) {
                 logx("ERROR: Hook领取页onResume失败: " + className + " | " + e.getMessage());
+                logMethodCandidates(clazz, "onResume");
             }
             try {
-                Method onDestroy = clazz.getDeclaredMethod("onDestroy");
+                Method onDestroy = findMethodInHierarchy(clazz, "onDestroy");
                 Object hook = XposedBridge.hookMethod(onDestroy, new XC_MethodHook() {
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         Activity activity = (Activity) param.thisObject;
@@ -625,6 +653,7 @@ void hookAllReceiveActivities() {
                 allHooks.add(hook);
             } catch (Throwable e) {
                 logx("ERROR: Hook领取页onDestroy失败: " + className + " | " + e.getMessage());
+                logMethodCandidates(clazz, "onDestroy");
             }
         } catch (Throwable e) {
             logx("ERROR: 查找领取页类失败: " + className + " | " + e.getMessage());
@@ -660,7 +689,7 @@ void hookAllDetailActivities() {
         try {
             Class<?> clazz = XposedHelpers.findClass(className, hostContext.getClassLoader());
             try {
-                Method onCreate = clazz.getDeclaredMethod("onCreate", Bundle.class);
+                Method onCreate = findMethodInHierarchy(clazz, "onCreate", Bundle.class);
                 Object hook = XposedBridge.hookMethod(onCreate, new XC_MethodHook() {
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         logx(">> 详情页onCreate触发: " + param.thisObject.getClass().getName());
@@ -680,9 +709,10 @@ void hookAllDetailActivities() {
                 logx(">> 成功Hook详情页: " + className + ".onCreate");
             } catch (Throwable e) {
                 logx("ERROR: Hook详情页onCreate失败: " + className + " | " + e.getMessage());
+                logMethodCandidates(clazz, "onCreate");
             }
             try {
-                Method onResume = clazz.getDeclaredMethod("onResume");
+                Method onResume = findMethodInHierarchy(clazz, "onResume");
                 Object hook = XposedBridge.hookMethod(onResume, new XC_MethodHook() {
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         logx(">> 详情页onResume触发: " + param.thisObject.getClass().getName());
@@ -701,6 +731,7 @@ void hookAllDetailActivities() {
                 allHooks.add(hook);
             } catch (Throwable e) {
                 logx("ERROR: Hook详情页onResume失败: " + className + " | " + e.getMessage());
+                logMethodCandidates(clazz, "onResume");
             }
         } catch (Throwable e) {
             logx("ERROR: 查找详情页类失败: " + className + " | " + e.getMessage());

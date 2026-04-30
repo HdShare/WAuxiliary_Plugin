@@ -2,7 +2,7 @@
 # 相关结构
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.7.r1357 版本
+本文档适用于 WAuxiliary v1.2.7.r1368 版本
 :::
 
 ## 消息结构
@@ -22,6 +22,7 @@ MsgInfoBean {
     boolean isNotifyAll();// 艾特通知全体
     boolean isAtMe();// 艾特我
 
+    ImageMsg getImageMsg();// 图片消息
     QuoteMsg getQuoteMsg();// 引用消息
     PatMsg getPatMsg();// 拍一拍消息
     FileMsg getFileMsg();// 文件消息
@@ -60,6 +61,14 @@ MsgInfoBean {
     boolean isFile();// 文件
 }
 
+ImageMsg {
+    String getMd5();// 图片MD5
+    String getBigImgUrl();// 高清图链接
+    String getMidImgUrl();// 普通图链接
+    String getThumbUrl();// 缩略图链接
+    String getKey();// 图片密钥
+}
+
 QuoteMsg {
     String getTitle();// 回复标题
     String getMsgSource();// 消息来源
@@ -83,5 +92,7 @@ FileMsg {
     long getSize();// 文件字节
     String getExt();// 文件后缀
     String getMd5();// 文件MD5
+    String getUrl();// 文件链接
+    String getKey();// 文件密钥
 }
 ```

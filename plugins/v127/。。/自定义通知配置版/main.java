@@ -14,6 +14,7 @@ import android.widget.*;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
@@ -48,8 +49,11 @@ String CFG_BLOCK_AT_ALL = "jay_cfg_block_at_all_v7";
 String CFG_BLOCK_AT_ME = "jay_cfg_block_at_me_v7";
 String CFG_TALKER_CFG_PREFIX = "jay_talker_cfg_v9_";
 String JAY_MARK = "is_jay_custom_mark_v7"; 
+
 String ACTION_QUICK_REPLY = "jay_action_quick_reply_v7";
 String EXTRA_TALKER = "jay_extra_talker_v7";
+int REQ_PICK_RINGTONE_SYSTEM = 10086;
+int REQ_PICK_RINGTONE_FILE = 10087;
 
 // ================= 内存缓存 =================
 int cacheMode = 1;
@@ -76,12 +80,14 @@ boolean quickReplyReceiverRegistered = false;
 
 // 【安全优化2】采用线程安全的 CopyOnWriteArrayList，防止读写并发导致微信崩溃
 List targetNameList = new CopyOnWriteArrayList();
+Map sNoArgMethodCache = new ConcurrentHashMap();
 
 // 全局联系人缓存 (提速)
 List sCachedFriendNames = null;
 List sCachedFriendIds = null;
 List sCachedGroupNames = null;
 List sCachedGroupIds = null;
+long sLastGroupCacheLoadAt = 0L;
 
 // ================= 生命周期 =================
 void onLoad() {
@@ -91,7 +97,7 @@ void onLoad() {
     registerQuickReplyReceiver();
 }
 
-void onUnLoad() {
+void onUnload() {
     for (int i = 0; i < notifyUnhooks.size(); i++) {
         try {
             Object uh = notifyUnhooks.get(i);
@@ -113,9 +119,11 @@ void onUnLoad() {
     sCachedFriendIds = null;
     sCachedGroupNames = null;
     sCachedGroupIds = null;
+    sLastGroupCacheLoadAt = 0L;
     cacheTargetSet.clear();
     targetNameList.clear();
     cacheTalkerCfgMap.clear();
+    sNoArgMethodCache.clear();
     globalRingtoneValueView = null;
     globalRingtoneValueRef = null;
     globalSettingActivity = null;
@@ -510,10 +518,46 @@ String getRingtoneDisplayName(Context ctx, String uriStr) {
         android.media.Ringtone rt = RingtoneManager.getRingtone(ctx, uri);
         if (rt != null) {
             String title = rt.getTitle(ctx);
-            if (!TextUtils.isEmpty(title)) return title;
+            if (!TextUtils.isEmpty(title)) {
+                // 有些文档 Uri 会返回 primary:... 这类路径串，优先转成文件名显示
+                if (title.contains(":") || title.contains("/")) {
+                    String fallback = prettyAudioNameFromUri(uri);
+                    if (!TextUtils.isEmpty(fallback)) return fallback;
+                }
+                return title;
+            }
         }
+        String fallback = prettyAudioNameFromUri(uri);
+        if (!TextUtils.isEmpty(fallback)) return fallback;
     } catch (Throwable ignored) {}
     return "自定义铃声";
+}
+
+String prettyAudioNameFromUri(Uri uri) {
+    if (uri == null) return "";
+    try {
+        String s = uri.toString();
+        String name = "";
+        String seg = uri.getLastPathSegment();
+        if (!TextUtils.isEmpty(seg)) name = seg;
+        if (TextUtils.isEmpty(name) && !TextUtils.isEmpty(s)) {
+            int q = s.indexOf("?");
+            String pure = q >= 0 ? s.substring(0, q) : s;
+            int p = pure.lastIndexOf("/");
+            if (p >= 0 && p < pure.length() - 1) name = pure.substring(p + 1);
+        }
+        if (TextUtils.isEmpty(name)) return "";
+        try { name = Uri.decode(name); } catch (Throwable ignored) {}
+        int c = name.lastIndexOf(":");
+        if (c >= 0 && c < name.length() - 1) name = name.substring(c + 1);
+        int s1 = name.lastIndexOf("/");
+        if (s1 >= 0 && s1 < name.length() - 1) name = name.substring(s1 + 1);
+        name = name.trim();
+        if (TextUtils.isEmpty(name)) return "";
+        if (name.length() > 42) name = name.substring(0, 42) + "...";
+        return name;
+    } catch (Throwable ignored) {}
+    return "";
 }
 
 String getFriendDisplayNameById(String wxid) {
@@ -548,7 +592,9 @@ void hookSystemNotification() {
                         Notification n = (Notification) args[args.length - 1];
                         if (n == null) return;
 
-                        if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) return;
+                        if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) {
+                            return;
+                        }
                         if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("jay_chn_v9_")) {
                             return;
                         }
@@ -567,17 +613,29 @@ void hookSystemNotification() {
                             if (!TextUtils.isEmpty(title)) {
                                 for (int k = 0; k < targetNameList.size(); k++) {
                                     String tName = (String) targetNameList.get(k);
-                                    if (title.contains(tName)) {
+                                    if (titleMaybeMatchName(title, tName)) {
                                         shouldBlock = true;
                                         break;
                                     }
                                 }
+                                if (!shouldBlock) {
+                                    String titleTalker = findTalkerByGroupTitle(title);
+                                    if (!TextUtils.isEmpty(titleTalker) && cacheTargetSet.contains(titleTalker)) {
+                                        shouldBlock = true;
+                                    }
+                                }
+                            }
+
+                            if (!shouldBlock) {
                             }
                         }
 
-                        if (shouldBlock) param.setResult(null); 
+                        if (shouldBlock) {
+                            param.setResult(null);
+                        }
 
-                    } catch (Throwable ignored) {}
+                    } catch (Throwable e) {
+                    }
                 }
             });
             if (unhook != null) notifyUnhooks.add(unhook);
@@ -587,40 +645,57 @@ void hookSystemNotification() {
 
 // ================= 核心 2：自定义通知发送器 =================
 void onHandleMsg(Object msg) {
-    if (cacheTargetSet.isEmpty()) return; 
+    if (cacheTargetSet.isEmpty()) {
+        return;
+    }
 
     try {
         boolean isSend = (boolean) safeInvoke(msg, "isSend");
-        if (isSend) return;
+        if (isSend) {
+            return;
+        }
 
         String talker = (String) safeInvoke(msg, "getTalker");
-        
+        String content = (String) safeInvoke(msg, "getContent");
+        Object typeObj = safeInvoke(msg, "getType");
+        int type = (typeObj instanceof Number) ? ((Number) typeObj).intValue() : 1;
+
         // 【逻辑优化】使用 Set 的精确匹配
-        if (!cacheTargetSet.contains(talker)) return;
+        if (!cacheTargetSet.contains(talker)) {
+            return;
+        }
+
         Map cfg = getTalkerCfg(talker);
         int talkerMode = cfgGetInt(cfg, "mode", cacheMode);
-        if (talkerMode == 0) return;
-        if (isNowInMuteWindowByCfg(cfg)) return;
-
-        String content = (String) safeInvoke(msg, "getContent");
-        if (shouldSuppressByRules(msg, talker, content, cfg)) return;
-        Object typeObj = safeInvoke(msg, "getType");
-int type = (typeObj instanceof Number) ? ((Number) typeObj).intValue() : 1;
-
-        String senderName = getFriendName(talker);
-        String displayContent = "[收到一条新消息]";
+        boolean inMuteWindow = isNowInMuteWindowByCfg(cfg);
         boolean showDetail = cfgGetBool(cfg, "showDetail", cacheShowDetail);
         boolean talkerVibrate = cfgGetBool(cfg, "vibrate", cacheVibrate);
         boolean talkerSound = cfgGetBool(cfg, "sound", cacheSound);
         String talkerRingtone = cfgGet(cfg, "ringtone", "");
         boolean talkerQuickReply = cfgGetBool(cfg, "quickReply", false);
+
+        if (talkerMode == 0) {
+            return;
+        }
+        if (inMuteWindow) {
+            return;
+        }
+
+        boolean suppressedByRules = shouldSuppressByRules(msg, talker, content, cfg);
+        if (suppressedByRules) {
+            return;
+        }
+
+        String senderName = getFriendName(talker);
+        String displayContent = "[收到一条新消息]";
         if (showDetail) {
             if (type == 1) displayContent = content;
             else displayContent = "[图片/语音或非文本消息]";
         }
 
         sendCustomNotification(talker, senderName, displayContent, talkerVibrate, talkerSound, talkerRingtone, talkerQuickReply);
-    } catch (Throwable ignored) {}
+    } catch (Throwable e) {
+    }
 }
 
 void rebuildNotificationChannel() {
@@ -806,7 +881,7 @@ void sendCustomNotification(String talker, String title, String text, boolean us
         }
 
         int notifyId = talker.hashCode();
-nm.notify(notifyId, builder.build()); // 直接覆盖发送即可，系统会完美处理过渡
+        nm.notify(notifyId, builder.build()); // 直接覆盖发送即可，系统会完美处理过渡
 
         if (useManualCustomSound) playCustomRingtoneFallback(talkerRing);
     } catch (Throwable ignored) {}
@@ -817,11 +892,14 @@ void hookActivityResultForRingtone() {
         XC_MethodHook resultHook = new XC_MethodHook() {
             protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
                 int requestCode = (Integer) param.args[0];
-                if (requestCode == 10086) {
+                if (requestCode == REQ_PICK_RINGTONE_SYSTEM || requestCode == REQ_PICK_RINGTONE_FILE) {
                     Intent data = (Intent) param.args[2];
                     Uri uri = null;
-                    if (data != null) {
+                    if (data != null && requestCode == REQ_PICK_RINGTONE_SYSTEM) {
                         try { uri = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI); } catch (Throwable ignored) {}
+                    }
+                    if (data != null && uri == null && requestCode == REQ_PICK_RINGTONE_FILE) {
+                        try { uri = data.getData(); } catch (Throwable ignored) {}
                     }
                     String ring = uri == null ? "" : uri.toString();
                     if (globalRingtoneValueRef != null && globalRingtoneValueRef.length > 0) {
@@ -854,6 +932,114 @@ String findChatroomInString(String s) {
     try {
         Matcher m = chatroomPattern.matcher(s);
         if (m.find()) return m.group(1);
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+String normalizeTitleKey(String s) {
+    if (s == null) return "";
+    try {
+        String t = s.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ').replace((char) 12288, ' ');
+        t = t.replaceAll("\\s+", "").trim().toLowerCase();
+        return t;
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+String normalizeTitleLooseKey(String s) {
+    if (s == null) return "";
+    try {
+        String t = normalizeTitleKey(s);
+        if (TextUtils.isEmpty(t)) return "";
+        // 去掉大部分符号/emoji，只保留中文、字母、数字，提升特殊昵称匹配稳定性
+        t = t.replaceAll("[^\\u4e00-\\u9fa5a-z0-9]+", "");
+        return t;
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+String stripBracketTags(String s) {
+    if (s == null) return "";
+    try {
+        // 兼容“[表情][闪烁]”这类通知标题标签
+        return s.replaceAll("\\[[^\\]]*\\]", "");
+    } catch (Throwable ignored) {}
+    return s;
+}
+
+boolean titleMaybeMatchName(String title, String name) {
+    if (TextUtils.isEmpty(title) || TextUtils.isEmpty(name)) return false;
+    try {
+        String titleRaw = title;
+        String titleBase = stripWechatTitleSuffix(titleRaw);
+        String titleNoTag = stripBracketTags(titleBase);
+        if (titleRaw.contains(name) || name.contains(titleRaw)) return true;
+        if (!TextUtils.isEmpty(titleNoTag) && (titleNoTag.contains(name) || name.contains(titleNoTag))) return true;
+        String t1 = normalizeTitleKey(titleNoTag);
+        String n1 = normalizeTitleKey(name);
+        if (!TextUtils.isEmpty(t1) && !TextUtils.isEmpty(n1)) {
+            if (t1.contains(n1) || n1.contains(t1)) return true;
+        }
+        String t2 = normalizeTitleLooseKey(titleNoTag);
+        String n2 = normalizeTitleLooseKey(name);
+        if (TextUtils.isEmpty(t2) || TextUtils.isEmpty(n2)) return false;
+        return t2.contains(n2) || n2.contains(t2);
+    } catch (Throwable ignored) {}
+    return false;
+}
+
+String stripWechatTitleSuffix(String title) {
+    if (title == null) return "";
+    try {
+        String t = title.trim();
+        int p = t.indexOf("[");
+        if (p > 0) t = t.substring(0, p).trim();
+        p = t.indexOf(":");
+        if (p > 0) t = t.substring(0, p).trim();
+        return t;
+    } catch (Throwable ignored) {}
+    return title;
+}
+
+String findTalkerByGroupTitle(String title) {
+    if (TextUtils.isEmpty(title)) return null;
+    String base = stripWechatTitleSuffix(title);
+    if (TextUtils.isEmpty(base)) return null;
+    try {
+        if (sCachedGroupIds != null && sCachedGroupNames != null && sCachedGroupIds.size() == sCachedGroupNames.size()) {
+            for (int i = 0; i < sCachedGroupIds.size(); i++) {
+                String gid = String.valueOf(sCachedGroupIds.get(i));
+                String gname = String.valueOf(sCachedGroupNames.get(i));
+                if (TextUtils.isEmpty(gid) || TextUtils.isEmpty(gname) || "null".equalsIgnoreCase(gname)) continue;
+                if (titleMaybeMatchName(base, gname) || titleMaybeMatchName(title, gname)) return gid;
+            }
+        }
+    } catch (Throwable ignored) {}
+    try {
+        long now = System.currentTimeMillis();
+        if (now - sLastGroupCacheLoadAt < 15000L) return null;
+        sLastGroupCacheLoadAt = now;
+        List groups = getGroupList();
+        if (groups != null) {
+            List names = new ArrayList();
+            List ids = new ArrayList();
+            for (int i = 0; i < groups.size(); i++) {
+                GroupInfo g = (GroupInfo) groups.get(i);
+                if (g == null) continue;
+                String gid = g.getRoomId();
+                String gname = g.getName();
+                if (TextUtils.isEmpty(gid) || TextUtils.isEmpty(gname)) continue;
+                ids.add(gid);
+                names.add(gname);
+                if (titleMaybeMatchName(base, gname) || titleMaybeMatchName(title, gname)) {
+                    sCachedGroupIds = ids;
+                    sCachedGroupNames = names;
+                    return gid;
+                }
+            }
+            sCachedGroupIds = ids;
+            sCachedGroupNames = names;
+        }
     } catch (Throwable ignored) {}
     return null;
 }
@@ -937,12 +1123,19 @@ String extractTalkerFromNotification(Notification n) {
 Object safeInvoke(Object obj, String methodName) {
     if (obj == null || TextUtils.isEmpty(methodName)) return null;
     try {
-        Method[] methods = obj.getClass().getMethods();
+        Class c = obj.getClass();
+        String key = c.getName() + "#" + methodName;
+        Method cached = (Method) sNoArgMethodCache.get(key);
+        if (cached != null) {
+            return cached.invoke(obj);
+        }
+        Method[] methods = c.getMethods();
         for (int i = 0; i < methods.length; i++) {
             Method m = methods[i];
-            if (m.getName().equals(methodName) && m.getParameterTypes().length == 0) {
-                return m.invoke(obj);
-            }
+            if (!m.getName().equals(methodName)) continue;
+            if (m.getParameterTypes().length != 0) continue;
+            sNoArgMethodCache.put(key, m);
+            return m.invoke(obj);
         }
     } catch (Throwable ignored) {}
     return null;
@@ -1084,6 +1277,122 @@ void buildMainUI(final Activity ctx) {
     }
 }
 
+void showRingtonePickStyleDialog(final Activity ctx, final String[] tmpRingtone, final TextView tvRing) {
+    try {
+        final Dialog pickDialog = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
+        pickDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        pickDialog.setCancelable(true);
+
+        FrameLayout mask = new FrameLayout(ctx);
+        mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        mask.setBackgroundColor(Color.parseColor("#66000000"));
+
+        LinearLayout card = new LinearLayout(ctx);
+        card.setOrientation(LinearLayout.VERTICAL);
+        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-1, -2);
+        cardLp.leftMargin = dp(ctx, 24);
+        cardLp.rightMargin = dp(ctx, 24);
+        cardLp.gravity = Gravity.CENTER;
+        card.setLayoutParams(cardLp);
+        card.setPadding(dp(ctx, 16), dp(ctx, 14), dp(ctx, 16), dp(ctx, 12));
+
+        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
+        cardBg.setCornerRadius(dp(ctx, 18));
+        cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
+        card.setBackground(cardBg);
+
+        TextView title = new TextView(ctx);
+        title.setText("选择方式");
+        title.setTextColor(Color.parseColor("#0F172A"));
+        title.setTextSize(17f);
+        title.setTypeface(null, Typeface.BOLD);
+        card.addView(title);
+
+        TextView sub = new TextView(ctx);
+        LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
+        subLp.topMargin = dp(ctx, 6);
+        sub.setLayoutParams(subLp);
+        sub.setText("选择系统铃声或从文件夹导入");
+        sub.setTextColor(Color.parseColor("#64748B"));
+        sub.setTextSize(13f);
+        card.addView(sub);
+
+        LinearLayout btnSys = createRowText(ctx, "选择系统铃声", "推荐 >", false);
+        btnSys.setBackground(roundRect(Color.parseColor("#F1F5F9"), dp(ctx, 12)));
+        LinearLayout.LayoutParams sysLp = new LinearLayout.LayoutParams(-1, -2);
+        sysLp.topMargin = dp(ctx, 12);
+        card.addView(btnSys, sysLp);
+        btnSys.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                try {
+                    Intent intent = new Intent(RingtoneManager.ACTION_RINGTONE_PICKER);
+                    intent.putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_NOTIFICATION);
+                    intent.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true);
+                    intent.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true);
+                    if (!TextUtils.isEmpty(tmpRingtone[0])) intent.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(tmpRingtone[0]));
+                    ctx.startActivityForResult(intent, REQ_PICK_RINGTONE_SYSTEM);
+                } catch (Throwable ignored) {}
+                try { pickDialog.dismiss(); } catch (Throwable ignored) {}
+            }
+        });
+
+        LinearLayout btnFile = createRowText(ctx, "从文件夹选择", "音频文件 >", false);
+        btnFile.setBackground(roundRect(Color.parseColor("#F1F5F9"), dp(ctx, 12)));
+        LinearLayout.LayoutParams fileLp = new LinearLayout.LayoutParams(-1, -2);
+        fileLp.topMargin = dp(ctx, 8);
+        card.addView(btnFile, fileLp);
+        btnFile.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                try {
+                    Intent fileIntent = new Intent(Intent.ACTION_GET_CONTENT);
+                    fileIntent.setType("audio/*");
+                    fileIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                    ctx.startActivityForResult(Intent.createChooser(fileIntent, "选择铃声文件"), REQ_PICK_RINGTONE_FILE);
+                } catch (Throwable ignored) {}
+                try { pickDialog.dismiss(); } catch (Throwable ignored) {}
+            }
+        });
+
+        TextView btnCancel = new TextView(ctx);
+        btnCancel.setText("取消");
+        btnCancel.setTextColor(Color.parseColor("#64748B"));
+        btnCancel.setTextSize(14f);
+        btnCancel.setGravity(Gravity.CENTER);
+        btnCancel.setPadding(dp(ctx, 12), dp(ctx, 11), dp(ctx, 12), dp(ctx, 8));
+        LinearLayout.LayoutParams cancelLp = new LinearLayout.LayoutParams(-1, -2);
+        cancelLp.topMargin = dp(ctx, 6);
+        card.addView(btnCancel, cancelLp);
+        btnCancel.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                try { pickDialog.dismiss(); } catch (Throwable ignored) {}
+            }
+        });
+
+        mask.addView(card);
+        mask.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                try { pickDialog.dismiss(); } catch (Throwable ignored) {}
+            }
+        });
+        card.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+            }
+        });
+
+        pickDialog.setContentView(mask);
+        Window w = pickDialog.getWindow();
+        if (w != null) {
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+            w.setGravity(Gravity.CENTER);
+            w.setDimAmount(0.25f);
+        }
+        pickDialog.show();
+        card.setAlpha(0f);
+        card.setTranslationY(dp(ctx, 14));
+        card.animate().alpha(1f).translationY(0).setDuration(160).start();
+    } catch (Throwable ignored) {}
+}
+
 LinearLayout createRowText(final Activity ctx, String left, String right, boolean neutralRight) {
     LinearLayout row = new LinearLayout(ctx);
     row.setOrientation(LinearLayout.HORIZONTAL);
@@ -1181,8 +1490,29 @@ void showTargetListUI(final Activity ctx) {
                 if (friends != null) {
                     for (int i = 0; i < friends.size(); i++) {
                         FriendInfo f = (FriendInfo) friends.get(i);
-                        friendNames.add(TextUtils.isEmpty(f.getNickname()) ? "未知" : f.getNickname());
-                        friendIds.add(f.getWxid());
+                        String wxid = f.getWxid();
+                        String nick = f.getNickname();
+                        if (TextUtils.isEmpty(nick)) nick = "未知";
+
+                        String remark = "";
+                        try { remark = getFriendRemarkName(wxid); } catch (Throwable ignored) {}
+                        if (remark == null) remark = "";
+                        remark = remark.trim();
+
+                        String nickNorm = nick == null ? "" : nick.trim();
+                        // 某些环境下无备注会返回昵称本身，避免出现“昵称(昵称)”
+                        if (!TextUtils.isEmpty(remark) && remark.equals(nickNorm)) {
+                            remark = "";
+                        }
+
+                        String showName = nick;
+                        if (!TextUtils.isEmpty(remark)) {
+                            // 有备注：昵称+备注；无备注：仅昵称
+                            showName = nick + "(" + remark + ")";
+                        }
+
+                        friendNames.add(showName);
+                        friendIds.add(wxid);
                     }
                 }
                 List groups = getGroupList();
@@ -1335,7 +1665,11 @@ void styleTabChip(TextView tv, boolean active) {
 }
 void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boolean isGroup, final String displayNameRaw, final Set selectedIds, final Runnable onSaved) {
     hideSoftInput(ctx);
-    final String displayName = displayNameRaw.replace("  ✓", "").replace("  [已配置]", "").replace("  [未配置]", "");
+    String displayName = displayNameRaw.replace("  ✓", "").replace("  [已配置]", "").replace("  [未配置]", "");
+    // 仅在配置弹窗内做昵称可见化处理，避免全换行昵称导致标题不可见
+    displayName = displayName.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ');
+    displayName = displayName.replaceAll("\\s+", " ").trim();
+    if (TextUtils.isEmpty(displayName)) displayName = "（无可见昵称）";
 
     Map oldCfg = parseTalkerCfg(getString(CFG_TALKER_CFG_PREFIX + talkerId, ""));
     final boolean[] tmpEnable = {selectedIds.contains(talkerId)};
@@ -1424,12 +1758,7 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
             public void onClick(View v) {
                 globalRingtoneValueView = tvRing;
                 globalRingtoneValueRef = tmpRingtone;
-                Intent intent = new Intent(RingtoneManager.ACTION_RINGTONE_PICKER);
-                intent.putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_NOTIFICATION);
-                intent.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true);
-                intent.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true);
-                if (!TextUtils.isEmpty(tmpRingtone[0])) intent.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(tmpRingtone[0]));
-                ctx.startActivityForResult(intent, 10086);
+                showRingtonePickStyleDialog(ctx, tmpRingtone, tvRing);
             }
         });
         addDarkDivider(ctx, body);
@@ -1949,13 +2278,19 @@ TextView addDarkClickRow(Activity ctx, LinearLayout parent, String title, String
     l.setText(title);
     l.setTextSize(16f);
     l.setTextColor(Color.parseColor("#0F172A"));
-    row.addView(l, new LinearLayout.LayoutParams(0, -2, 1));
+    LinearLayout.LayoutParams lLp = new LinearLayout.LayoutParams(-2, -2);
+    row.addView(l, lLp);
 
     TextView r = new TextView(ctx);
     r.setText(right);
     r.setTextSize(14f);
     r.setTextColor(Color.parseColor("#2563EB"));
-    row.addView(r);
+    r.setSingleLine(true);
+    r.setEllipsize(TextUtils.TruncateAt.END);
+    r.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+    LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(0, -2, 1);
+    rLp.leftMargin = dp(ctx, 10);
+    row.addView(r, rLp);
 
     parent.addView(row);
     return r;
@@ -2076,43 +2411,142 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
         }
     }
 
+    final List fNameStr = new ArrayList();
+    final List fNameLower = new ArrayList();
+    final List fIdStr = new ArrayList();
+    for (int i = 0; i < fNames.size(); i++) {
+        String n = String.valueOf(fNames.get(i));
+        String id = String.valueOf(fIds.get(i));
+        fNameStr.add(n);
+        fNameLower.add(n.toLowerCase());
+        fIdStr.add(id);
+    }
+
+    final List gNameStr = new ArrayList();
+    final List gNameLower = new ArrayList();
+    final List gIdStr = new ArrayList();
+    for (int i = 0; i < gNames.size(); i++) {
+        String n = String.valueOf(gNames.get(i));
+        String id = String.valueOf(gIds.get(i));
+        gNameStr.add(n);
+        gNameLower.add(n.toLowerCase());
+        gIdStr.add(id);
+    }
+
     final List currentDisplayNames = new ArrayList();
     final List currentDisplayIds = new ArrayList();
     final List currentDisplayIsGroup = new ArrayList();
 
+    final TextView tvLoading = new TextView(ctx);
+    tvLoading.setText("正在加载会话...");
+    tvLoading.setTextSize(12f);
+    tvLoading.setTextColor(Color.parseColor("#64748B"));
+    tvLoading.setPadding(dp(ctx, 12), dp(ctx, 6), dp(ctx, 12), dp(ctx, 6));
+    tvLoading.setVisibility(View.GONE);
+    root.addView(tvLoading);
+
+    final ArrayAdapter adapter = new ArrayAdapter(ctx, android.R.layout.simple_list_item_1, currentDisplayNames);
+    lv.setAdapter(adapter);
+    try { lv.setFastScrollEnabled(true); } catch (Throwable ignored) {}
+
+    final Handler uiHandler = new Handler(Looper.getMainLooper());
+    final Runnable[] pendingSearch = new Runnable[1];
+    final int[] filterVersion = new int[]{0};
+
     final Runnable updateList = new Runnable() {
         public void run() {
-            currentDisplayNames.clear();
-            currentDisplayIds.clear();
-            currentDisplayIsGroup.clear();
-            String kw = etSearch.getText().toString().toLowerCase();
-            int checkedId = rg.getCheckedRadioButtonId();
+            final String kw = etSearch.getText().toString().toLowerCase();
+            final int checkedId = rg.getCheckedRadioButtonId();
+            final int version = ++filterVersion[0];
 
-            if (checkedId == 1 || checkedId == 3) {
-                for (int i = 0; i < fNames.size(); i++) {
-                    String name = String.valueOf(fNames.get(i));
-                    if (kw.isEmpty() || name.toLowerCase().contains(kw)) {
-                        String talkerId = String.valueOf(fIds.get(i));
+            // 首屏空关键字时先给一批预览，避免“空白2~3秒”
+            boolean isEmptyKw = TextUtils.isEmpty(kw);
+            if (isEmptyKw) {
+                currentDisplayNames.clear();
+                currentDisplayIds.clear();
+                currentDisplayIsGroup.clear();
+
+                int previewLimit = 120;
+                int added = 0;
+
+                if (checkedId == 1 || checkedId == 3) {
+                    for (int i = 0; i < fNameStr.size() && added < previewLimit; i++) {
+                        String name = String.valueOf(fNameStr.get(i));
+                        String talkerId = String.valueOf(fIdStr.get(i));
                         currentDisplayNames.add(selectedIds.contains(talkerId) ? (name + "  [已配置]") : name);
                         currentDisplayIds.add(talkerId);
                         currentDisplayIsGroup.add(Boolean.FALSE);
+                        added++;
                     }
                 }
-            }
-            if (checkedId == 2 || checkedId == 3) {
-                for (int i = 0; i < gNames.size(); i++) {
-                    String name = String.valueOf(gNames.get(i));
-                    if (kw.isEmpty() || name.toLowerCase().contains(kw)) {
-                        String talkerId = String.valueOf(gIds.get(i));
+                if ((checkedId == 2 || checkedId == 3) && added < previewLimit) {
+                    for (int i = 0; i < gNameStr.size() && added < previewLimit; i++) {
+                        String name = String.valueOf(gNameStr.get(i));
+                        String talkerId = String.valueOf(gIdStr.get(i));
                         currentDisplayNames.add(selectedIds.contains(talkerId) ? (name + "  [已配置]") : name);
                         currentDisplayIds.add(talkerId);
                         currentDisplayIsGroup.add(Boolean.TRUE);
+                        added++;
                     }
                 }
+                sortConfiguredFirst(currentDisplayNames, currentDisplayIds, currentDisplayIsGroup, selectedIds);
+                adapter.notifyDataSetChanged();
             }
 
-            ArrayAdapter adapter = new ArrayAdapter(ctx, android.R.layout.simple_list_item_1, currentDisplayNames);
-            lv.setAdapter(adapter);
+            tvLoading.setVisibility(View.VISIBLE);
+            tvLoading.setText("正在加载会话...");
+
+            new Thread(new Runnable() {
+                public void run() {
+                    final List tmpNames = new ArrayList();
+                    final List tmpIds = new ArrayList();
+                    final List tmpIsGroup = new ArrayList();
+
+                    if (checkedId == 1 || checkedId == 3) {
+                        for (int i = 0; i < fNameStr.size(); i++) {
+                            String nameLower = String.valueOf(fNameLower.get(i));
+                            if (kw.isEmpty() || nameLower.contains(kw)) {
+                                String name = String.valueOf(fNameStr.get(i));
+                                String talkerId = String.valueOf(fIdStr.get(i));
+                                tmpNames.add(selectedIds.contains(talkerId) ? (name + "  [已配置]") : name);
+                                tmpIds.add(talkerId);
+                                tmpIsGroup.add(Boolean.FALSE);
+                            }
+                        }
+                    }
+                    if (checkedId == 2 || checkedId == 3) {
+                        for (int i = 0; i < gNameStr.size(); i++) {
+                            String nameLower = String.valueOf(gNameLower.get(i));
+                            if (kw.isEmpty() || nameLower.contains(kw)) {
+                                String name = String.valueOf(gNameStr.get(i));
+                                String talkerId = String.valueOf(gIdStr.get(i));
+                                tmpNames.add(selectedIds.contains(talkerId) ? (name + "  [已配置]") : name);
+                                tmpIds.add(talkerId);
+                                tmpIsGroup.add(Boolean.TRUE);
+                            }
+                        }
+                    }
+                    sortConfiguredFirst(tmpNames, tmpIds, tmpIsGroup, selectedIds);
+
+                    uiHandler.post(new Runnable() {
+                        public void run() {
+                            if (version != filterVersion[0]) return;
+                            if (ctx.isFinishing() || ctx.isDestroyed()) return;
+
+                            currentDisplayNames.clear();
+                            currentDisplayIds.clear();
+                            currentDisplayIsGroup.clear();
+
+                            currentDisplayNames.addAll(tmpNames);
+                            currentDisplayIds.addAll(tmpIds);
+                            currentDisplayIsGroup.addAll(tmpIsGroup);
+                            adapter.notifyDataSetChanged();
+
+                            tvLoading.setVisibility(View.GONE);
+                        }
+                    });
+                }
+            }).start();
         }
     };
     rg.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
@@ -2122,7 +2556,13 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
     etSearch.addTextChangedListener(new TextWatcher() {
         public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
         public void onTextChanged(CharSequence s, int start, int before, int count) {}
-        public void afterTextChanged(Editable s) { updateList.run(); }
+        public void afterTextChanged(Editable s) {
+            if (pendingSearch[0] != null) uiHandler.removeCallbacks(pendingSearch[0]);
+            pendingSearch[0] = new Runnable() {
+                public void run() { updateList.run(); }
+            };
+            uiHandler.postDelayed(pendingSearch[0], 60);
+        }
     });
 
     lv.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -2146,9 +2586,12 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
     }
     listDialog.setContentView(root);
     applyDialogSize(listDialog, 0.96f, 0.90f);
-    etSearch.postDelayed(new Runnable() {
-        public void run() { showSoftInputForView(ctx, etSearch); }
-    }, 120);
+    etSearch.clearFocus();
+    try {
+        if (listDialog.getWindow() != null) {
+            listDialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+    } catch (Throwable ignored) {}
 
     tvCancel.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) { listDialog.dismiss(); }
@@ -2190,6 +2633,46 @@ void addSwitchRow(Activity ctx, LinearLayout parent, String title, boolean check
     row.addView(s);
     
     parent.addView(row);
+}
+
+void sortConfiguredFirst(List names, List ids, List isGroups, Set selectedIds) {
+    if (names == null || ids == null || isGroups == null || selectedIds == null) return;
+    int n = ids.size();
+    if (n <= 1 || selectedIds.isEmpty()) return;
+    if (names.size() != n || isGroups.size() != n) return;
+
+    List idxConfigured = new ArrayList();
+    List idxUnconfigured = new ArrayList();
+    for (int i = 0; i < n; i++) {
+        String talkerId = String.valueOf(ids.get(i));
+        if (selectedIds.contains(talkerId)) idxConfigured.add(Integer.valueOf(i));
+        else idxUnconfigured.add(Integer.valueOf(i));
+    }
+    if (idxConfigured.isEmpty() || idxUnconfigured.isEmpty()) return;
+
+    List sortedNames = new ArrayList(n);
+    List sortedIds = new ArrayList(n);
+    List sortedIsGroups = new ArrayList(n);
+
+    for (int i = 0; i < idxConfigured.size(); i++) {
+        int idx = ((Integer) idxConfigured.get(i)).intValue();
+        sortedNames.add(names.get(idx));
+        sortedIds.add(ids.get(idx));
+        sortedIsGroups.add(isGroups.get(idx));
+    }
+    for (int i = 0; i < idxUnconfigured.size(); i++) {
+        int idx = ((Integer) idxUnconfigured.get(i)).intValue();
+        sortedNames.add(names.get(idx));
+        sortedIds.add(ids.get(idx));
+        sortedIsGroups.add(isGroups.get(idx));
+    }
+
+    names.clear();
+    ids.clear();
+    isGroups.clear();
+    names.addAll(sortedNames);
+    ids.addAll(sortedIds);
+    isGroups.addAll(sortedIsGroups);
 }
 
 LinearLayout addClickableRowCustom(Activity ctx, LinearLayout parent, String title, View rightView) {

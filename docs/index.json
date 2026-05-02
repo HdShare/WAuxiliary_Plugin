@@ -3,6 +3,14 @@
   "totalPlugins": 53,
   "plugins": [
     {
+      "name": "自定义通知配置版",
+      "author": "。。&周杰伦",
+      "version": "1.2.0",
+      "updateTime": 20260501,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/自定义通知配置版",
+      "downloadUrl": "https://GitFolderDownloader.github.io/?=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&name=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.2.0"
+    },
+    {
       "name": "元启Ai回复",
       "author": "神明佑我",
       "version": 2,
@@ -25,14 +33,6 @@
       "updateTime": 20260429,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/自动抢红包(模拟手动抢版)",
       "downloadUrl": "https://GitFolderDownloader.github.io/?=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%8A%A8%E6%8A%A2%E7%BA%A2%E5%8C%85(%E6%A8%A1%E6%8B%9F%E6%89%8B%E5%8A%A8%E6%8A%A2%E7%89%88)&name=%E8%87%AA%E5%8A%A8%E6%8A%A2%E7%BA%A2%E5%8C%85(%E6%A8%A1%E6%8B%9F%E6%89%8B%E5%8A%A8%E6%8A%A2%E7%89%88)_1.0.2"
-    },
-    {
-      "name": "自定义通知配置版",
-      "author": "。。&周杰伦",
-      "version": "1.1.0",
-      "updateTime": 20260429,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/自定义通知配置版",
-      "downloadUrl": "https://GitFolderDownloader.github.io/?=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&name=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.1.0"
     },
     {
       "name": "AI绘图助手",

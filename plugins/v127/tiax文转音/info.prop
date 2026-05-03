@@ -1,5 +1,4 @@
 name=TIAX文转音（DC）
-version=3.5
 author=Datamaniac Chaser
+version=3.5
 updateTime = 20260503
-description=文字转语音插件。输入框输入"#tts 内容"点击发送自动转语音。

@@ -59,7 +59,7 @@ function getPluginInfo(pluginPath) {
         version: props.version,
         updateTime: props.updateTime,
         homeLink: homeLink,
-        downloadUrl: `https://GitFolderDownloader.github.io/?=${encodedHomeLink}&name=${encodedFileName}`,
+        downloadUrl: `https://download-directory.github.io/?url=${encodedHomeLink}&filename=${encodedFileName}`,
     };
 }
 

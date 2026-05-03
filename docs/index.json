@@ -1,7 +1,15 @@
 {
-  "generatedAt": "2026-05-02",
+  "generatedAt": "2026-05-03",
   "totalPlugins": 53,
   "plugins": [
+    {
+      "name": "tiax文转音",
+      "author": "Datamaniac Chaser",
+      "version": "3.5",
+      "updateTime": 20260503,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/tiax文转音",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Ftiax%25E6%2596%2587%25E8%25BD%25AC%25E9%259F%25B3"
+    },
     {
       "name": "自定义通知配置版",
       "author": "。。&周杰伦",

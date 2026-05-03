@@ -7,7 +7,8 @@ hero:
 
 features:
 
-- title: tiax文转音@Datamaniac Chaser
+
+  - title: tiax文转音@Datamaniac Chaser
     details: 版本 3.5 | 更新于 20260503
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Ftiax%25E6%2596%2587%25E8%25BD%25AC%25E9%259F%25B3
 

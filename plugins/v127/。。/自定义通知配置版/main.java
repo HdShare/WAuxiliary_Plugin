@@ -209,6 +209,11 @@ void onUnload() {
     unregisterQuickReplyReceiver();
 }
 
+
+void openSettings(){
+showSettingsUI();
+}
+
 boolean onClickSendBtn(String text) {
     if ("通知设置".equals(text)) {
         showSettingsUI();
@@ -794,6 +799,30 @@ boolean shouldSuppressByRules(Object msg, String talker, String content, Map cfg
     return false;
 }
 
+boolean isSystemMessageLike(Object msg, String talker, String content, int type) {
+    try {
+        Object sysObj = safeInvokeAny(msg, new String[]{"isSystem", "isSystemMsg", "isSysMsg"});
+        if (asBool(sysObj)) return true;
+    } catch (Throwable ignored) {}
+    try {
+        // 微信常见系统消息类型：10000（系统文本）、10002（撤回/系统事件）
+        if (type == 10000 || type == 10002) return true;
+    } catch (Throwable ignored) {}
+    try {
+        String tk = TextUtils.isEmpty(talker) ? "" : talker.trim().toLowerCase();
+        if ("weixin".equals(tk) || "fmessage".equals(tk) || "medianote".equals(tk)
+                || "notifymessage".equals(tk) || "notification_messages".equals(tk)
+                || "qqmail".equals(tk) || "weixinreminder".equals(tk)) {
+            return true;
+        }
+    } catch (Throwable ignored) {}
+    try {
+        String c = TextUtils.isEmpty(content) ? "" : content.toLowerCase();
+        if (c.contains("<sysmsg") || c.contains("系统消息") || c.contains("撤回了一条消息")) return true;
+    } catch (Throwable ignored) {}
+    return false;
+}
+
 String getRingtoneDisplayName(Context ctx, String uriStr) {
     if (TextUtils.isEmpty(uriStr)) return "跟随系统";
     try {
@@ -992,6 +1021,9 @@ void onHandleMsg(Object msg) {
         if (TextUtils.isEmpty(talker)) talker = resolveTalkerForMsg(msg, content);
         Object typeObj = safeInvoke(msg, "getType");
         int type = (typeObj instanceof Number) ? ((Number) typeObj).intValue() : 1;
+        if (isSystemMessageLike(msg, talker, content, type)) {
+            return;
+        }
 
         // 【逻辑优化】使用 Set 的精确匹配
         if (!cacheTargetSet.contains(talker)) {

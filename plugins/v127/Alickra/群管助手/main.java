@@ -164,7 +164,7 @@ void setupBshBridge() {
 
 void handleActivate(String groupWxid, String sender, String code) {
     if (code == null || code.isEmpty()) {
-        sendText(groupWxid, "用法：#激活 邀请码");
+        sendText(groupWxid, "📝 用法：#激活 你的邀请码");
         return;
     }
 
@@ -272,7 +272,7 @@ void handleActivate(String groupWxid, String sender, String code) {
                 putString("activated", "true");
                 putString("auth_token", token);
 
-                sendText(groupWxid, "激活成功！完整版功能已启用");
+                sendText(groupWxid, "🎉 激活成功！完整版功能已启用，重启后自动加载");
             } catch (Exception e) {
                 sendText(groupWxid, "激活失败：" + e.getMessage());
             }
@@ -325,7 +325,7 @@ void handleCommunityMsg(Object msgInfoBean) {
         for (int i = 0; i < bannedWords.length(); i++) {
             String word = bannedWords.optString(i, "");
             if (!word.isEmpty() && content.contains(word)) {
-                sendText(talker, "[AtWx=" + sender + "] 请注意用词，违禁词：" + word);
+                sendText(talker, "[AtWx=" + sender + "] ⚠️ 请注意用词规范");
                 return;
             }
         }
@@ -372,26 +372,26 @@ void handleCommunityCommand(String talker, String sender, String cmd, String arg
         return;
     }
     if ("设置欢迎词".equals(cmd)) {
-        if (!isSuperAdmin(sender)) { sendText(talker, "权限不足"); return; }
-        if (arg.isEmpty()) { sendText(talker, "用法：#设置欢迎词 欢迎{昵称}加入本群"); return; }
+        if (!isSuperAdmin(sender)) { sendText(talker, "⚠️ 权限不足，仅管理员可操作"); return; }
+        if (arg.isEmpty()) { sendText(talker, "📝 用法：#设置欢迎词 欢迎{昵称}加入本群"); return; }
         welcomeTemplate = arg;
         putString("welcome_template", arg);
-        sendText(talker, "欢迎词已更新");
+        sendText(talker, "✅ 欢迎词已更新");
         return;
     }
     if ("添加违禁词".equals(cmd)) {
-        if (!isSuperAdmin(sender)) { sendText(talker, "权限不足"); return; }
-        if (arg.isEmpty()) { sendText(talker, "用法：#添加违禁词 词1 词2"); return; }
+        if (!isSuperAdmin(sender)) { sendText(talker, "⚠️ 权限不足，仅管理员可操作"); return; }
+        if (arg.isEmpty()) { sendText(talker, "📝 用法：#添加违禁词 词1 词2（空格分隔）"); return; }
         String[] words = arg.split("\\s+");
         for (int i = 0; i < words.length; i++) {
             bannedWords.put(words[i]);
         }
         putString("banned_words", bannedWords.toString());
-        sendText(talker, "已添加 " + words.length + " 个违禁词");
+        sendText(talker, "✅ 已添加 " + words.length + " 个违禁词");
         return;
     }
     if ("删除违禁词".equals(cmd)) {
-        if (!isSuperAdmin(sender)) { sendText(talker, "权限不足"); return; }
+        if (!isSuperAdmin(sender)) { sendText(talker, "⚠️ 权限不足，仅管理员可操作"); return; }
         JSONArray newArr = new JSONArray();
         for (int i = 0; i < bannedWords.length(); i++) {
             String w = bannedWords.optString(i, "");
@@ -399,51 +399,51 @@ void handleCommunityCommand(String talker, String sender, String cmd, String arg
         }
         bannedWords = newArr;
         putString("banned_words", bannedWords.toString());
-        sendText(talker, "已删除违禁词：" + arg);
+        sendText(talker, "✅ 已删除违禁词：" + arg);
         return;
     }
     if ("违禁词列表".equals(cmd)) {
-        if (!isSuperAdmin(sender)) { sendText(talker, "权限不足"); return; }
+        if (!isSuperAdmin(sender)) { sendText(talker, "⚠️ 权限不足，仅管理员可操作"); return; }
         if (bannedWords.length() == 0) {
-            sendText(talker, "违禁词列表为空");
+            sendText(talker, "📋 违禁词列表为空");
         } else {
-            StringBuilder sb = new StringBuilder("违禁词列表：\n");
+            StringBuilder sb = new StringBuilder("🚫 违禁词列表（共 " + bannedWords.length() + " 个）\n━━━━━━━━━━━━\n");
             for (int i = 0; i < bannedWords.length(); i++) {
-                if (i > 0) sb.append("、");
-                sb.append(bannedWords.optString(i));
+                sb.append("  ").append(i + 1).append(". ").append(bannedWords.optString(i)).append("\n");
             }
             sendText(talker, sb.toString());
         }
         return;
     }
     if ("添加回复".equals(cmd)) {
-        if (!isSuperAdmin(sender)) { sendText(talker, "权限不足"); return; }
-        if (!arg.contains("=>")) { sendText(talker, "用法：#添加回复 关键词=>内容"); return; }
+        if (!isSuperAdmin(sender)) { sendText(talker, "⚠️ 权限不足，仅管理员可操作"); return; }
+        if (!arg.contains("=>")) { sendText(talker, "📝 用法：#添加回复 关键词=>回复内容"); return; }
         String[] parts = arg.split("=>", 2);
         try {
             keywordReplies.put(parts[0].trim(), parts[1].trim());
             putString("keyword_replies", keywordReplies.toString());
-            sendText(talker, "已添加关键词回复：" + parts[0].trim());
+            sendText(talker, "✅ 已添加关键词回复：" + parts[0].trim());
         } catch (JSONException e) { /* ignore */ }
         return;
     }
     if ("删除回复".equals(cmd)) {
-        if (!isSuperAdmin(sender)) { sendText(talker, "权限不足"); return; }
+        if (!isSuperAdmin(sender)) { sendText(talker, "⚠️ 权限不足，仅管理员可操作"); return; }
         keywordReplies.remove(arg);
         putString("keyword_replies", keywordReplies.toString());
-        sendText(talker, "已删除关键词回复：" + arg);
+        sendText(talker, "✅ 已删除关键词回复：" + arg);
         return;
     }
     if ("回复列表".equals(cmd)) {
-        if (!isSuperAdmin(sender)) { sendText(talker, "权限不足"); return; }
+        if (!isSuperAdmin(sender)) { sendText(talker, "⚠️ 权限不足，仅管理员可操作"); return; }
         if (keywordReplies.length() == 0) {
-            sendText(talker, "回复列表为空");
+            sendText(talker, "📋 回复列表为空");
         } else {
-            StringBuilder sb = new StringBuilder("回复列表：\n");
+            StringBuilder sb = new StringBuilder("💬 关键词回复列表\n━━━━━━━━━━━━\n");
             java.util.Iterator keys = keywordReplies.keys();
+            int idx = 1;
             while (keys.hasNext()) {
                 String k = (String) keys.next();
-                sb.append(k).append(" => ").append(keywordReplies.optString(k)).append("\n");
+                sb.append("  ").append(idx++).append(". ").append(k).append(" → ").append(keywordReplies.optString(k)).append("\n");
             }
             sendText(talker, sb.toString());
         }
@@ -451,7 +451,7 @@ void handleCommunityCommand(String talker, String sender, String cmd, String arg
     }
 
     if (isAdvancedCommand(cmd)) {
-        sendText(talker, "此功能需要激活完整版，请发送 #激活 邀请码");
+        sendText(talker, "🔒 此功能需要激活完整版\n💡 发送 #激活 邀请码 解锁");
         return;
     }
 }
@@ -466,21 +466,34 @@ boolean isAdvancedCommand(String cmd) {
 }
 
 void showCommunityHelp(String talker) {
-    String help = "群管助手 v1.0.0\n"
-        + "【本地功能】\n"
-        + "#帮助 — 显示此列表\n"
-        + "#设置欢迎词 内容 — 设置欢迎消息\n"
-        + "#添加违禁词 词1 词2 — 添加违禁词\n"
-        + "#删除违禁词 词 — 删除违禁词\n"
-        + "#违禁词列表 — 查看违禁词\n"
-        + "#添加回复 关键词=>内容 — 添加关键词回复\n"
-        + "#删除回复 关键词 — 删除关键词回复\n"
-        + "#回复列表 — 查看关键词回复\n"
-        + "\n【完整版功能（需激活）】\n"
-        + "#踢 @用户 | #加黑 @用户 | #禁言 | #解禁\n"
-        + "#设管理 @用户 | #删管理 | #自动审核 开/关\n"
-        + "#签到 | #积分 | #排行榜 | #抽签 | #随机选人\n"
-        + "\n发送 #激活 邀请码 启用完整版";
+    String help = "━━━━━━━━━━━━━━━━\n"
+        + "  🛡️ 群管助手 v1.0.0\n"
+        + "━━━━━━━━━━━━━━━━\n"
+        + "\n"
+        + "📋 基础命令\n"
+        + "┌──────────────────\n"
+        + "│ #帮助          查看此菜单\n"
+        + "│ #设置欢迎词    设置入群欢迎语\n"
+        + "│ #添加违禁词    添加违禁词（空格分隔）\n"
+        + "│ #删除违禁词    删除指定违禁词\n"
+        + "│ #违禁词列表    查看当前违禁词\n"
+        + "│ #添加回复      关键词=>回复内容\n"
+        + "│ #删除回复      删除指定回复规则\n"
+        + "│ #回复列表      查看所有回复规则\n"
+        + "└──────────────────\n"
+        + "\n"
+        + "🔑 完整版命令（需激活）\n"
+        + "┌──────────────────\n"
+        + "│ #签到    每日签到得积分\n"
+        + "│ #积分    查看我的积分\n"
+        + "│ #排行榜  积分排行\n"
+        + "│ #踢      踢出群成员\n"
+        + "│ #拉黑    拉黑用户\n"
+        + "│ #设管理  设置群管理员\n"
+        + "│ #删管理  移除群管理员\n"
+        + "└──────────────────\n"
+        + "\n"
+        + "💡 发送 #激活 邀请码 解锁完整版";
     sendText(talker, help);
 }
 

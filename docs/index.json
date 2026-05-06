@@ -2,6 +2,14 @@
   "generatedAt": "2026-05-06",
   "totalPlugins": 55,
   "plugins": [
+        {
+      "name": "TIAX文转音（DC）",
+      "author": "Datamaniac Chaser",
+      "version": 3.6,
+      "updateTime": 20260506,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Datamaniac Chaser/tiax文转音",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FDatamaniac%20Chaser%2Ftiax%E6%96%87%E8%BD%AC%E9%9F%B3&filename=TIAX%E6%96%87%E8%BD%AC%E9%9F%B3%EF%BC%88DC%EF%BC%89_3.5"
+    },
     {
       "name": "群管助手",
       "author": "Alickra",
@@ -33,14 +41,6 @@
       "updateTime": 20260504,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/关键词通知",
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%85%B3%E9%94%AE%E8%AF%8D%E9%80%9A%E7%9F%A5&filename=%E5%85%B3%E9%94%AE%E8%AF%8D%E9%80%9A%E7%9F%A5_2.0.0"
-    },
-    {
-      "name": "TIAX文转音（DC）",
-      "author": "Datamaniac Chaser",
-      "version": 3.5,
-      "updateTime": 20260503,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Datamaniac Chaser/tiax文转音",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FDatamaniac%20Chaser%2Ftiax%E6%96%87%E8%BD%AC%E9%9F%B3&filename=TIAX%E6%96%87%E8%BD%AC%E9%9F%B3%EF%BC%88DC%EF%BC%89_3.5"
     },
     {
       "name": "元启Ai回复",

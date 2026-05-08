@@ -1,7 +1,7 @@
 # 其他方法
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.7.r1368 版本
+本文档适用于 WAuxiliary 最新版本
 :::
 
 ## 执行

@@ -13,8 +13,9 @@ import android.view.inputmethod.*;
 import android.widget.*;
 import java.lang.reflect.Method;
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
@@ -38,7 +39,6 @@ import me.hd.wauxv.data.bean.info.GroupInfo;
 
 // ================= 配置常量 =================
 String CFG_TARGETS = "jay_cfg_targets_v7";
-String CFG_MODE = "jay_cfg_mode_v7";
 String CFG_VIBRATE = "jay_cfg_vibrate_v7";
 String CFG_SOUND = "jay_cfg_sound_v7";
 String CFG_SHOW_DETAIL = "jay_cfg_detail_v7";
@@ -56,7 +56,6 @@ int REQ_PICK_RINGTONE_SYSTEM = 10086;
 int REQ_PICK_RINGTONE_FILE = 10087;
 
 // ================= 内存缓存 =================
-int cacheMode = 1;
 boolean cacheVibrate = true;
 boolean cacheSound = true;
 boolean cacheShowDetail = true;
@@ -78,23 +77,95 @@ long lastManualRingAt = 0L;
 BroadcastReceiver quickReplyReceiver = null;
 boolean quickReplyReceiverRegistered = false;
 
-// 【安全优化2】采用线程安全的 CopyOnWriteArrayList，防止读写并发导致微信崩溃
-List targetNameList = new CopyOnWriteArrayList();
 Map sNoArgMethodCache = new ConcurrentHashMap();
+Set sNoArgMethodMissCache = Collections.synchronizedSet(new HashSet());
+Map sTitleNormCache = Collections.synchronizedMap(new HashMap());
+int sTitleNormCacheMax = 256;
+Map sGroupTitleTalkerCache = Collections.synchronizedMap(new HashMap());
+long sGroupTitleTalkerCacheTtlMs = 45000L;
+int sGroupTitleTalkerCacheMax = 128;
+final Handler sMainHandler = new Handler(Looper.getMainLooper());
+ExecutorService sQuickReplyExecutor = Executors.newSingleThreadExecutor();
 
 // 全局联系人缓存 (提速)
 List sCachedFriendNames = null;
 List sCachedFriendIds = null;
 List sCachedGroupNames = null;
 List sCachedGroupIds = null;
-long sLastGroupCacheLoadAt = 0L;
+long sLastWarmupAt = 0L;
+boolean sNotifyHookInstalled = false;
+boolean sActivityResultHookInstalled = false;
+String sBootNonce = "";
+long sLastAutoReloadAt = 0L;
 
 // ================= 生命周期 =================
+void warmupTalkerChannelsOnce() {
+    try {
+        if (Build.VERSION.SDK_INT < 26) return;
+        NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        if (cacheTargetSet == null || cacheTargetSet.isEmpty()) return;
+
+        Object[] ids = cacheTargetSet.toArray();
+        for (int i = 0; i < ids.length; i++) {
+            String talker = String.valueOf(ids[i]);
+            if (TextUtils.isEmpty(talker)) continue;
+
+            Map cfg = getTalkerCfg(talker);
+            int talkerMode = cfgGetInt(cfg, "mode", 1);
+            if (talkerMode == 0) continue;
+
+            boolean talkerVibrate = cfgGetBool(cfg, "vibrate", cacheVibrate);
+            boolean talkerSound = cfgGetBool(cfg, "sound", cacheSound);
+            String talkerRing = cfgGet(cfg, "ringtone", "");
+            talkerRing = TextUtils.isEmpty(talkerRing) ? "" : talkerRing;
+
+            boolean useManualCustomSound = talkerSound && !TextUtils.isEmpty(talkerRing);
+            String sTag = talkerSound ? (useManualCustomSound ? "M" : "S") : "N";
+            String vTag = talkerVibrate ? "V" : "N";
+            String talkerChannelId = "jay_chn_v9_" + sTag + "_" + vTag + "_" + talkerRing.hashCode();
+
+            ensureNotifyChannel(nm, talkerChannelId, talkerVibrate, useManualCustomSound ? false : talkerSound, talkerRing);
+        }
+    } catch (Throwable ignored) {}
+}
+
 void onLoad() {
+    try { sBootNonce = String.valueOf(System.currentTimeMillis()); } catch (Throwable ignored) { sBootNonce = "0"; }
     loadConfigToCache();
     hookSystemNotification();
     hookActivityResultForRingtone();
     registerQuickReplyReceiver();
+
+    // 延后做名称预热，避开插件打开瞬间卡顿
+    try {
+        sMainHandler.postDelayed(new Runnable() {
+            public void run() {
+                try {
+                    loadConfigToCache();
+                } catch (Throwable ignored) {}
+            }
+        }, 600);
+    } catch (Throwable ignored) {}
+
+    // 延后预热已配置会话的通知通道（仅一次，避免重复重建引入竞态）
+    try {
+        sMainHandler.postDelayed(new Runnable() {
+            public void run() {
+                warmupTalkerChannelsOnce();
+            }
+        }, 1200);
+    } catch (Throwable ignored) {}
+}
+
+void ensureConfigLoadedForRuntime() {
+    try {
+        if (!cacheTargetSet.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        if (now - sLastAutoReloadAt < 1200L) return;
+        sLastAutoReloadAt = now;
+        loadConfigToCache();
+    } catch (Throwable ignored) {}
 }
 
 void onUnload() {
@@ -121,13 +192,26 @@ void onUnload() {
     sCachedGroupIds = null;
     sLastGroupCacheLoadAt = 0L;
     cacheTargetSet.clear();
-    targetNameList.clear();
     cacheTalkerCfgMap.clear();
     sNoArgMethodCache.clear();
+    try { sNoArgMethodMissCache.clear(); } catch (Throwable ignored) {}
+    try { sTitleNormCache.clear(); } catch (Throwable ignored) {}
+    try { sGroupTitleTalkerCache.clear(); } catch (Throwable ignored) {}
+    try {
+        if (sQuickReplyExecutor != null) {
+            sQuickReplyExecutor.shutdownNow();
+        }
+    } catch (Throwable ignored) {}
+    sQuickReplyExecutor = Executors.newSingleThreadExecutor();
     globalRingtoneValueView = null;
     globalRingtoneValueRef = null;
     globalSettingActivity = null;
     unregisterQuickReplyReceiver();
+}
+
+
+void openSettings(){
+showSettingsUI();
 }
 
 boolean onClickSendBtn(String text) {
@@ -140,7 +224,6 @@ boolean onClickSendBtn(String text) {
 
 void loadConfigToCache() {
     String cacheTargetsStr = getString(CFG_TARGETS, "");
-    cacheMode = getInt(CFG_MODE, 1);
     cacheVibrate = getBoolean(CFG_VIBRATE, true);
     cacheSound = getBoolean(CFG_SOUND, true);
     cacheShowDetail = getBoolean(CFG_SHOW_DETAIL, true);
@@ -163,7 +246,18 @@ void loadConfigToCache() {
     for (int i = 0; i < targetArr.length; i++) {
         String talkerId = String.valueOf(targetArr[i]);
         String rawCfg = getString(CFG_TALKER_CFG_PREFIX + talkerId, "");
-        cacheTalkerCfgMap.put(talkerId, parseTalkerCfg(rawCfg));
+        Map one = parseTalkerCfg(rawCfg);
+        try {
+            String oldRing = cfgGet(one, "ringtone", "");
+            if (!TextUtils.isEmpty(oldRing)) {
+                String newRing = freezeRingtoneUri(oldRing);
+                if (!TextUtils.isEmpty(newRing) && !newRing.equals(oldRing)) {
+                    one.put("ringtone", newRing);
+                    putString(CFG_TALKER_CFG_PREFIX + talkerId, encodeTalkerCfg(one));
+                }
+            }
+        } catch (Throwable ignored) {}
+        cacheTalkerCfgMap.put(talkerId, one);
     }
     
     String sTag = cacheSound ? "S" : "N";
@@ -171,22 +265,6 @@ void loadConfigToCache() {
     currentChannelId = "jay_chn_v9_" + sTag + "_" + vTag;
     rebuildNotificationChannel();
     
-    new Thread(new Runnable() {
-        public void run() {
-            try {
-                if (cacheTargetSet.isEmpty()) return;
-                List tempNames = new ArrayList();
-                Object[] ids = cacheTargetSet.toArray();
-                for (int i = 0; i < ids.length; i++) {
-                    String id = (String) ids[i];
-                    String name = resolveTalkerNameForMatch(id);
-                    if (!TextUtils.isEmpty(name)) tempNames.add(name.trim());
-                }
-                targetNameList.clear();
-                targetNameList.addAll(tempNames); // 线程安全写入
-            } catch (Throwable ignored) {}
-        }
-    }).start();
 }
 
 void registerQuickReplyReceiver() {
@@ -197,17 +275,28 @@ void registerQuickReplyReceiver() {
                 try {
                     if (intent == null) return;
                     if (!ACTION_QUICK_REPLY.equals(intent.getAction())) return;
-                    String talker = intent.getStringExtra(EXTRA_TALKER);
+                    final String talker = intent.getStringExtra(EXTRA_TALKER);
                     if (TextUtils.isEmpty(talker)) return;
                     Bundle results = RemoteInput.getResultsFromIntent(intent);
                     CharSequence cs = null;
                     if (results != null) cs = results.getCharSequence("key_reply_content");
                     if (cs == null) cs = intent.getCharSequenceExtra("key_reply_content");
-                    String reply = cs == null ? "" : cs.toString().trim();
+                    final String reply = cs == null ? "" : cs.toString().trim();
                     if (TextUtils.isEmpty(reply)) return;
-                    sendText(talker, reply);
-                    NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (nm != null) nm.cancel(talker.hashCode());
+
+                    // 异步发送，避免阻塞广播主线程导致卡顿或个别机型闪退
+                    if (sQuickReplyExecutor == null || sQuickReplyExecutor.isShutdown()) {
+                        sQuickReplyExecutor = Executors.newSingleThreadExecutor();
+                    }
+                    sQuickReplyExecutor.execute(new Runnable() {
+                        public void run() {
+                            try { sendText(talker, reply); } catch (Throwable ignored) {}
+                            try {
+                                NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
+                                if (nm != null) nm.cancel(talker.hashCode());
+                            } catch (Throwable ignored) {}
+                        }
+                    });
                 } catch (Throwable ignored) {}
             }
         };
@@ -290,7 +379,25 @@ boolean cfgGetBool(Map m, String k, boolean def) {
 Map getTalkerCfg(String talker) {
     if (TextUtils.isEmpty(talker)) return new HashMap();
     if (cacheTalkerCfgMap.containsKey(talker)) return (Map) cacheTalkerCfgMap.get(talker);
+    try {
+        // 冷启动时兜底：按会话ID实时回源读取，避免必须进一次设置页才恢复单聊配置
+        String rawCfg = getString(CFG_TALKER_CFG_PREFIX + talker, "");
+        Map parsed = parseTalkerCfg(rawCfg);
+        cacheTalkerCfgMap.put(talker, parsed);
+        return parsed;
+    } catch (Throwable ignored) {}
     return new HashMap();
+}
+
+void ensureTalkerCfgLoaded(String talker) {
+    if (TextUtils.isEmpty(talker)) return;
+    try {
+        Map cfg = getTalkerCfg(talker);
+        if (cfg == null || cfg.isEmpty()) {
+            String rawCfg = getString(CFG_TALKER_CFG_PREFIX + talker, "");
+            cacheTalkerCfgMap.put(talker, parseTalkerCfg(rawCfg));
+        }
+    } catch (Throwable ignored) {}
 }
 
 boolean isNowInMuteWindowByCfg(Map cfg) {
@@ -342,26 +449,20 @@ String normalizeTime(String v, String def) {
     if (t < 0) return def;
     int h = t / 60;
     int m = t % 60;
-    return String.format(Locale.getDefault(), "%02d:%02d", h, m);
+    return formatHHmm(h, m);
 }
 
-boolean isNowInMuteWindow() {
-    if (!cacheMuteTimeEnable) return false;
-    int startMinute = parseTimeToMinute(cacheMuteTimeStart);
-    int endMinute = parseTimeToMinute(cacheMuteTimeEnd);
-    if (startMinute < 0 || endMinute < 0) return false;
-    Calendar cal = Calendar.getInstance();
-    int now = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
-    if (startMinute == endMinute) return true;
-    if (startMinute < endMinute) {
-        if (now >= startMinute) {
-            if (now < endMinute) return true;
-        }
-        return false;
-    }
-    if (now >= startMinute) return true;
-    if (now < endMinute) return true;
-    return false;
+String twoDigits(int n) {
+    if (n < 10) return "0" + n;
+    return String.valueOf(n);
+}
+
+String formatHHmm(int h, int m) {
+    if (h < 0) h = 0;
+    if (h > 23) h = 23;
+    if (m < 0) m = 0;
+    if (m > 59) m = 59;
+    return twoDigits(h) + ":" + twoDigits(m);
 }
 
 boolean asBool(Object v) {
@@ -383,6 +484,25 @@ Object safeInvokeAny(Object obj, String[] methodNames) {
             Object v = safeInvoke(obj, methodNames[i]);
             if (v != null) return v;
         } catch (Throwable ignored) {}
+    }
+    return null;
+}
+
+Object safeGetFieldAny(Object obj, String[] fieldNames) {
+    if (obj == null || fieldNames == null || fieldNames.length == 0) return null;
+    for (int i = 0; i < fieldNames.length; i++) {
+        String fn = fieldNames[i];
+        if (TextUtils.isEmpty(fn)) continue;
+        try {
+            Object v = XposedHelpers.getObjectField(obj, fn);
+            if (v != null) return v;
+        } catch (Throwable ignored) {}
+        try {
+            java.lang.reflect.Field f = obj.getClass().getDeclaredField(fn);
+            f.setAccessible(true);
+            Object v2 = f.get(obj);
+            if (v2 != null) return v2;
+        } catch (Throwable ignored2) {}
     }
     return null;
 }
@@ -432,7 +552,7 @@ String getMemberRuleSummary(String raw) {
     return "已设置 " + s.size() + " 项 >";
 }
 
-String[] extractGroupSenderInfo(Object msg, String content) {
+String[] extractGroupSenderInfo(Object msg, String talker, String content) {
     String senderId = "";
     String senderName = "";
     String pureContent = TextUtils.isEmpty(content) ? "" : content;
@@ -450,12 +570,180 @@ String[] extractGroupSenderInfo(Object msg, String content) {
     } catch (Throwable ignored) {}
     try {
         if (!TextUtils.isEmpty(senderId)) {
-            String n = getFriendName(senderId);
+            String n = "";
+            try { n = getFriendName(senderId, talker); } catch (Throwable ignored) {}
+            if (TextUtils.isEmpty(n)) {
+                try { n = getFriendName(senderId); } catch (Throwable ignored2) {}
+            }
             if (!TextUtils.isEmpty(n) && !senderId.equals(n)) senderName = n.trim();
         }
     } catch (Throwable ignored) {}
     if (TextUtils.isEmpty(senderName)) senderName = senderId;
     return new String[]{senderId, senderName, pureContent};
+}
+
+String extractTalkerFromOriginContent(String origin) {
+    if (TextUtils.isEmpty(origin)) return "";
+    try {
+        String[] keys = new String[]{"talker", "fromusername", "fromUserName", "chatuser", "chatUser", "conversationId"};
+        for (int i = 0; i < keys.length; i++) {
+            String k = keys[i];
+            int p = origin.indexOf(k + "=");
+            if (p >= 0) {
+                int st = p + k.length() + 1;
+                int ed = st;
+                while (ed < origin.length()) {
+                    char c = origin.charAt(ed);
+                    if (c == '&' || c == ';' || c == ',' || c == '\n' || c == '\r' || c == '\t' || c == ' ' || c == '\"') break;
+                    ed++;
+                }
+                if (ed > st) return origin.substring(st, ed).trim();
+            }
+            p = origin.indexOf("\"" + k + "\"");
+            if (p >= 0) {
+                int c1 = origin.indexOf(":", p);
+                if (c1 > 0) {
+                    int q1 = origin.indexOf("\"", c1 + 1);
+                    int q2 = q1 >= 0 ? origin.indexOf("\"", q1 + 1) : -1;
+                    if (q1 >= 0 && q2 > q1) return origin.substring(q1 + 1, q2).trim();
+                }
+            }
+        }
+    } catch (Throwable ignored) {}
+    try {
+        Matcher m = chatroomPattern.matcher(origin);
+        if (m.find()) return m.group(1);
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+String extractContentFromOriginText(String origin) {
+    if (TextUtils.isEmpty(origin)) return "";
+    try {
+        String[] keys = new String[]{"content", "msg", "msgContent", "message"};
+        for (int i = 0; i < keys.length; i++) {
+            String k = keys[i];
+            int p = origin.indexOf(k + "=");
+            if (p >= 0) {
+                int st = p + k.length() + 1;
+                int ed = st;
+                while (ed < origin.length()) {
+                    char c = origin.charAt(ed);
+                    if (c == '&' || c == ';' || c == '\n' || c == '\r') break;
+                    ed++;
+                }
+                if (ed > st) {
+                    String v = origin.substring(st, ed).trim();
+                    if (!TextUtils.isEmpty(v)) return v;
+                }
+            }
+            p = origin.indexOf("\"" + k + "\"");
+            if (p >= 0) {
+                int c1 = origin.indexOf(":", p);
+                if (c1 > 0) {
+                    int q1 = origin.indexOf("\"", c1 + 1);
+                    int q2 = q1 >= 0 ? origin.indexOf("\"", q1 + 1) : -1;
+                    if (q1 >= 0 && q2 > q1) {
+                        String v2 = origin.substring(q1 + 1, q2).trim();
+                        if (!TextUtils.isEmpty(v2)) return v2;
+                    }
+                }
+            }
+        }
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+String resolveMsgContentForNotify(Object msg, String content) {
+    if (!TextUtils.isEmpty(content)) return content;
+    String c = "";
+    try {
+        Object v = safeInvokeAny(msg, new String[]{"getContent", "getMsgContent", "getText", "getDigest"});
+        if (v != null) c = String.valueOf(v).trim();
+    } catch (Throwable ignored) {}
+    if (!TextUtils.isEmpty(c)) return c;
+    try {
+        Object vf = safeGetFieldAny(msg, new String[]{"content", "msgContent", "message", "field_content"});
+        if (vf != null) c = String.valueOf(vf).trim();
+    } catch (Throwable ignored) {}
+    if (!TextUtils.isEmpty(c)) return c;
+
+    Object originObj = null;
+    try {
+        originObj = safeInvokeAny(msg, new String[]{"getOriginMsg", "getOriginMessage", "getOrigin", "getOriginContent"});
+    } catch (Throwable ignored) {}
+    if (originObj == null) {
+        try { originObj = safeGetFieldAny(msg, new String[]{"originMsg", "originMessage", "origin", "originContent"}); } catch (Throwable ignored) {}
+    }
+    if (originObj == null) return "";
+
+    try {
+        Object v2 = safeInvokeAny(originObj, new String[]{"getContent", "getMsgContent", "getText", "getDigest"});
+        if (v2 != null) c = String.valueOf(v2).trim();
+    } catch (Throwable ignored) {}
+    if (TextUtils.isEmpty(c)) {
+        try {
+            Object vf2 = safeGetFieldAny(originObj, new String[]{"content", "msgContent", "message", "field_content"});
+            if (vf2 != null) c = String.valueOf(vf2).trim();
+        } catch (Throwable ignored) {}
+    }
+    if (!TextUtils.isEmpty(c)) return c;
+    try {
+        return extractContentFromOriginText(String.valueOf(originObj));
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+String resolveTalkerForMsg(Object msg, String content) {
+    String talker = "";
+    try {
+        Object t = safeInvokeAny(msg, new String[]{"getTalker", "getUsername", "getUserName", "getConversationId", "getChatUser", "getSessionId"});
+        if (t != null) talker = String.valueOf(t).trim();
+    } catch (Throwable ignored) {}
+    if (TextUtils.isEmpty(talker)) {
+        try {
+            Object tf = safeGetFieldAny(msg, new String[]{"talker", "username", "userName", "conversationId", "chatUser", "sessionId", "fromUserName"});
+            if (tf != null) talker = String.valueOf(tf).trim();
+        } catch (Throwable ignored) {}
+    }
+    if (!TextUtils.isEmpty(talker)) return talker;
+
+    Object originObj = null;
+    try {
+        originObj = safeInvokeAny(msg, new String[]{"getOriginMsg", "getOriginMessage", "getOrigin", "getOriginContent"});
+    } catch (Throwable ignored) {}
+    if (originObj == null) {
+        try {
+            originObj = safeGetFieldAny(msg, new String[]{"originMsg", "originMessage", "origin", "originContent"});
+        } catch (Throwable ignored) {}
+    }
+
+    if (originObj != null) {
+        if (originObj instanceof CharSequence) {
+            String fromText = extractTalkerFromOriginContent(String.valueOf(originObj));
+            if (!TextUtils.isEmpty(fromText)) return fromText;
+        } else {
+            try {
+                Object t2 = safeInvokeAny(originObj, new String[]{"getTalker", "getUsername", "getUserName", "getConversationId", "getChatUser", "getSessionId", "getFromUserName"});
+                if (t2 != null) talker = String.valueOf(t2).trim();
+            } catch (Throwable ignored) {}
+            if (TextUtils.isEmpty(talker)) {
+                try {
+                    Object tf2 = safeGetFieldAny(originObj, new String[]{"talker", "username", "userName", "conversationId", "chatUser", "sessionId", "fromUserName"});
+                    if (tf2 != null) talker = String.valueOf(tf2).trim();
+                } catch (Throwable ignored) {}
+            }
+            if (!TextUtils.isEmpty(talker)) return talker;
+            try {
+                String fromObjText = extractTalkerFromOriginContent(String.valueOf(originObj));
+                if (!TextUtils.isEmpty(fromObjText)) return fromObjText;
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    String fromContent = extractTalkerFromOriginContent(content);
+    if (!TextUtils.isEmpty(fromContent)) return fromContent;
+    return "";
 }
 
 boolean memberRuleMatched(String rawRule, String senderId, String senderName, String pureContent) {
@@ -471,7 +759,7 @@ boolean memberRuleMatched(String rawRule, String senderId, String senderName, St
         String lk = key.toLowerCase();
         if (!TextUtils.isEmpty(sid) && (sid.equals(lk) || sid.contains(lk) || lk.contains(sid))) return true;
         if (!TextUtils.isEmpty(sn) && (sn.equals(lk) || sn.contains(lk) || lk.contains(sn))) return true;
-        if (!TextUtils.isEmpty(sc) && sc.startsWith(lk + ":")) return true;
+        if (!TextUtils.isEmpty(sc) && (sc.startsWith(lk + ":") || sc.startsWith(lk + "："))) return true;
     }
     return false;
 }
@@ -490,7 +778,7 @@ boolean shouldSuppressByRules(Object msg, String talker, String content, Map cfg
         String blockMembers = cfgGet(cfg, "blockMembers", "");
 
         if (isGroupChat && (!TextUtils.isEmpty(onlyMembers) || !TextUtils.isEmpty(blockMembers))) {
-            String[] sender = extractGroupSenderInfo(msg, content);
+            String[] sender = extractGroupSenderInfo(msg, talker, content);
             String sid = sender[0];
             String sname = sender[1];
             String pure = sender[2];
@@ -507,6 +795,30 @@ boolean shouldSuppressByRules(Object msg, String talker, String content, Map cfg
             Object atMeObj = safeInvokeAny(msg, new String[]{"isAtMe", "isAtMeFromGroup", "isMentioned", "hasAtMe", "needNotifyMe"});
             if (asBool(atMeObj) || hitAtMeByText(content)) return true;
         }
+    } catch (Throwable ignored) {}
+    return false;
+}
+
+boolean isSystemMessageLike(Object msg, String talker, String content, int type) {
+    try {
+        Object sysObj = safeInvokeAny(msg, new String[]{"isSystem", "isSystemMsg", "isSysMsg"});
+        if (asBool(sysObj)) return true;
+    } catch (Throwable ignored) {}
+    try {
+        // 微信常见系统消息类型：10000（系统文本）、10002（撤回/系统事件）
+        if (type == 10000 || type == 10002) return true;
+    } catch (Throwable ignored) {}
+    try {
+        String tk = TextUtils.isEmpty(talker) ? "" : talker.trim().toLowerCase();
+        if ("weixin".equals(tk) || "fmessage".equals(tk) || "medianote".equals(tk)
+                || "notifymessage".equals(tk) || "notification_messages".equals(tk)
+                || "qqmail".equals(tk) || "weixinreminder".equals(tk)) {
+            return true;
+        }
+    } catch (Throwable ignored) {}
+    try {
+        String c = TextUtils.isEmpty(content) ? "" : content.toLowerCase();
+        if (c.contains("<sysmsg") || c.contains("系统消息") || c.contains("撤回了一条消息")) return true;
     } catch (Throwable ignored) {}
     return false;
 }
@@ -560,20 +872,73 @@ String prettyAudioNameFromUri(Uri uri) {
     return "";
 }
 
-String getFriendDisplayNameById(String wxid) {
-    if (TextUtils.isEmpty(wxid)) return "";
-    String n = getFriendName(wxid);
-    if (TextUtils.isEmpty(n)) return wxid;
-    return n + " (" + wxid + ")";
+String freezeRingtoneUri(String rawUri) {
+    if (TextUtils.isEmpty(rawUri)) return "";
+    try {
+        Uri src = Uri.parse(rawUri);
+        if (src == null) return rawUri;
+        String scheme = src.getScheme();
+        if (TextUtils.isEmpty(scheme)) return rawUri;
+        if ("file".equalsIgnoreCase(scheme)) return rawUri;
+        if (!"content".equalsIgnoreCase(scheme)) return rawUri;
+        if (hostContext == null) return rawUri;
+
+        java.io.InputStream in = null;
+        java.io.FileOutputStream out = null;
+        try {
+            in = hostContext.getContentResolver().openInputStream(src);
+            if (in == null) return rawUri;
+
+            java.io.File dir = new java.io.File("/storage/emulated/0/Android/media/com.tencent.mm/WAuxiliary/Plugin/ringtones");
+            if (!dir.exists()) dir.mkdirs();
+
+            String base = prettyAudioNameFromUri(src);
+            if (TextUtils.isEmpty(base)) base = "ringtone_" + System.currentTimeMillis();
+            base = base.replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
+            if (TextUtils.isEmpty(base)) base = "ringtone_" + System.currentTimeMillis();
+            String low = base.toLowerCase();
+            if (!(low.endsWith(".mp3") || low.endsWith(".m4a") || low.endsWith(".aac") || low.endsWith(".wav") || low.endsWith(".ogg") || low.endsWith(".flac"))) {
+                base = base + ".mp3";
+            }
+
+            java.io.File dst = new java.io.File(dir, base);
+            out = new java.io.FileOutputStream(dst, false);
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            out.flush();
+            return Uri.fromFile(dst).toString();
+        } finally {
+            try { if (in != null) in.close(); } catch (Throwable ignored) {}
+            try { if (out != null) out.close(); } catch (Throwable ignored) {}
+        }
+    } catch (Throwable ignored) {}
+    return rawUri;
 }
 
-void putInt(String key, int v) {
-    putString(key, String.valueOf(v));
+boolean shouldBlockNativeByCfg(Map cfg) {
+    int talkerMode = cfgGetInt(cfg, "mode", 1);
+    if (talkerMode == 0) return true;
+    if (isNowInMuteWindowByCfg(cfg)) return true;
+    // 只要配置了群规则，就走插件链路做逐条判定，避免原生通知绕过规则
+    boolean blockAtAll = cfgGetBool(cfg, "blockAll", cacheBlockAtAll);
+    boolean blockAtMe = cfgGetBool(cfg, "blockMe", cacheBlockAtMe);
+    String onlyMembers = cfgGet(cfg, "onlyMembers", "");
+    String blockMembers = cfgGet(cfg, "blockMembers", "");
+    if (blockAtAll || blockAtMe || !TextUtils.isEmpty(onlyMembers) || !TextUtils.isEmpty(blockMembers)) return true;
+
+    boolean showDetail = cfgGetBool(cfg, "showDetail", cacheShowDetail);
+    boolean quickReply = cfgGetBool(cfg, "quickReply", false);
+    // showDetail=开 且 quickReply=关 -> 保留原生；其余接管原生
+    return (!showDetail) || quickReply;
 }
 
 // ================= 核心 1：原生通知强力拦截器 =================
 void hookSystemNotification() {
     try {
+        if (sNotifyHookInstalled) return;
+        sNotifyHookInstalled = true;
+
         Method[] methods = NotificationManager.class.getDeclaredMethods();
         for (int i = 0; i < methods.length; i++) {
             final Method m = methods[i];
@@ -585,6 +950,7 @@ void hookSystemNotification() {
             Object unhook = XposedBridge.hookMethod(m, new XC_MethodHook() {
                 protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
                     try {
+                        ensureConfigLoadedForRuntime();
                         if (cacheTargetSet.isEmpty()) return;
 
                         Object[] args = param.args;
@@ -601,32 +967,23 @@ void hookSystemNotification() {
                         String talker = extractTalkerFromNotification(n);
                         boolean shouldBlock = false;
 
-                        // 【逻辑优化】使用 Set 的精确匹配
                         if (!TextUtils.isEmpty(talker) && cacheTargetSet.contains(talker)) {
-                            shouldBlock = true;
-                        } else {
+                            Map cfg0 = getTalkerCfg(talker);
+                            shouldBlock = shouldBlockNativeByCfg(cfg0);
+                        }
+                        if (!shouldBlock && TextUtils.isEmpty(talker) && n.extras != null) {
                             String title = "";
-                            if (n.extras != null) {
+                            try {
                                 CharSequence cs = n.extras.getCharSequence(Notification.EXTRA_TITLE);
                                 if (cs != null) title = cs.toString().trim();
+                            } catch (Throwable ignored) {}
+                            String titleTalker = findTargetTalkerByTitle(title);
+                            if (TextUtils.isEmpty(titleTalker)) {
+                                try { titleTalker = findTalkerByGroupTitle(title); } catch (Throwable ignored) {}
                             }
-                            if (!TextUtils.isEmpty(title)) {
-                                for (int k = 0; k < targetNameList.size(); k++) {
-                                    String tName = (String) targetNameList.get(k);
-                                    if (titleMaybeMatchName(title, tName)) {
-                                        shouldBlock = true;
-                                        break;
-                                    }
-                                }
-                                if (!shouldBlock) {
-                                    String titleTalker = findTalkerByGroupTitle(title);
-                                    if (!TextUtils.isEmpty(titleTalker) && cacheTargetSet.contains(titleTalker)) {
-                                        shouldBlock = true;
-                                    }
-                                }
-                            }
-
-                            if (!shouldBlock) {
+                            if (!TextUtils.isEmpty(titleTalker) && cacheTargetSet.contains(titleTalker)) {
+                                Map cfg0 = getTalkerCfg(titleTalker);
+                                shouldBlock = shouldBlockNativeByCfg(cfg0);
                             }
                         }
 
@@ -640,11 +997,14 @@ void hookSystemNotification() {
             });
             if (unhook != null) notifyUnhooks.add(unhook);
         }
-    } catch (Throwable ignored) {}
+    } catch (Throwable ignored) {
+        sNotifyHookInstalled = false;
+    }
 }
 
 // ================= 核心 2：自定义通知发送器 =================
 void onHandleMsg(Object msg) {
+    ensureConfigLoadedForRuntime();
     if (cacheTargetSet.isEmpty()) {
         return;
     }
@@ -655,10 +1015,15 @@ void onHandleMsg(Object msg) {
             return;
         }
 
-        String talker = (String) safeInvoke(msg, "getTalker");
+        String talker = resolveTalkerForMsg(msg, "");
         String content = (String) safeInvoke(msg, "getContent");
+        content = resolveMsgContentForNotify(msg, content);
+        if (TextUtils.isEmpty(talker)) talker = resolveTalkerForMsg(msg, content);
         Object typeObj = safeInvoke(msg, "getType");
         int type = (typeObj instanceof Number) ? ((Number) typeObj).intValue() : 1;
+        if (isSystemMessageLike(msg, talker, content, type)) {
+            return;
+        }
 
         // 【逻辑优化】使用 Set 的精确匹配
         if (!cacheTargetSet.contains(talker)) {
@@ -666,18 +1031,24 @@ void onHandleMsg(Object msg) {
         }
 
         Map cfg = getTalkerCfg(talker);
-        int talkerMode = cfgGetInt(cfg, "mode", cacheMode);
+        ensureTalkerCfgLoaded(talker);
+        cfg = getTalkerCfg(talker);
+        int talkerMode = cfgGetInt(cfg, "mode", 1);
         boolean inMuteWindow = isNowInMuteWindowByCfg(cfg);
         boolean showDetail = cfgGetBool(cfg, "showDetail", cacheShowDetail);
         boolean talkerVibrate = cfgGetBool(cfg, "vibrate", cacheVibrate);
         boolean talkerSound = cfgGetBool(cfg, "sound", cacheSound);
         String talkerRingtone = cfgGet(cfg, "ringtone", "");
         boolean talkerQuickReply = cfgGetBool(cfg, "quickReply", false);
+        boolean blockNative = shouldBlockNativeByCfg(cfg);
 
         if (talkerMode == 0) {
             return;
         }
         if (inMuteWindow) {
+            return;
+        }
+        if (showDetail && !talkerQuickReply && !blockNative) {
             return;
         }
 
@@ -686,14 +1057,41 @@ void onHandleMsg(Object msg) {
             return;
         }
 
-        String senderName = getFriendName(talker);
-        String displayContent = "[收到一条新消息]";
-        if (showDetail) {
-            if (type == 1) displayContent = content;
-            else displayContent = "[图片/语音或非文本消息]";
+        boolean isGroupChat = !TextUtils.isEmpty(talker) && talker.endsWith("@chatroom");
+        if (!isGroupChat) {
+            Object g = safeInvokeAny(msg, new String[]{"isGroupChat", "isChatroom", "isChatRoom", "isGroup"});
+            isGroupChat = asBool(g);
         }
 
-        sendCustomNotification(talker, senderName, displayContent, talkerVibrate, talkerSound, talkerRingtone, talkerQuickReply);
+        String notifyTitle = resolveTalkerNameForMatch(talker);
+        if (TextUtils.isEmpty(notifyTitle)) notifyTitle = getFriendName(talker);
+        if (TextUtils.isEmpty(notifyTitle)) notifyTitle = talker;
+
+        String displayContent = "[收到一条新消息]";
+        if (showDetail) {
+            if (type == 1) {
+                if (isGroupChat) {
+                    String[] sender = extractGroupSenderInfo(msg, talker, content);
+                    String sid = sender[0];
+                    String sname = sender[1];
+                    String pure = sender[2];
+                    String senderLabel = !TextUtils.isEmpty(sname) ? sname : sid;
+                    String groupName = resolveTalkerNameForMatch(talker);
+                    if (TextUtils.isEmpty(groupName)) groupName = getFriendName(talker);
+                    if (TextUtils.isEmpty(groupName)) groupName = talker;
+                    notifyTitle = groupName;
+                    if (TextUtils.isEmpty(pure)) displayContent = "[收到一条新消息]";
+                    else if (TextUtils.isEmpty(senderLabel)) displayContent = pure;
+                    else displayContent = senderLabel + ": " + pure;
+                } else {
+                    displayContent = TextUtils.isEmpty(content) ? "[收到一条新消息]" : content;
+                }
+            } else {
+                displayContent = "[图片/语音或非文本消息]";
+            }
+        }
+
+        sendCustomNotification(talker, notifyTitle, displayContent, talkerVibrate, talkerSound, talkerRingtone, talkerQuickReply);
     } catch (Throwable e) {
     }
 }
@@ -714,6 +1112,27 @@ void rebuildNotificationChannel() {
 if (chId != null && (chId.startsWith("jay_chn_v7") || chId.startsWith("jay_chn_v8"))) {
     nm.deleteNotificationChannel(chId);
 }
+                    }
+                }
+            } catch (Throwable ignored) {}
+
+            // 额外清理：限制 v9 通道总量，避免长期堆积导致系统通知管理变慢
+            try {
+                List channels2 = (List) nm.getClass().getMethod("getNotificationChannels").invoke(nm);
+                if (channels2 != null && channels2.size() > 0) {
+                    List v9Ids = new ArrayList();
+                    for (int i = 0; i < channels2.size(); i++) {
+                        NotificationChannel ch2 = (NotificationChannel) channels2.get(i);
+                        if (ch2 == null) continue;
+                        String id2 = ch2.getId();
+                        if (id2 != null && id2.startsWith("jay_chn_v9_")) v9Ids.add(id2);
+                    }
+                    int keepMax = 100;
+                    int extra = v9Ids.size() - keepMax;
+                    if (extra > 0) {
+                        for (int i = 0; i < extra; i++) {
+                            try { nm.deleteNotificationChannel(String.valueOf(v9Ids.get(i))); } catch (Throwable ignored) {}
+                        }
                     }
                 }
             } catch (Throwable ignored) {}
@@ -786,7 +1205,7 @@ void playCustomRingtoneFallback(final String uriStr) {
         lastManualRingAt = now;
     } catch (Throwable ignored) {}
 
-    new Handler(Looper.getMainLooper()).post(new Runnable() {
+    sMainHandler.post(new Runnable() {
         public void run() {
             try {
                 Uri uri = Uri.parse(uriStr);
@@ -794,7 +1213,7 @@ void playCustomRingtoneFallback(final String uriStr) {
                 if (rt == null) return;
                 try { rt.setStreamType(android.media.AudioManager.STREAM_NOTIFICATION); } catch (Throwable ignored) {}
                 rt.play();
-                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                sMainHandler.postDelayed(new Runnable() {
                     public void run() {
                         try {
                             if (rt.isPlaying()) rt.stop();
@@ -806,18 +1225,84 @@ void playCustomRingtoneFallback(final String uriStr) {
     });
 }
 
+void playNotifySoundByConfig(boolean useSound, String ringtoneUri) {
+    if (!useSound) return;
+    String ring = TextUtils.isEmpty(ringtoneUri) ? "" : ringtoneUri;
+    if (!TextUtils.isEmpty(ring)) {
+        playCustomRingtoneFallback(ring);
+        return;
+    }
+    try {
+        Uri def = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+        if (def != null) playCustomRingtoneFallback(def.toString());
+    } catch (Throwable ignored) {}
+}
+
+boolean ensureUriReadable(String uriStr) {
+    if (TextUtils.isEmpty(uriStr)) return false;
+    try {
+        Uri u = Uri.parse(uriStr);
+        if (u == null) return false;
+        String sch = u.getScheme();
+        if (TextUtils.isEmpty(sch)) return false;
+        if ("file".equalsIgnoreCase(sch)) return true;
+        if (!"content".equalsIgnoreCase(sch)) return true;
+
+        if (hostContext == null) return false;
+        try {
+            if (hostContext.getContentResolver().openInputStream(u) == null) return false;
+            return true;
+        } catch (Throwable ignored3) {
+            return false;
+        }
+    } catch (Throwable ignored) {}
+    return false;
+}
+
+Intent[] buildChatOpenIntents(String talker) {
+    Intent home = null;
+    Intent chat = null;
+    try {
+        home = new Intent();
+        home.setComponent(new ComponentName(hostContext.getPackageName(), "com.tencent.mm.ui.LauncherUI"));
+        home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    } catch (Throwable ignored) {}
+    if (home == null) {
+        try {
+            home = hostContext.getPackageManager().getLaunchIntentForPackage(hostContext.getPackageName());
+            if (home != null) {
+                home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            }
+        } catch (Throwable ignored) {}
+    }
+    try {
+        chat = new Intent();
+        chat.setComponent(new ComponentName(hostContext.getPackageName(), "com.tencent.mm.ui.chatting.ChattingUI"));
+        chat.putExtra("Chat_User", talker);
+        chat.putExtra("Chat_Mode", 1);
+        chat.putExtra("finish_direct", true);
+        chat.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    } catch (Throwable ignored) {}
+
+    if (home != null && chat != null) return new Intent[]{home, chat};
+    if (chat != null) return new Intent[]{chat};
+    if (home != null) return new Intent[]{home};
+    return null;
+}
+
 void sendCustomNotification(String talker, String title, String text, boolean useVibrate, boolean useSound, String ringtoneUri, boolean enableQuickReply) {
     try {
         NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
         Notification.Builder builder;
         String talkerChannelId = currentChannelId;
         String talkerRing = TextUtils.isEmpty(ringtoneUri) ? "" : ringtoneUri;
-        boolean useManualCustomSound = Build.VERSION.SDK_INT >= 26 && useSound && !TextUtils.isEmpty(talkerRing);
+        boolean useManualCustomSound = Build.VERSION.SDK_INT >= 26 && useSound; // 8+ 一律手动播放，规避ROM回写通道声音
         if (Build.VERSION.SDK_INT >= 26) {
-            String sTag = useSound ? (useManualCustomSound ? "M" : "S") : "N";
+            String sTag = useSound ? "M" : "N";
             String vTag = useVibrate ? "V" : "N";
             talkerChannelId = "jay_chn_v9_" + sTag + "_" + vTag + "_" + talkerRing.hashCode();
-            ensureNotifyChannel(nm, talkerChannelId, useVibrate, useManualCustomSound ? false : useSound, talkerRing);
+            // 8+ 通道保持静音，声音由插件手动播放，避免被系统/ROM改回默认声
+            ensureNotifyChannel(nm, talkerChannelId, useVibrate, false, talkerRing);
             builder = new Notification.Builder(hostContext, talkerChannelId);
         } else {
             builder = new Notification.Builder(hostContext);
@@ -835,7 +1320,7 @@ void sendCustomNotification(String talker, String title, String text, boolean us
         long[] vibPattern = useVibrate ? new long[]{0, 250, 250, 250} : new long[]{0};
         try { builder.setVibrate(vibPattern); } catch (Throwable ignored) {}
 
-        Uri soundUri = resolveNotifySoundUri(useManualCustomSound ? false : useSound, talkerRing);
+        Uri soundUri = resolveNotifySoundUri(Build.VERSION.SDK_INT >= 26 ? false : (useManualCustomSound ? false : useSound), talkerRing);
         try { builder.setSound(soundUri); } catch (Throwable ignored) {}
 
         Bundle extras = new Bundle();
@@ -853,9 +1338,9 @@ void sendCustomNotification(String talker, String title, String text, boolean us
             try { builder.setPriority(Notification.PRIORITY_HIGH); } catch (Throwable ignored) {}
         }
 
-        Intent intent = hostContext.getPackageManager().getLaunchIntentForPackage(hostContext.getPackageName());
-        if (intent != null) {
-            builder.setContentIntent(PendingIntent.getActivity(hostContext, talker.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+        Intent[] intents = buildChatOpenIntents(talker);
+        if (intents != null && intents.length > 0) {
+            builder.setContentIntent(PendingIntent.getActivities(hostContext, talker.hashCode(), intents, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         }
 
         if (enableQuickReply) {
@@ -883,7 +1368,16 @@ void sendCustomNotification(String talker, String title, String text, boolean us
         int notifyId = talker.hashCode();
         nm.notify(notifyId, builder.build()); // 直接覆盖发送即可，系统会完美处理过渡
 
-        if (useManualCustomSound) playCustomRingtoneFallback(talkerRing);
+        // 8+ 声音统一手动播放（含默认通知声/自定义铃声）
+        if (Build.VERSION.SDK_INT >= 26) {
+            String playableRing = talkerRing;
+            if (!TextUtils.isEmpty(playableRing) && !ensureUriReadable(playableRing)) {
+                playableRing = "";
+            }
+            playNotifySoundByConfig(useSound, playableRing);
+        } else {
+            if (useManualCustomSound) playCustomRingtoneFallback(talkerRing);
+        }
     } catch (Throwable ignored) {}
 }
 
@@ -897,11 +1391,26 @@ void hookActivityResultForRingtone() {
                     Uri uri = null;
                     if (data != null && requestCode == REQ_PICK_RINGTONE_SYSTEM) {
                         try { uri = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI); } catch (Throwable ignored) {}
+                        try {
+                            if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
+                                final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+                                hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                            }
+                        } catch (Throwable ignored) {}
                     }
                     if (data != null && uri == null && requestCode == REQ_PICK_RINGTONE_FILE) {
                         try { uri = data.getData(); } catch (Throwable ignored) {}
+                        try {
+                            if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
+                                final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+                                hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                            }
+                        } catch (Throwable ignored) {}
                     }
                     String ring = uri == null ? "" : uri.toString();
+                    if (!TextUtils.isEmpty(ring)) {
+                        ring = freezeRingtoneUri(ring);
+                    }
                     if (globalRingtoneValueRef != null && globalRingtoneValueRef.length > 0) {
                         globalRingtoneValueRef[0] = ring;
                     }
@@ -939,8 +1448,15 @@ String findChatroomInString(String s) {
 String normalizeTitleKey(String s) {
     if (s == null) return "";
     try {
+        String cacheKey = "k|" + s;
+        Object cached = sTitleNormCache.get(cacheKey);
+        if (cached != null) return String.valueOf(cached);
+
         String t = s.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ').replace((char) 12288, ' ');
         t = t.replaceAll("\\s+", "").trim().toLowerCase();
+
+        if (sTitleNormCache.size() >= sTitleNormCacheMax) sTitleNormCache.clear();
+        sTitleNormCache.put(cacheKey, t);
         return t;
     } catch (Throwable ignored) {}
     return "";
@@ -949,10 +1465,17 @@ String normalizeTitleKey(String s) {
 String normalizeTitleLooseKey(String s) {
     if (s == null) return "";
     try {
+        String cacheKey = "l|" + s;
+        Object cached = sTitleNormCache.get(cacheKey);
+        if (cached != null) return String.valueOf(cached);
+
         String t = normalizeTitleKey(s);
         if (TextUtils.isEmpty(t)) return "";
         // 去掉大部分符号/emoji，只保留中文、字母、数字，提升特殊昵称匹配稳定性
         t = t.replaceAll("[^\\u4e00-\\u9fa5a-z0-9]+", "");
+
+        if (sTitleNormCache.size() >= sTitleNormCacheMax) sTitleNormCache.clear();
+        sTitleNormCache.put(cacheKey, t);
         return t;
     } catch (Throwable ignored) {}
     return "";
@@ -1005,13 +1528,39 @@ String findTalkerByGroupTitle(String title) {
     if (TextUtils.isEmpty(title)) return null;
     String base = stripWechatTitleSuffix(title);
     if (TextUtils.isEmpty(base)) return null;
+
+    String cacheKey = normalizeTitleLooseKey(base);
+    if (TextUtils.isEmpty(cacheKey)) cacheKey = normalizeTitleKey(base);
+    if (!TextUtils.isEmpty(cacheKey)) {
+        try {
+            Object cv = sGroupTitleTalkerCache.get(cacheKey);
+            if (cv instanceof String[]) {
+                String[] pair = (String[]) cv;
+                if (pair.length >= 2) {
+                    long ts = 0L;
+                    try { ts = Long.parseLong(pair[1]); } catch (Throwable ignored) {}
+                    if (System.currentTimeMillis() - ts <= sGroupTitleTalkerCacheTtlMs) {
+                        String hit = pair[0];
+                        if (!TextUtils.isEmpty(hit)) return hit;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
     try {
         if (sCachedGroupIds != null && sCachedGroupNames != null && sCachedGroupIds.size() == sCachedGroupNames.size()) {
             for (int i = 0; i < sCachedGroupIds.size(); i++) {
                 String gid = String.valueOf(sCachedGroupIds.get(i));
                 String gname = String.valueOf(sCachedGroupNames.get(i));
                 if (TextUtils.isEmpty(gid) || TextUtils.isEmpty(gname) || "null".equalsIgnoreCase(gname)) continue;
-                if (titleMaybeMatchName(base, gname) || titleMaybeMatchName(title, gname)) return gid;
+                if (titleMaybeMatchName(base, gname) || titleMaybeMatchName(title, gname)) {
+                    if (!TextUtils.isEmpty(cacheKey)) {
+                        if (sGroupTitleTalkerCache.size() >= sGroupTitleTalkerCacheMax) sGroupTitleTalkerCache.clear();
+                        sGroupTitleTalkerCache.put(cacheKey, new String[]{gid, String.valueOf(System.currentTimeMillis())});
+                    }
+                    return gid;
+                }
             }
         }
     } catch (Throwable ignored) {}
@@ -1034,6 +1583,10 @@ String findTalkerByGroupTitle(String title) {
                 if (titleMaybeMatchName(base, gname) || titleMaybeMatchName(title, gname)) {
                     sCachedGroupIds = ids;
                     sCachedGroupNames = names;
+                    if (!TextUtils.isEmpty(cacheKey)) {
+                        if (sGroupTitleTalkerCache.size() >= sGroupTitleTalkerCacheMax) sGroupTitleTalkerCache.clear();
+                        sGroupTitleTalkerCache.put(cacheKey, new String[]{gid, String.valueOf(System.currentTimeMillis())});
+                    }
                     return gid;
                 }
             }
@@ -1087,6 +1640,21 @@ String findTalkerByCacheContains(String raw) {
     } catch (Throwable ignored) {}
     return null;
 }
+
+String findTargetTalkerByTitle(String title) {
+    if (TextUtils.isEmpty(title) || cacheTargetSet == null || cacheTargetSet.isEmpty()) return null;
+    try {
+        Object[] ids = cacheTargetSet.toArray();
+        for (int i = 0; i < ids.length; i++) {
+            String tid = String.valueOf(ids[i]);
+            if (TextUtils.isEmpty(tid)) continue;
+            String nm = resolveTalkerNameForMatch(tid);
+            if (TextUtils.isEmpty(nm)) continue;
+            if (titleMaybeMatchName(title, nm)) return tid;
+        }
+    } catch (Throwable ignored) {}
+    return null;
+}
 String scanBundleForTalker(Bundle b) {
     if (b == null) return null;
     String[] keys = new String[]{"Main_User", "MainUser", "talker", "Talker", "chat_talker", "chat_username", "username", "userName", "wxid", "contact", "conversation_id", "conversationId"};
@@ -1118,6 +1686,22 @@ String extractTalkerFromNotification(Notification n) {
             }
         }
     } catch (Throwable ignored) {}
+
+    // 深扫 PendingIntent extras，提升部分 ROM/版本下重启早期 talker 提取成功率
+    try {
+        PendingIntent[] pis = new PendingIntent[]{n.contentIntent, n.deleteIntent, n.fullScreenIntent};
+        for (int i = 0; i < pis.length; i++) {
+            PendingIntent pi = pis[i];
+            if (pi == null) continue;
+            try {
+                Intent it = null;
+                try { it = (Intent) pi.getClass().getMethod("getIntent").invoke(pi); } catch (Throwable ignored2) {}
+                if (it == null) continue;
+                String t = scanBundleForTalker(it.getExtras());
+                if (t != null) return t;
+            } catch (Throwable ignored3) {}
+        }
+    } catch (Throwable ignored) {}
     return null;
 }
 Object safeInvoke(Object obj, String methodName) {
@@ -1125,6 +1709,9 @@ Object safeInvoke(Object obj, String methodName) {
     try {
         Class c = obj.getClass();
         String key = c.getName() + "#" + methodName;
+
+        if (sNoArgMethodMissCache.contains(key)) return null;
+
         Method cached = (Method) sNoArgMethodCache.get(key);
         if (cached != null) {
             return cached.invoke(obj);
@@ -1137,6 +1724,8 @@ Object safeInvoke(Object obj, String methodName) {
             sNoArgMethodCache.put(key, m);
             return m.invoke(obj);
         }
+
+        sNoArgMethodMissCache.add(key);
     } catch (Throwable ignored) {}
     return null;
 }
@@ -1344,10 +1933,21 @@ void showRingtonePickStyleDialog(final Activity ctx, final String[] tmpRingtone,
         btnFile.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 try {
-                    Intent fileIntent = new Intent(Intent.ACTION_GET_CONTENT);
+                    Intent fileIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                     fileIntent.setType("audio/*");
                     fileIntent.addCategory(Intent.CATEGORY_OPENABLE);
-                    ctx.startActivityForResult(Intent.createChooser(fileIntent, "选择铃声文件"), REQ_PICK_RINGTONE_FILE);
+                    fileIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    fileIntent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+
+                    // 优先直连系统 DocumentsUI，尽量避免厂商文件管理器接管
+                    Intent nativeIntent = new Intent(fileIntent);
+                    nativeIntent.setPackage("com.android.documentsui");
+                    try {
+                        ctx.startActivityForResult(nativeIntent, REQ_PICK_RINGTONE_FILE);
+                    } catch (Throwable ignoredNative) {
+                        // 回退到通用文档选择，确保兼容没有 DocumentsUI 包的机型
+                        ctx.startActivityForResult(Intent.createChooser(fileIntent, "选择铃声文件"), REQ_PICK_RINGTONE_FILE);
+                    }
                 } catch (Throwable ignored) {}
                 try { pickDialog.dismiss(); } catch (Throwable ignored) {}
             }
@@ -1543,38 +2143,13 @@ void showTargetListUI(final Activity ctx) {
         }
     }).start();
 }
-void showTimeRangeDialog(final Activity ctx, final String[] startRef, final String[] endRef, final Runnable onChange) {
-    int st = parseTimeToMinute(startRef[0]);
-    int et = parseTimeToMinute(endRef[0]);
-    final int sh = st >= 0 ? st / 60 : 23;
-    final int sm = st >= 0 ? st % 60 : 0;
-    final int eh = et >= 0 ? et / 60 : 7;
-    final int em = et >= 0 ? et % 60 : 0;
-
-    TimePickerDialog pickStart = new TimePickerDialog(ctx, new TimePickerDialog.OnTimeSetListener() {
-        public void onTimeSet(android.widget.TimePicker view, final int hourOfDay, final int minute) {
-            TimePickerDialog pickEnd = new TimePickerDialog(ctx, new TimePickerDialog.OnTimeSetListener() {
-                public void onTimeSet(android.widget.TimePicker view2, int hourOfDay2, int minute2) {
-                    startRef[0] = String.format(Locale.getDefault(), "%02d:%02d", hourOfDay, minute);
-                    endRef[0] = String.format(Locale.getDefault(), "%02d:%02d", hourOfDay2, minute2);
-                    if (onChange != null) onChange.run();
-                }
-            }, eh, em, true);
-            pickEnd.setTitle("选择结束时间");
-            pickEnd.show();
-        }
-    }, sh, sm, true);
-    pickStart.setTitle("选择开始时间");
-    pickStart.show();
-}
-
 void showSingleTimePicker(final Activity ctx, String title, final String[] valueRef, final Runnable onChange) {
     int t = parseTimeToMinute(valueRef[0]);
     int h = t >= 0 ? t / 60 : 0;
     int m = t >= 0 ? t % 60 : 0;
     TimePickerDialog d = new TimePickerDialog(ctx, new TimePickerDialog.OnTimeSetListener() {
         public void onTimeSet(android.widget.TimePicker view, int hourOfDay, int minute) {
-            valueRef[0] = String.format(Locale.getDefault(), "%02d:%02d", hourOfDay, minute);
+            valueRef[0] = formatHHmm(hourOfDay, minute);
             if (onChange != null) onChange.run();
         }
     }, h, m, true);
@@ -1647,22 +2222,6 @@ void prepareSearchInput(final Activity ctx, final EditText et) {
     } catch (Throwable ignored) {}
 }
 
-void styleTabChip(TextView tv, boolean active) {
-    if (tv == null) return;
-    GradientDrawable bg = new GradientDrawable();
-    bg.setCornerRadius(999);
-    if (active) {
-        bg.setColor(Color.parseColor("#2563EB"));
-        tv.setTextColor(Color.WHITE);
-        tv.getPaint().setFakeBoldText(true);
-    } else {
-        bg.setColor(Color.parseColor("#EEF2F7"));
-        bg.setStroke(1, Color.parseColor("#D7E0EA"));
-        tv.setTextColor(Color.parseColor("#475569"));
-        tv.getPaint().setFakeBoldText(false);
-    }
-    tv.setBackground(bg);
-}
 void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boolean isGroup, final String displayNameRaw, final Set selectedIds, final Runnable onSaved) {
     hideSoftInput(ctx);
     String displayName = displayNameRaw.replace("  ✓", "").replace("  [已配置]", "").replace("  [未配置]", "");
@@ -1673,7 +2232,8 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
 
     Map oldCfg = parseTalkerCfg(getString(CFG_TALKER_CFG_PREFIX + talkerId, ""));
     final boolean[] tmpEnable = {selectedIds.contains(talkerId)};
-    final int[] tmpMode = {cfgGetInt(oldCfg, "mode", cacheMode)};
+    final int[] tmpMode = {cfgGetInt(oldCfg, "mode", 1)};
+    final boolean[] tmpDnd = {tmpMode[0] == 0};
     final boolean[] tmpVibrate = {cfgGetBool(oldCfg, "vibrate", cacheVibrate)};
     final boolean[] tmpSound = {cfgGetBool(oldCfg, "sound", cacheSound)};
     final boolean[] tmpShowDetail = {cfgGetBool(oldCfg, "showDetail", cacheShowDetail)};
@@ -1733,8 +2293,11 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
         });
         addDarkDivider(ctx, body);
 
-        addDarkSwitchRow(ctx, body, "免打扰(不弹通知)", tmpMode[0] == 0, new CompoundButton.OnCheckedChangeListener() {
-            public void onCheckedChanged(CompoundButton b, boolean c) { tmpMode[0] = c ? 0 : 1; }
+        addDarkSwitchRow(ctx, body, "免打扰(不弹通知)", tmpDnd[0], new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton b, boolean c) {
+                tmpDnd[0] = c;
+                tmpMode[0] = c ? 0 : 1;
+            }
         });
         addDarkDivider(ctx, body);
 
@@ -1911,7 +2474,8 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
                 }
 
                 Map newCfg = new HashMap();
-                newCfg.put("mode", String.valueOf(tmpMode[0]));
+                int modeToSave = tmpDnd[0] ? 0 : 1;
+                newCfg.put("mode", String.valueOf(modeToSave));
                 newCfg.put("vibrate", tmpVibrate[0] ? "1" : "0");
                 newCfg.put("sound", tmpSound[0] ? "1" : "0");
                 newCfg.put("quickReply", tmpQuickReply[0] ? "1" : "0");
@@ -1960,33 +2524,6 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
     } catch (Throwable e) {
         toast("打开会话配置失败");
     }
-}
-
-void showMemberRuleInputDialog(final Activity ctx, String title, String hint, final String[] valueRef, final Runnable onChange) {
-    final EditText et = new EditText(ctx);
-    et.setHint(hint);
-    et.setMinLines(3);
-    et.setText(TextUtils.isEmpty(valueRef[0]) ? "" : valueRef[0]);
-    et.setSelection(et.getText().length());
-    et.setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10));
-
-    new AlertDialog.Builder(ctx)
-            .setTitle(title)
-            .setMessage("示例：wxid_aaa,张三,李四")
-            .setView(et)
-            .setNegativeButton("取消", null)
-            .setNeutralButton("清空", new android.content.DialogInterface.OnClickListener() {
-                public void onClick(android.content.DialogInterface dialog, int which) {
-                    valueRef[0] = "";
-                    if (onChange != null) onChange.run();
-                }
-            })
-            .setPositiveButton("确定", new android.content.DialogInterface.OnClickListener() {
-                public void onClick(android.content.DialogInterface dialog, int which) {
-                    valueRef[0] = joinMemberRuleSet(parseMemberRuleSet(et.getText().toString()));
-                    if (onChange != null) onChange.run();
-                }
-            }).show();
 }
 
 void showGroupMemberPickerDialog(final Activity ctx, final String groupId, final String title, final String[] valueRef, final Runnable onChange) {
@@ -2260,11 +2797,10 @@ void addDarkSwitchRow(Activity ctx, LinearLayout parent, String title, boolean c
     tv.setTextColor(Color.parseColor("#0F172A"));
     row.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
 
-    Switch s = new Switch(ctx);
+    final Switch s = new Switch(ctx);
     s.setChecked(checked);
     s.setOnCheckedChangeListener(listener);
     row.addView(s);
-
     parent.addView(row);
 }
 
@@ -2606,35 +3142,6 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
     rbAll.setChecked(true);
     updateList.run();
 }
-void addDivider(Activity ctx, ViewGroup parent) {
-    View v = new View(ctx);
-    v.setBackgroundColor(Color.parseColor("#EAF0F6"));
-    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, 1);
-    lp.setMargins(16, 0, 16, 0);
-    parent.addView(v, lp);
-}
-
-void addSwitchRow(Activity ctx, LinearLayout parent, String title, boolean checked, CompoundButton.OnCheckedChangeListener listener) {
-    LinearLayout row = new LinearLayout(ctx);
-    row.setOrientation(LinearLayout.HORIZONTAL);
-    row.setPadding(20, 16, 20, 16);
-    row.setGravity(Gravity.CENTER_VERTICAL);
-    
-    TextView tv = new TextView(ctx);
-    tv.setText(title);
-    tv.setTextSize(15.5f);
-    tv.setTextColor(Color.parseColor("#0F172A"));
-    row.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
-    
-    Switch s = new Switch(ctx);
-    s.setChecked(checked);
-    s.setOnCheckedChangeListener(listener);
-    try { s.setScaleX(0.92f); s.setScaleY(0.92f); } catch (Throwable ignored) {}
-    row.addView(s);
-    
-    parent.addView(row);
-}
-
 void sortConfiguredFirst(List names, List ids, List isGroups, Set selectedIds) {
     if (names == null || ids == null || isGroups == null || selectedIds == null) return;
     int n = ids.size();
@@ -2673,27 +3180,4 @@ void sortConfiguredFirst(List names, List ids, List isGroups, Set selectedIds) {
     names.addAll(sortedNames);
     ids.addAll(sortedIds);
     isGroups.addAll(sortedIsGroups);
-}
-
-LinearLayout addClickableRowCustom(Activity ctx, LinearLayout parent, String title, View rightView) {
-    LinearLayout row = new LinearLayout(ctx);
-    row.setOrientation(LinearLayout.HORIZONTAL);
-    row.setPadding(20, 16, 20, 16);
-    row.setGravity(Gravity.CENTER_VERTICAL);
-    
-    TextView tv = new TextView(ctx);
-    tv.setText(title);
-    tv.setTextSize(15.5f);
-    tv.setTextColor(Color.parseColor("#0F172A"));
-    row.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
-    row.addView(rightView);
-    parent.addView(row);
-    return row;
-}
-
-LinearLayout addClickableRow(Activity ctx, LinearLayout parent, String title, String value) {
-    TextView tvVal = new TextView(ctx);
-    tvVal.setText(value);
-    tvVal.setTextColor(Color.GRAY);
-    return addClickableRowCustom(ctx, parent, title, tvVal);
 }

@@ -2,7 +2,7 @@
 # 相关结构
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.7.r1368 版本
+本文档适用于 WAuxiliary 最新版本
 :::
 
 ## 消息结构
@@ -94,5 +94,17 @@ FileMsg {
     String getMd5();// 文件MD5
     String getUrl();// 文件链接
     String getKey();// 文件密钥
+}
+```
+
+## 收款消息结构
+```beanshell
+PayMsgBean {
+    int getTimestamp();// 时间
+    String getUsername();// 账号
+    String getDisplayName();// 昵称
+    double getFee();// 费用
+    int getStatus();// 状态
+    String getStatusDesc();// 状态描述
 }
 ```

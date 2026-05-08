@@ -1,7 +1,7 @@
 # 回调方法
 
 ::: warning 警告
-本文档适用于 WAuxiliary v1.2.7.r1368 版本
+本文档适用于 WAuxiliary 最新版本
 :::
 
 ## 插件设置
@@ -44,4 +44,10 @@ void onMemberChange(String type, String groupWxid, String userWxid, String userN
 
 ```beanshell
 void onNewFriend(String wxid, String ticket, int scene);
+```
+
+## 监听收款消息
+
+```beanshell
+void onRecvPayMsg(Object payMsgBean);
 ```

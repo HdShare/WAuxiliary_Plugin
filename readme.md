@@ -1,69 +1,47 @@
-# 微信密友插件
+<p align="center">
+    <a href="https://github.com/HdShare/WAuxiliary_Plugin">
+        <img src="https://socialify.git.ci/HdShare/WAuxiliary_Plugin/image?description=1&font=Rokkitt&language=1&name=1&owner=1&theme=Auto" alt="socialify"/>
+    </a>
+</p>
 
-> 本插件是 **WAuxiliary（WA 模块）** 的子插件，基于 Xposed / LSPosed 框架实现微信联系人及会话的静默隐藏保护。
-> 插件目录：`/storage/emulated/0/Android/media/com.tencent.mm/WAuxiliary/Plugin/微信密友/`
+## 说明:
 
-## ✨ 简介
-微信密友插件可将指定联系人的聊天会话、消息通知、搜索记录完全隐藏，并支持随时通过聊天命令无痕切换可见与不可见状态。插件通过拦截微信数据库查询语句，在不影响正常使用的前提下，实现彻底的“隐身”保护。
+WeChat Auxiliary Plugin
 
-## 🗂 安装与存放
-1. 确保手机已安装 **WAuxiliary（WA 模块）** 并激活在 LSPosed / EdXposed 中。
-2. 将插件文件放入以下路径：/storage/emulated/0/Android/media/com.tencent.mm/WAuxiliary/Plugin/微信密友/
-3. 重启微信或重新注入 WA 模块即可加载插件。
+## 致谢
 
-## 🚀 快速开始
-1. 在微信任意聊天输入框发送 **`密友设置`** 进入配置界面。
-2. 打开 **「开启密友保护功能」** 总开关。
-3. 点击 **「管理密友名单」** 添加需要隐藏的联系人（支持从好友/群聊列表选择或手动输入 wxid）。
-4. 保存设置后插件自动进入隐藏模式。
-5. 需要暂时查看密友会话时，在任意聊天框输入 **`//show`**；恢复隐藏则输入 **`//hide`**。
+| 插件                                              | API                                 | 类型 | 状态 | 更新时间   |
+|-------------------------------------------------|-------------------------------------|----|----|--------|
+| [表情合成@Kyo](plugins/v127/Kyo/EmojiKitchen)       | [OIAPI](https://oiapi.net/)         | 免费 | ✅  | 260427 |
+| [抖音链接解析@coderpwh](plugins/v127/coderpwh/douyin) | [douyinVd](https://cf.eval.qzz.io/) | 免费 | ✅  | 260427 |
+| [举牌@周芷越](plugins/v127/周芷越/jupai)                | [HelloAPI](https://api.zxz.ee/)     | 免费 | ✅  | 260426 |
+| [龙图@yfishyon](plugins/v127/yfishyon/long)       | [遇见API](https://api.yujn.cn/)       | 免费 | ✅  | 260426 |
+| [看看腿@yfishyon](plugins/v127/yfishyon/sese)      | [遇见API](https://api.yujn.cn/)       | 免费 | ✅  | 260426 |
+| [表情合成@Hd](plugins/v127/Hd/EmojiMix)             | [OIAPI](https://oiapi.net/)         | 免费 | ✅  | 260426 |
+| [摸头插件@Hd](plugins/v127/Hd/Avatar-rua)           | [维梦API](https://api.52vmy.cn/)      | 免费 | ✅  | 260426 |
+| [历史今天@Hd](plugins/v127/Hd/HistoryToday)         | [PPAPI](http://api.ppqa.cn/)        | 免费 | ✅  | 260426 |
+| [视频插件@Hd](plugins/v127/Hd/VideoPlugin)          | [远梦API](https://api.mmp.cc/)        | 免费 | ✅  | 260426 |
+| [文转音@Hd](plugins/v127/Hd/TextToSpeech)          | [轩心云API](https://www.yx520.ltd/)    | 免费 | ✅  | 260426 |
+| [点歌插件@Hd](plugins/v127/Hd/MusicPlugin)          | [落月API](https://doc.vkeys.cn/)      | 免费 | ✅  | 260426 |
 
-## 🕹️ 聊天命令
-| 命令 | 作用 | 说明 |
-|------|------|------|
-| `密友设置` | 打开设置界面 | 需先在 WA 模块中加载本插件 |
-| `//hide` | 进入隐藏模式 | 静默，无任何界面提示 |
-| `//show` | 退出隐藏模式 | 如已启用密码锁，需验证密码 |
+## 贡献:
 
-## 🔧 设置页面功能
-### 👻 密友安全设置
-- **开启密友保护功能**：总开关，关闭后所有密友恢复正常显示。
-- **管理密友名单**：批量添加/删除密友，支持搜索过滤与全选反选。
-- **朋友圈提示**：出于账号安全，朋友圈隐藏请手动在微信资料页开启“不看他/她的朋友圈”。
+<p align="center">
+    <a href="https://github.com/HdShare/WAuxiliary_Plugin/graphs/contributors">
+        <img src="https://contrib.rocks/image?repo=HdShare/WAuxiliary_Plugin&columns=20"/>
+    </a>
+</p>
 
-### 🔒 隐私锁设置
-- **启用密码锁**：保护设置页入口及 `//show` 命令，防止他人窥探。
-- **设置/修改密码**：自定义解锁密码（需先启用密码锁）。
+## 星图:
 
-### ⚙️ 系统调试
-- **基础运行日志**：输出插件主要行为日志，一般建议保持开启。
-- **底层SQL调试日志**：打印被拦截修改的SQL语句，**高频输出可能造成卡顿，仅排查问题时开启**。
+<p align="center">
+    <a href="https://github.com/HdShare/WAuxiliary_Plugin">
+        <img src="https://starchart.cc/HdShare/WAuxiliary_Plugin.svg?background=%23FFFFFF&axis=%23333333&line=%2328c445" alt="starchart">
+    </a>
+</p>
 
-## ⚙️ 工作原理
-1. **SQL 查询拦截**  
-   Hook `SQLiteDatabase.rawQuery` 等方法，自动在涉及会话、联系人、消息全文搜索等表的查询中加入 `NOT IN (密友id...)` 条件，从数据库层面过滤密友数据。
-2. **通知与振动静默**  
-   拦截系统 `NotificationManager`、`Vibrator`、`SoundPool` 相关调用，在密友消息到达后的 2 秒窗口内屏蔽所有提醒，不留痕迹。
-3. **无痕刷新机制**  
-   通过执行无害 SQL 触发微信界面数据重载，在模式切换时立刻更新会话列表，全过程无弹窗、无 Toast。
+## 协议:
 
-## 📌 注意事项
-- 插件仅作用于当前微信账号，不同账号需分别配置。
-- 微信版本更新可能导致部分类名变化，如功能失效请在设置中开启 **SQL调试日志** 并查看输出，自行适配或等待更新。
-- 朋友圈隐藏无法通过数据库 Hook 自动实现，需配合微信原生“不看他/她朋友圈”功能。
-- 密码以明文方式存储，请保管好手机；遗忘密码可清除 WA 模块数据（同时清空密友名单）来恢复。
-- 极端情况下（如微信大版本升级）频繁 `//hide`/`//show` 可能导致会话列表短暂错乱，重启微信即可恢复。
+除非对应插件目录中另有单独声明，否则本仓库内提交的插件默认采用 [Apache 2.0](LICENSE) 许可证。
 
-## ❓ 常见问题
-**Q：提示“请关闭LSPosed调用保护”怎么办？**  
-A：在 LSPosed 管理器中将微信的“启用调用保护”关闭，或按提示选择“始终允许”。
-
-**Q：设置了密友但聊天记录还能被搜索到？**  
-A：请检查是否已开启密友保护总开关，并确认输入的 wxid 是否正确；建议清一下搜索历史再试。
-
-**Q：如何不留下任何设置痕迹？**  
-A：插件所有保存操作均无 Toast，切换模式也无提示，只需注意不要留下输入命令的聊天记录即可（可手动删除）。
-
----
-
-> 仅供个人学习与研究使用，请遵守相关法律法规。
+具体请以对应插件目录下的 `LICENSE` 文件为准。

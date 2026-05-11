@@ -12,6 +12,7 @@ import java.util.*;
 import de.robv.android.xposed.*;
 import me.hd.wauxv.data.bean.info.FriendInfo;
 
+boolean DEF_AUTO_LIKE_ENABLE = true;
 int DEF_REFRESH_INTERVAL = 300000;
 int DEF_MIN_LIKE_DELAY_MS = 60000;
 int DEF_MAX_LIKE_DELAY_MS = 3600000;
@@ -71,7 +72,7 @@ String CFG_SNS_NOTIFY_TITLE_TPL = "auto_like_sns_notify_title_tpl_v1";
 String CFG_SNS_NOTIFY_BODY_TPL = "auto_like_sns_notify_body_tpl_v1";
 String CFG_SNS_NOTIFY_TOAST_TPL = "auto_like_sns_notify_toast_tpl_v1";
 
-boolean AUTO_LIKE_ENABLE = true;
+boolean AUTO_LIKE_ENABLE = DEF_AUTO_LIKE_ENABLE;
 // 旧单目标配置已清理，白名单默认空
 int REFRESH_INTERVAL = DEF_REFRESH_INTERVAL;
 int MIN_LIKE_DELAY_MS = DEF_MIN_LIKE_DELAY_MS;
@@ -430,11 +431,27 @@ boolean isPostKeywordAllowed(ContentValues cv, int postType) {
     return true;
 }
 
+boolean hasValidAutoLikeTargetConfig() {
+    try {
+        if (LIST_MODE == 1) {
+            // 黑名单模式风险较高：黑名单为空时绝不运行，避免等价于全员点赞
+            return blackListSet != null && !blackListSet.isEmpty();
+        }
+        // 白名单模式：必须明确选择至少一个白名单好友，否则不运行
+        return whiteListSet != null && !whiteListSet.isEmpty();
+    } catch (Throwable ignored) {}
+    return false;
+}
+
 boolean shouldAutoLikeUser(String userName) {
     try {
         if (userName == null || userName.length() == 0) return false;
-        if (LIST_MODE == 1) return !blackListSet.contains(userName); // 黑名单模式：除了黑名单都点
-        return whiteListSet.contains(userName); // 白名单模式：只点白名单
+        if (LIST_MODE == 1) {
+            // 安全保护：黑名单为空时不默认点赞所有人，避免新装/误配置后批量点赞
+            if (blackListSet == null || blackListSet.isEmpty()) return false;
+            return !blackListSet.contains(userName);
+        }
+        return whiteListSet != null && whiteListSet.contains(userName); // 白名单模式：只点白名单
     } catch (Throwable ignored) {}
     return false;
 }
@@ -559,8 +576,9 @@ void appendPluginLogFile(String msg) {
 void clearPluginLogFiles() {
     try {
         String[] paths = {
-            "/storage/emulated/999/Android/media/com.tencent.mm/WAuxiliary/Plugin/朋友圈自动点赞/plugin.log",
-            "/storage/emulated/0/Android/media/com.tencent.mm/WAuxiliary/Plugin/朋友圈自动点赞/plugin.log"
+            "/storage/emulated/999/Android/media/com.tencent.mm/WAuxiliary/Plugin/自动点赞/plugin.log",
+            "/sdcard/Android/media/com.tencent.mm/WAuxiliary/Plugin/自动点赞/plugin.log",
+            "/storage/emulated/0/Android/media/com.tencent.mm/WAuxiliary/Plugin/自动点赞/plugin.log"
         };
         for (int i = 0; i < paths.length; i++) {
             try {
@@ -780,7 +798,7 @@ void notifySnsPostIfNeeded(String userName, long snsId, ContentValues cv) {
 
 void loadRuntimeConfig() {
     try {
-        AUTO_LIKE_ENABLE = getBoolean(CFG_ENABLE, true);
+        AUTO_LIKE_ENABLE = getBoolean(CFG_ENABLE, DEF_AUTO_LIKE_ENABLE);
         REFRESH_INTERVAL = clampInt(getInt(CFG_REFRESH_INTERVAL, DEF_REFRESH_INTERVAL), 1000, 3600000, DEF_REFRESH_INTERVAL);
         int oldDelay = DEF_MIN_LIKE_DELAY_MS;
         MIN_LIKE_DELAY_MS = clampInt(getInt(CFG_MIN_LIKE_DELAY_MS, oldDelay), 0, 7200000, DEF_MIN_LIKE_DELAY_MS);
@@ -1712,6 +1730,7 @@ boolean trySendRefreshScene(Class cls) {
 void triggerBackgroundRefresh() {
     try {
         if (!AUTO_LIKE_ENABLE || !REFRESH_ENABLE || !isScheduleAllowed() || !shouldRunFixedRefreshNow()) return;
+        if (!hasValidAutoLikeTargetConfig()) return;
         long now = System.currentTimeMillis();
         if (LOG_ENABLE && now - lastDiagLogTs > 15000L) {
             lastDiagLogTs = now;
@@ -1932,6 +1951,7 @@ XC_MethodHook dbWriteHook = new XC_MethodHook() {
             if (snsId == 0) return;
             notifySnsPostIfNeeded(userName, snsId, cv);
             if (!AUTO_LIKE_ENABLE || !isScheduleAllowed()) return;
+            if (!hasValidAutoLikeTargetConfig()) return;
             if (!shouldAutoLikeUser(userName)) return;
             Long id = Long.valueOf(snsId);
             if (isAlreadyHandled(id)) return;
@@ -2137,7 +2157,7 @@ void showAutoLikeHomeUI() {
                 LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(-2, -2); btnLp.leftMargin = dp(ctx, 10);
                 actions.addView(btnReset); actions.addView(btnClose, btnLp); card.addView(actions, actionsLp);
                 btnClose.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ try { putBoolean(CFG_ENABLE, swEnable.isChecked()); AUTO_LIKE_ENABLE = swEnable.isChecked(); } catch(Throwable e) { AUTO_LIKE_ENABLE = swEnable.isChecked(); } dialog.dismiss(); }});
-                btnReset.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ DELAY_MODE=DEF_DELAY_MODE; FIXED_LIKE_DELAY_MS=DEF_FIXED_LIKE_DELAY_MS; REFRESH_ENABLE=DEF_REFRESH_ENABLE; REFRESH_MODE=DEF_REFRESH_MODE; REFRESH_START=DEF_REFRESH_START; REFRESH_END=DEF_REFRESH_END; SCHEDULE_ENABLE=DEF_SCHEDULE_ENABLE; SCHEDULE_START=DEF_SCHEDULE_START; SCHEDULE_END=DEF_SCHEDULE_END; SKIP_TEXT=false; SKIP_IMAGE=false; SKIP_VIDEO=false; SKIP_KEYWORDS_RAW=""; KEYWORD_FILTER_TEXT=true; KEYWORD_FILTER_IMAGE=true; KEYWORD_FILTER_VIDEO=true; UNKNOWN_TIME_POLICY=DEF_UNKNOWN_TIME_POLICY; UNKNOWN_TYPE_POLICY=DEF_UNKNOWN_TYPE_POLICY; LOG_ENABLE=false; LOG_MAX=DEF_LOG_MAX; saveRuntimeConfig(true, 0, "", "", DEF_REFRESH_INTERVAL, DEF_MIN_LIKE_DELAY_MS, DEF_MAX_LIKE_DELAY_MS, DEF_MAX_POST_AGE_HOURS, DEF_MAX_PROCESSED_SAVE, DEF_DUP_SUPPRESS_MS); toast("已恢复默认"); dialog.dismiss(); showAutoLikeHomeUI(); }});
+                btnReset.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ DELAY_MODE=DEF_DELAY_MODE; FIXED_LIKE_DELAY_MS=DEF_FIXED_LIKE_DELAY_MS; REFRESH_ENABLE=DEF_REFRESH_ENABLE; REFRESH_MODE=DEF_REFRESH_MODE; REFRESH_START=DEF_REFRESH_START; REFRESH_END=DEF_REFRESH_END; SCHEDULE_ENABLE=DEF_SCHEDULE_ENABLE; SCHEDULE_START=DEF_SCHEDULE_START; SCHEDULE_END=DEF_SCHEDULE_END; SKIP_TEXT=false; SKIP_IMAGE=false; SKIP_VIDEO=false; SKIP_KEYWORDS_RAW=""; KEYWORD_FILTER_TEXT=true; KEYWORD_FILTER_IMAGE=true; KEYWORD_FILTER_VIDEO=true; UNKNOWN_TIME_POLICY=DEF_UNKNOWN_TIME_POLICY; UNKNOWN_TYPE_POLICY=DEF_UNKNOWN_TYPE_POLICY; LOG_ENABLE=false; LOG_MAX=DEF_LOG_MAX; saveRuntimeConfig(DEF_AUTO_LIKE_ENABLE, 0, "", "", DEF_REFRESH_INTERVAL, DEF_MIN_LIKE_DELAY_MS, DEF_MAX_LIKE_DELAY_MS, DEF_MAX_POST_AGE_HOURS, DEF_MAX_PROCESSED_SAVE, DEF_DUP_SUPPRESS_MS); toast("已恢复默认，自动点赞默认关闭"); dialog.dismiss(); showAutoLikeHomeUI(); }});
                 finishDialogLayout(dialog, root, card);
                 showDialogAnimated(dialog, card, ctx, 20, 180);
             } catch (Throwable e) { toast("打开设置失败: " + e); }

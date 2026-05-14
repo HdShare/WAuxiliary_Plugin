@@ -63,6 +63,7 @@ String CFG_UNKNOWN_TYPE_POLICY = "auto_like_unknown_type_policy_v3";
 String CFG_LIKE_LOGS = "auto_like_logs_v3";
 String CFG_LIKE_SUCCESS_LOGS = "auto_like_success_logs_v1";
 String CFG_LIKE_SKIP_LOGS = "auto_like_skip_logs_v1";
+String CFG_REFRESH_LOGS = "auto_like_refresh_logs_v1";
 String CFG_LOG_ENABLE = "auto_like_log_enable_v4";
 String CFG_LOG_MAX = "auto_like_log_max_v3";
 String CFG_SNS_NOTIFY_ENABLE = "auto_like_sns_notify_enable_v1";
@@ -121,6 +122,12 @@ java.util.HashMap recentTriggerTs = new java.util.HashMap();
 Object dedupLock = new Object();
 long lastDiagLogTs = 0L;
 long lastDispatcherLogTs = 0L;
+long refreshCollectStartMs = 0L;
+long refreshCollectEndMs = 0L;
+int refreshCollectCount = 0;
+long refreshCollectMinCreateSec = 0L;
+long refreshCollectMaxCreateSec = 0L;
+Object refreshLogLock = new Object();
 int DUP_SUPPRESS_MS = DEF_DUP_SUPPRESS_MS;
 
 HandlerThread ghostThread = null;
@@ -544,11 +551,70 @@ int nextLikeDelayMs() {
     } catch (Throwable ignored) {}
     return MIN_LIKE_DELAY_MS;
 }
-
-
 void logMsg(String msg) { logToStore(CFG_LIKE_LOGS, msg); }
 void logSuccess(String msg) { logToStore(CFG_LIKE_SUCCESS_LOGS, "[点赞成功] " + msg); }
 void logSkip(String msg) { logToStore(CFG_LIKE_SKIP_LOGS, "[跳过点赞] " + msg); }
+void logRefresh(String msg) { logToStore(CFG_REFRESH_LOGS, "[刷新记录] " + msg); }
+
+String formatTimeHM(long sec) {
+    try {
+        if (sec <= 0) return "未知";
+        return new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(new java.util.Date(sec * 1000L));
+    } catch (Throwable ignored) {}
+    return "未知";
+}
+
+void recordRefreshObservedPost(ContentValues cv) {
+    try {
+        long now = System.currentTimeMillis();
+        synchronized (refreshLogLock) {
+            if (refreshCollectStartMs <= 0 || now < refreshCollectStartMs || now > refreshCollectEndMs) return;
+            refreshCollectCount++;
+            long sec = extractPostCreateTimeSec(cv);
+            if (sec > 0) {
+                if (refreshCollectMinCreateSec <= 0 || sec < refreshCollectMinCreateSec) refreshCollectMinCreateSec = sec;
+                if (refreshCollectMaxCreateSec <= 0 || sec > refreshCollectMaxCreateSec) refreshCollectMaxCreateSec = sec;
+            }
+        }
+    } catch (Throwable ignored) {}
+}
+
+void beginRefreshLogWindow() {
+    try {
+        if (!LOG_ENABLE) return;
+        final long start = System.currentTimeMillis();
+        synchronized (refreshLogLock) {
+            refreshCollectStartMs = start;
+            refreshCollectEndMs = start + 12000L;
+            refreshCollectCount = 0;
+            refreshCollectMinCreateSec = 0L;
+            refreshCollectMaxCreateSec = 0L;
+        }
+        if (ghostHandler != null) {
+            ghostHandler.postDelayed(new Runnable(){ public void run(){ finishRefreshLogWindow(start); }}, 12500L);
+        }
+    } catch (Throwable ignored) {}
+}
+
+void finishRefreshLogWindow(long startMs) {
+    try {
+        if (!LOG_ENABLE) return;
+        int cnt = 0; long minSec = 0L; long maxSec = 0L;
+        synchronized (refreshLogLock) {
+            if (refreshCollectStartMs != startMs) return;
+            cnt = refreshCollectCount;
+            minSec = refreshCollectMinCreateSec;
+            maxSec = refreshCollectMaxCreateSec;
+            refreshCollectStartMs = 0L;
+            refreshCollectEndMs = 0L;
+        }
+        String at = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date(startMs));
+        String range = cnt > 0 ? (formatTimeHM(minSec) + " 到 " + formatTimeHM(maxSec)) : "无新增";
+        logRefresh(at + " 执行后台刷新，新增朋友圈 " + cnt + " 条" + (cnt > 0 ? "，发布时间范围：" + range : ""));
+    } catch (Throwable ignored) {}
+}
+
+
 
 void appendPluginLogFile(String msg) {
     try {
@@ -1731,6 +1797,7 @@ void triggerBackgroundRefresh() {
     try {
         if (!AUTO_LIKE_ENABLE || !REFRESH_ENABLE || !isScheduleAllowed() || !shouldRunFixedRefreshNow()) return;
         if (!hasValidAutoLikeTargetConfig()) return;
+        beginRefreshLogWindow();
         long now = System.currentTimeMillis();
         if (LOG_ENABLE && now - lastDiagLogTs > 15000L) {
             lastDiagLogTs = now;
@@ -1938,6 +2005,7 @@ XC_MethodHook dbWriteHook = new XC_MethodHook() {
                 if (args[i] instanceof ContentValues) { cv = (ContentValues) args[i]; break; }
             }
             if (cv == null) return;
+            recordRefreshObservedPost(cv);
             String userName = null;
             try { userName = cv.getAsString("userName"); } catch (Throwable ignored) {}
             long now = System.currentTimeMillis();
@@ -2593,6 +2661,7 @@ void showLikeLogUI(final Activity ctx, final Runnable onDone) {
 
         final String successText=getString(CFG_LIKE_SUCCESS_LOGS,"");
         final String skipText=getString(CFG_LIKE_SKIP_LOGS,"");
+        final String refreshText=getString(CFG_REFRESH_LOGS,"");
         final String commonText=getString(CFG_LIKE_LOGS,"");
 
         final RadioGroup rgFilter = new RadioGroup(ctx);
@@ -2601,8 +2670,9 @@ void showLikeLogUI(final Activity ctx, final Runnable onDone) {
         RadioButton rbAll = new RadioButton(ctx); rbAll.setId(1001); rbAll.setText("全部");
         RadioButton rbSucc = new RadioButton(ctx); rbSucc.setId(1002); rbSucc.setText("成功");
         RadioButton rbSkip = new RadioButton(ctx); rbSkip.setId(1003); rbSkip.setText("跳过");
+        RadioButton rbRefresh = new RadioButton(ctx); rbRefresh.setId(1005); rbRefresh.setText("刷新");
         RadioButton rbOther = new RadioButton(ctx); rbOther.setId(1004); rbOther.setText("其他");
-        rgFilter.addView(rbAll); rgFilter.addView(rbSucc); rgFilter.addView(rbSkip); rgFilter.addView(rbOther);
+        rgFilter.addView(rbAll); rgFilter.addView(rbSucc); rgFilter.addView(rbSkip); rgFilter.addView(rbRefresh); rgFilter.addView(rbOther);
         rgFilter.check(1001);
         card.addView(rgFilter);
 
@@ -2625,6 +2695,11 @@ void showLikeLogUI(final Activity ctx, final Runnable onDone) {
                 logSb.append(skipText==null || skipText.length()==0 ? "暂无" : skipText);
                 if (mode == 1001) logSb.append("\n\n");
             }
+            if (mode == 1001 || mode == 1005) {
+                if (mode == 1001) logSb.append("===== 定时刷新 =====\n");
+                logSb.append(refreshText==null || refreshText.length()==0 ? "暂无" : refreshText);
+                if (mode == 1001) logSb.append("\n\n");
+            }
             if (mode == 1001 || mode == 1004) {
                 if (mode == 1001) logSb.append("===== 其他日志 =====\n");
                 logSb.append(commonText==null || commonText.length()==0 ? "暂无" : commonText);
@@ -2637,7 +2712,7 @@ void showLikeLogUI(final Activity ctx, final Runnable onDone) {
 
         ScrollView sv=new ScrollView(ctx); sv.addView(logs); LinearLayout.LayoutParams svLp=new LinearLayout.LayoutParams(-1,0,1f); svLp.topMargin=dp(ctx,12); card.addView(sv,svLp);
         LinearLayout actions=new LinearLayout(ctx); actions.setGravity(Gravity.END); TextView clear=makeBtn(ctx,"清空日志",false); TextView save=makeBtn(ctx,"保存",false); TextView close=makeBtn(ctx,"关闭",true); LinearLayout.LayoutParams blp=new LinearLayout.LayoutParams(-2,-2); blp.leftMargin=dp(ctx,10); actions.addView(clear); actions.addView(save,blp); actions.addView(close,blp); card.addView(actions);
-        clear.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ putString(CFG_LIKE_LOGS,""); putString(CFG_LIKE_SUCCESS_LOGS,""); putString(CFG_LIKE_SKIP_LOGS,""); notifiedSnsIds.clear(); clearPluginLogFiles(); toast("日志已清空"); dialog.dismiss(); }});
+        clear.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ putString(CFG_LIKE_LOGS,""); putString(CFG_LIKE_SUCCESS_LOGS,""); putString(CFG_LIKE_SKIP_LOGS,""); putString(CFG_REFRESH_LOGS,""); notifiedSnsIds.clear(); clearPluginLogFiles(); toast("日志已清空"); dialog.dismiss(); }});
         save.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ LOG_ENABLE=swLog.isChecked(); saveAdvancedConfig(); toast(LOG_ENABLE ? "日志记录已开启" : "日志记录已关闭"); dialog.dismiss(); if (onDone != null) onDone.run(); }});
         close.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ dialog.dismiss(); }});
         finishDialogLayout(dialog, mask, card);
@@ -2645,6 +2720,96 @@ void showLikeLogUI(final Activity ctx, final Runnable onDone) {
     } catch (Throwable e) {
         toast("打开日志失败: " + e);
     }
+}
+
+String getContactLabelIdSafe(Object label) {
+    try { Object v = XposedHelpers.callMethod(label, "getLabelId"); if (v != null) return String.valueOf(v); } catch (Throwable ignored) {}
+    try { Object v = XposedHelpers.callMethod(label, "getLabelID"); if (v != null) return String.valueOf(v); } catch (Throwable ignored) {}
+    try { Object v = XposedHelpers.callMethod(label, "getId"); if (v != null) return String.valueOf(v); } catch (Throwable ignored) {}
+    try { Object v = XposedHelpers.getObjectField(label, "labelId"); if (v != null) return String.valueOf(v); } catch (Throwable ignored) {}
+    try { Object v = XposedHelpers.getObjectField(label, "labelID"); if (v != null) return String.valueOf(v); } catch (Throwable ignored) {}
+    try { Object v = XposedHelpers.getObjectField(label, "id"); if (v != null) return String.valueOf(v); } catch (Throwable ignored) {}
+    return "";
+}
+
+String getContactLabelNameSafe(Object label) {
+    try { Object v = XposedHelpers.callMethod(label, "getLabelName"); if (v != null) return String.valueOf(v); } catch (Throwable ignored) {}
+    try { Object v = XposedHelpers.callMethod(label, "getName"); if (v != null) return String.valueOf(v); } catch (Throwable ignored) {}
+    try { Object v = XposedHelpers.getObjectField(label, "labelName"); if (v != null) return String.valueOf(v); } catch (Throwable ignored) {}
+    try { Object v = XposedHelpers.getObjectField(label, "name"); if (v != null) return String.valueOf(v); } catch (Throwable ignored) {}
+    return String.valueOf(label);
+}
+
+void showContactLabelPickerUI(final Activity ctx, final HashSet selected, final Runnable onChanged) {
+    try {
+        final Dialog dialog = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE); dialog.setCancelable(true);
+        FrameLayout mask = new FrameLayout(ctx); mask.setBackgroundColor(Color.parseColor("#66000000"));
+        LinearLayout root = new LinearLayout(ctx); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(ctx, 12), dp(ctx, 16), dp(ctx, 12), dp(ctx, 12));
+        GradientDrawable rootBg = roundRect(Color.parseColor("#FCFCFD"), dp(ctx, 22)); rootBg.setStroke(dp(ctx, 1), Color.parseColor("#E6EAF0")); root.setBackground(rootBg);
+        FrameLayout.LayoutParams rootLp = new FrameLayout.LayoutParams(-1, -1); rootLp.leftMargin = dp(ctx, 18); rootLp.rightMargin = dp(ctx, 18); rootLp.topMargin = dp(ctx, 52); rootLp.bottomMargin = dp(ctx, 52); root.setLayoutParams(rootLp);
+        TextView title = new TextView(ctx); title.setText("选择标签"); title.setTextSize(22f); title.setTypeface(null, Typeface.BOLD); title.setTextColor(Color.parseColor("#0F172A")); root.addView(title);
+        TextView sub = new TextView(ctx); sub.setText("点击标签后查看该标签成员，可勾选要加入名单的好友"); sub.setTextSize(13f); sub.setTextColor(Color.parseColor("#64748B")); sub.setPadding(dp(ctx, 2), dp(ctx, 8), dp(ctx, 2), dp(ctx, 8)); root.addView(sub);
+        final List display = new ArrayList(); final List labelIds = new ArrayList(); final List labelNames = new ArrayList();
+        try {
+            List labels = getContactLabelList();
+            if (labels != null) {
+                for (int i = 0; i < labels.size(); i++) {
+                    Object lb = labels.get(i); if (lb == null) continue;
+                    String lid = getContactLabelIdSafe(lb); String ln = getContactLabelNameSafe(lb);
+                    if (lid == null) lid = ""; if (ln == null || ln.length() == 0) ln = "未命名标签";
+                    List members = null; try { if (lid.length() > 0) members = getContactByLabelId(lid); } catch (Throwable ignored) {}
+                    int cnt = members == null ? 0 : members.size();
+                    display.add(ln + "  ·  " + cnt + "人\nID: " + lid);
+                    labelIds.add(lid); labelNames.add(ln);
+                }
+            }
+        } catch (Throwable e) { toast("读取标签失败: " + e); }
+        final ListView lv = new ListView(ctx); lv.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E9EDF3"))); lv.setDividerHeight(1); lv.setSelector(new android.graphics.drawable.ColorDrawable(Color.parseColor("#12000000")));
+        final ArrayAdapter adapter = new ArrayAdapter(ctx, android.R.layout.simple_list_item_1, display); lv.setAdapter(adapter);
+        LinearLayout.LayoutParams lvp = new LinearLayout.LayoutParams(-1, 0, 1f); lvp.topMargin = dp(ctx, 6); root.addView(lv, lvp);
+        if (display.isEmpty()) { display.add("当前没有可用标签"); adapter.notifyDataSetChanged(); }
+        lv.setOnItemClickListener(new AdapterView.OnItemClickListener(){ public void onItemClick(AdapterView p, View v, int pos, long id){ try { if (pos < 0 || pos >= labelIds.size()) return; showContactLabelMemberPickerUI(ctx, String.valueOf(labelIds.get(pos)), String.valueOf(labelNames.get(pos)), selected, onChanged); } catch(Throwable e){ toast("打开标签成员失败: " + e); } }});
+        LinearLayout actions = new LinearLayout(ctx); actions.setGravity(Gravity.END); LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2); alp.topMargin = dp(ctx, 12); TextView close = makeBtn(ctx, "关闭", true); actions.addView(close); root.addView(actions, alp);
+        close.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ dialog.dismiss(); }});
+        finishDialogLayout(dialog, mask, root); dialog.show();
+    } catch (Throwable e) { toast("打开标签列表失败: " + e); }
+}
+
+void showContactLabelMemberPickerUI(final Activity ctx, final String labelId, final String labelName, final HashSet selected, final Runnable onChanged) {
+    try {
+        final Dialog dialog = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE); dialog.setCancelable(true);
+        FrameLayout mask = new FrameLayout(ctx); mask.setBackgroundColor(Color.parseColor("#66000000"));
+        LinearLayout root = new LinearLayout(ctx); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(ctx, 12), dp(ctx, 16), dp(ctx, 12), dp(ctx, 12));
+        GradientDrawable rootBg = roundRect(Color.parseColor("#FCFCFD"), dp(ctx, 22)); rootBg.setStroke(dp(ctx, 1), Color.parseColor("#E6EAF0")); root.setBackground(rootBg);
+        FrameLayout.LayoutParams rootLp = new FrameLayout.LayoutParams(-1, -1); rootLp.leftMargin = dp(ctx, 10); rootLp.rightMargin = dp(ctx, 10); rootLp.topMargin = dp(ctx, 44); rootLp.bottomMargin = dp(ctx, 44); root.setLayoutParams(rootLp);
+        TextView title = new TextView(ctx); title.setText("标签成员 · " + labelName); title.setTextSize(21f); title.setTypeface(null, Typeface.BOLD); title.setTextColor(Color.parseColor("#0F172A")); root.addView(title);
+        final TextView count = new TextView(ctx); count.setTextColor(Color.parseColor("#64748B")); count.setTextSize(12f); count.setPadding(dp(ctx, 8), dp(ctx, 8), dp(ctx, 8), dp(ctx, 4)); root.addView(count);
+        final List display = new ArrayList(); final List memberIds = new ArrayList();
+        try {
+            List members = getContactByLabelId(labelId);
+            if (members == null) members = new ArrayList();
+            for (int i = 0; i < members.size(); i++) {
+                String wxid = String.valueOf(members.get(i)); if (wxid == null || wxid.length() == 0) continue;
+                String name = getFriendDisplayNameSafe(wxid);
+                display.add(name + "\n" + wxid); memberIds.add(wxid);
+            }
+        } catch (Throwable e) { toast("读取标签成员失败: " + e); }
+        final ListView lv = new ListView(ctx); lv.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE); lv.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E9EDF3"))); lv.setDividerHeight(1); lv.setSelector(new android.graphics.drawable.ColorDrawable(Color.parseColor("#12000000")));
+        final ArrayAdapter adapter = new ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, display); lv.setAdapter(adapter);
+        LinearLayout.LayoutParams lvp = new LinearLayout.LayoutParams(-1, 0, 1f); lvp.topMargin = dp(ctx, 6); root.addView(lv, lvp);
+        final Runnable refresh = new Runnable(){ public void run(){ try { for (int i=0;i<memberIds.size();i++) lv.setItemChecked(i, selected.contains(String.valueOf(memberIds.get(i)))); count.setText("标签成员 " + memberIds.size() + " 人 · 总已选 " + selected.size() + " 人"); } catch(Throwable ignored){} }};
+        lv.setOnItemClickListener(new AdapterView.OnItemClickListener(){ public void onItemClick(AdapterView p, View v, int pos, long id){ String wxid=String.valueOf(memberIds.get(pos)); if (lv.isItemChecked(pos)) selected.add(wxid); else selected.remove(wxid); refresh.run(); if (onChanged != null) onChanged.run(); }});
+        LinearLayout actions = new LinearLayout(ctx); actions.setGravity(Gravity.END); actions.setOrientation(LinearLayout.VERTICAL); LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2); alp.topMargin = dp(ctx, 12);
+        LinearLayout batch = new LinearLayout(ctx); batch.setGravity(Gravity.END); TextView addAll = makeBtn(ctx, "全选本标签", false); TextView invert = makeBtn(ctx, "反选本标签", false); LinearLayout.LayoutParams blpSmall = new LinearLayout.LayoutParams(-2, -2); blpSmall.leftMargin = dp(ctx, 10); batch.addView(addAll); batch.addView(invert, blpSmall); actions.addView(batch);
+        LinearLayout main = new LinearLayout(ctx); main.setGravity(Gravity.END); LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(-1, -2); mlp.topMargin = dp(ctx, 10); TextView cancel = makeBtn(ctx, "返回", false); TextView ok = makeBtn(ctx, "完成", true); LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-2, -2); blp.leftMargin = dp(ctx, 10); main.addView(cancel); main.addView(ok, blp); actions.addView(main, mlp); root.addView(actions, alp);
+        addAll.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ for (int i=0;i<memberIds.size();i++) selected.add(String.valueOf(memberIds.get(i))); refresh.run(); if (onChanged != null) onChanged.run(); }});
+        invert.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ for (int i=0;i<memberIds.size();i++){ String wxid=String.valueOf(memberIds.get(i)); if (selected.contains(wxid)) selected.remove(wxid); else selected.add(wxid); } refresh.run(); if (onChanged != null) onChanged.run(); }});
+        cancel.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ dialog.dismiss(); }});
+        ok.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ if (onChanged != null) onChanged.run(); dialog.dismiss(); }});
+        finishDialogLayout(dialog, mask, root); dialog.show(); refresh.run();
+    } catch (Throwable e) { toast("打开标签成员失败: " + e); }
 }
 
 void showFriendMultiPickerUI(final Activity ctx, final String rawSelected, final boolean blackMode, final TextView tvValue) {
@@ -2686,11 +2851,13 @@ void buildFriendMultiPickerUI(final Activity ctx, final String rawSelected, fina
         LinearLayout.LayoutParams lvp = new LinearLayout.LayoutParams(-1, 0, 1f); lvp.topMargin = dp(ctx, 6); root.addView(lv, lvp);
         final List display = new ArrayList(); final List showIds = new ArrayList(); final ArrayAdapter adapter = new ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, display); lv.setAdapter(adapter);
         final Runnable update = new Runnable(){ public void run(){ display.clear(); showIds.clear(); String kw = search.getText().toString().trim().toLowerCase(); for (int i=0;i<names.size();i++){ String name=String.valueOf(names.get(i)); String id=String.valueOf(ids.get(i)); String row=name+"\n"+id; if (kw.length()==0 || row.toLowerCase().contains(kw)){ display.add(row); showIds.add(id); } } adapter.notifyDataSetChanged(); for (int i=0;i<showIds.size();i++) lv.setItemChecked(i, selected.contains(String.valueOf(showIds.get(i)))); count.setText("已选 " + selected.size() + " 人"); }};
+        final Runnable onLabelChanged = new Runnable(){ public void run(){ update.run(); }};
         search.addTextChangedListener(new TextWatcher(){ public void beforeTextChanged(CharSequence s,int st,int c,int a){} public void onTextChanged(CharSequence s,int st,int b,int c){} public void afterTextChanged(Editable e){ update.run(); }});
         lv.setOnItemClickListener(new AdapterView.OnItemClickListener(){ public void onItemClick(AdapterView p, View v, int pos, long id){ String wxid=String.valueOf(showIds.get(pos)); if (lv.isItemChecked(pos)) selected.add(wxid); else selected.remove(wxid); count.setText("已选 " + selected.size() + " 人"); }});
         LinearLayout actions = new LinearLayout(ctx); actions.setGravity(Gravity.END); actions.setOrientation(LinearLayout.VERTICAL); LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2); alp.topMargin = dp(ctx, 12);
-        LinearLayout batchRow = new LinearLayout(ctx); batchRow.setGravity(Gravity.END); TextView selectAll = makeBtn(ctx, "全选当前", false); TextView invert = makeBtn(ctx, "反选当前", false); LinearLayout.LayoutParams blpSmall = new LinearLayout.LayoutParams(-2, -2); blpSmall.leftMargin = dp(ctx, 10); batchRow.addView(selectAll); batchRow.addView(invert, blpSmall); actions.addView(batchRow);
+        LinearLayout batchRow = new LinearLayout(ctx); batchRow.setGravity(Gravity.END); TextView addLabel = makeBtn(ctx, "添加标签好友", false); TextView selectAll = makeBtn(ctx, "全选当前", false); TextView invert = makeBtn(ctx, "反选当前", false); LinearLayout.LayoutParams blpSmall = new LinearLayout.LayoutParams(-2, -2); blpSmall.leftMargin = dp(ctx, 10); batchRow.addView(addLabel); batchRow.addView(selectAll, blpSmall); batchRow.addView(invert, blpSmall); actions.addView(batchRow);
         LinearLayout mainRow = new LinearLayout(ctx); mainRow.setGravity(Gravity.END); LinearLayout.LayoutParams mainLp = new LinearLayout.LayoutParams(-1, -2); mainLp.topMargin = dp(ctx, 10); TextView clear = makeBtn(ctx, "清空", false); TextView cancel = makeBtn(ctx, "取消", false); TextView ok = makeBtn(ctx, "完成", true); LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-2, -2); blp.leftMargin = dp(ctx, 10); mainRow.addView(clear); mainRow.addView(cancel, blp); mainRow.addView(ok, blp); actions.addView(mainRow, mainLp); root.addView(actions, alp);
+        addLabel.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ showContactLabelPickerUI(ctx, selected, onLabelChanged); }});
         selectAll.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ for (int i=0;i<showIds.size();i++) selected.add(String.valueOf(showIds.get(i))); update.run(); }});
         invert.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ for (int i=0;i<showIds.size();i++){ String wxid=String.valueOf(showIds.get(i)); if (selected.contains(wxid)) selected.remove(wxid); else selected.add(wxid); } update.run(); }});
         clear.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ selected.clear(); update.run(); }}); cancel.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ dialog.dismiss(); }}); ok.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ String raw = joinSet(selected); boolean snsList = false; try { snsList = tvValue != null && "sns_notify_list".equals(String.valueOf(tvValue.getTag())); } catch (Throwable ignored) {} if (snsList) { SNS_NOTIFY_LIST_RAW = raw; snsNotifySet = parseWxidSet(raw); } else if (blackMode) BLACK_LIST_RAW = raw; else WHITE_LIST_RAW = raw; if (tvValue != null) tvValue.setText(countSummary(raw, blackMode ? "未排除 >" : "未选择 >")); dialog.dismiss(); }});

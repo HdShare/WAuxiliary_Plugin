@@ -167,12 +167,18 @@ private final String AUTO_REPLY_SUCCESS_TEMPLATE_KEY = "auto_reply_success_templ
 private final String AUTO_ACCEPT_FRIEND_ENABLED_KEY = "auto_accept_friend_enabled";
 private final String AUTO_ACCEPT_DELAY_KEY = "auto_accept_delay";
 private final String AUTO_ACCEPT_REPLY_ITEMS_KEY = "auto_accept_reply_items_v2";
+// 自动同意好友后添加标签相关的key
+private final String AUTO_ACCEPT_TAG_ENABLED_KEY = "auto_accept_tag_enabled";
+private final String AUTO_ACCEPT_TAG_NAME_KEY = "auto_accept_tag_name";
 
 // 我添加好友被通过后，自动回复相关的key
 private final String GREET_ON_ACCEPTED_ENABLED_KEY = "greet_on_accepted_enabled";
 private final String GREET_ON_ACCEPTED_DELAY_KEY = "greet_on_accepted_delay";
 private final String GREET_ON_ACCEPTED_REPLY_ITEMS_KEY = "greet_on_accepted_reply_items_v2";
 private final String FRIEND_ADD_SUCCESS_KEYWORD = "我通过了你的朋友验证请求，现在我们可以开始聊天了";
+// 对方通过好友后添加标签相关的key
+private final String GREET_ON_ACCEPTED_TAG_ENABLED_KEY = "greet_on_accepted_tag_enabled";
+private final String GREET_ON_ACCEPTED_TAG_NAME_KEY = "greet_on_accepted_tag_name";
 
 // 小智AI 配置相关的key
 private final String XIAOZHI_CONFIG_KEY = "xiaozhi_ai_config";
@@ -213,6 +219,7 @@ private final static int TARGET_TYPE_NONE = 0;      // 不指定
 private final static int TARGET_TYPE_FRIEND = 1;    // 指定好友
 private final static int TARGET_TYPE_GROUP = 2;     // 指定群聊
 private final static int TARGET_TYPE_BOTH = 3;      // 同时指定好友和群聊
+private final static int TARGET_TYPE_OFFICIAL = 4;  // 指定公众号
 
 // 消息回复类型常量
 private final static int REPLY_TYPE_TEXT = 0;       // 文本回复
@@ -971,6 +978,7 @@ private Map<String, Object> readableJsonToRuleMap(Object obj) {
         if ("指定好友".equals(targetTypeStr)) targetType = TARGET_TYPE_FRIEND;
         else if ("指定群聊".equals(targetTypeStr)) targetType = TARGET_TYPE_GROUP;
         else if ("好友和群聊".equals(targetTypeStr)) targetType = TARGET_TYPE_BOTH;
+        else if ("指定公众号".equals(targetTypeStr)) targetType = TARGET_TYPE_OFFICIAL;
 
         int atTriggerType = AT_TRIGGER_NONE;
         String atStr = jStr(obj, "@触发");
@@ -1132,6 +1140,7 @@ private String getReadableTargetType(int targetType) {
     if (targetType == TARGET_TYPE_FRIEND) return "指定好友";
     if (targetType == TARGET_TYPE_GROUP) return "指定群聊";
     if (targetType == TARGET_TYPE_BOTH) return "好友和群聊";
+    if (targetType == TARGET_TYPE_OFFICIAL) return "指定公众号";
     return "不指定";
 }
 
@@ -3612,6 +3621,19 @@ public void onNewFriend(String wxid, String ticket, int scene) {
             debugLog("[新好友申请] 自动同意已开启，正在同意请求: " + wxid);
             verifyUser(wxid, ticket, scene);
 
+            // 自动添加标签
+            if (getBoolean(AUTO_ACCEPT_TAG_ENABLED_KEY, false)) {
+                String tagName = getString(AUTO_ACCEPT_TAG_NAME_KEY, "");
+                if (!TextUtils.isEmpty(tagName)) {
+                    try {
+                        modifyContactLabelList(wxid, tagName);
+                        debugLog("[新好友申请] 已为 " + wxid + " 添加标签: " + tagName);
+                    } catch (Exception e) {
+                        debugLog("[异常] 添加标签失败: " + e.getMessage());
+                    }
+                }
+            }
+
             long delay = getLong(AUTO_ACCEPT_DELAY_KEY, 2L);
             List replyItems = getReplyItems(AUTO_ACCEPT_REPLY_ITEMS_KEY, "");
             if (replyItems != null && !replyItems.isEmpty()) {
@@ -3636,6 +3658,20 @@ public void onHandleMsg(final Object msgInfoBean) {
             if (FRIEND_ADD_SUCCESS_KEYWORD.equals(content)) {
                 debugLog("[对方通过验证] 检测到好友通过了验证，准备发送欢迎序列...");
                 final String newFriendWxid = getFieldString(msgInfoBean, "talker");
+
+                // 自动添加标签
+                if (getBoolean(GREET_ON_ACCEPTED_TAG_ENABLED_KEY, false)) {
+                    String tagName = getString(GREET_ON_ACCEPTED_TAG_NAME_KEY, "");
+                    if (!TextUtils.isEmpty(tagName)) {
+                        try {
+                            modifyContactLabelList(newFriendWxid, tagName);
+                            debugLog("[对方通过验证] 已为 " + newFriendWxid + " 添加标签: " + tagName);
+                        } catch (Exception e) {
+                            debugLog("[异常] 添加标签失败: " + e.getMessage());
+                        }
+                    }
+                }
+
                 long delay = getLong(GREET_ON_ACCEPTED_DELAY_KEY, 2L);
                 List replyItems = getGreetOnAcceptedReplyItems();
                 if (replyItems != null && !replyItems.isEmpty()) {
@@ -3831,6 +3867,10 @@ private void processAutoReply(final Object msgInfoBean) {
                     if (isPrivateChat && targetWxids.contains(actualSenderWxid)) targetMatch = true;
                 } else if (targetType == TARGET_TYPE_GROUP) {
                     if (isGroupChat && targetWxids.contains(talker)) targetMatch = true;
+                } else if (targetType == TARGET_TYPE_OFFICIAL) {
+                    // 公众号消息：使用框架原生方法判断是否为公众号
+                    boolean isOfficial = callBoolMethod(msgInfoBean, "isOfficialAccount", false);
+                    if (isOfficial && targetWxids.contains(talker)) targetMatch = true;
                 } else if (targetType == TARGET_TYPE_BOTH) {
                     // 严格模式：
                     // 1) 只要配置了任一“指定目标”（好友/群/群成员），就必须命中其一才回复
@@ -6398,6 +6438,10 @@ String checkKey = getString(ZHILIA_AI_API_KEY, "");
 }
 
 private void showReplySequenceDialog(String title, String enabledKey, String delayKey, String itemsKey, String defaultText, String promptText, String featureName) {
+    showReplySequenceDialog(title, enabledKey, delayKey, itemsKey, defaultText, promptText, featureName, null, null);
+}
+
+private void showReplySequenceDialog(String title, String enabledKey, String delayKey, String itemsKey, String defaultText, String promptText, String featureName, final String tagEnabledKey, final String tagNameKey) {
     try {
         ScrollView scrollView = new ScrollView(getTopActivity());
         LinearLayout rootLayout = new LinearLayout(getTopActivity());
@@ -6415,6 +6459,37 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
         TextView prompt = createPromptText(promptText);
         coreSettingsCard.addView(prompt);
         rootLayout.addView(coreSettingsCard);
+
+        // ===== 标签设置（可选） =====
+        final LinearLayout tagCard;
+        final LinearLayout tagEnabledRow;
+        final TextView currentTagTv;
+        final Button selectTagBtn;
+        if (tagEnabledKey != null && tagNameKey != null) {
+            tagCard = createCardLayout();
+            tagCard.addView(createSectionTitle("🏷️ 自动添加标签"));
+            tagEnabledRow = createSwitchRow(getTopActivity(), "通过好友后自动添加标签", getBoolean(tagEnabledKey, false), new View.OnClickListener() { public void onClick(View v) {} });
+            tagCard.addView(tagEnabledRow);
+
+            currentTagTv = new TextView(getTopActivity());
+            String savedTag = getString(tagNameKey, "");
+            currentTagTv.setText(TextUtils.isEmpty(savedTag) ? "未选择标签" : "当前标签: " + savedTag);
+            currentTagTv.setTextSize(14);
+            currentTagTv.setTextColor(Color.parseColor("#666666"));
+            currentTagTv.setPadding(0, 8, 0, 8);
+            tagCard.addView(currentTagTv);
+
+            selectTagBtn = new Button(getTopActivity());
+            selectTagBtn.setText("从现有标签中选择");
+            styleMediaSelectionButton(selectTagBtn);
+            tagCard.addView(selectTagBtn);
+            rootLayout.addView(tagCard);
+        } else {
+            tagCard = null;
+            tagEnabledRow = null;
+            currentTagTv = null;
+            selectTagBtn = null;
+        }
 
         LinearLayout replyCard = createCardLayout();
         replyCard.addView(createSectionTitle("回复消息序列"));
@@ -6546,12 +6621,93 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
             }
         });
 
+        // ===== 选择标签按钮 =====
+        if (selectTagBtn != null && tagNameKey != null) {
+            final String finalTagNameKey = tagNameKey;
+            selectTagBtn.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    try {
+                        List labels = getContactLabelList();
+                        if (labels == null || labels.isEmpty()) {
+                            toast("当前没有可用的标签，请先在微信通讯录中创建标签");
+                            return;
+                        }
+                        final ArrayList<String> labelNames = new ArrayList<String>();
+                        for (int i = 0; i < labels.size(); i++) {
+                            Object label = labels.get(i);
+                            String name = "";
+                            try {
+                                java.lang.reflect.Method m = label.getClass().getMethod("getName");
+                                Object r = m.invoke(label);
+                                if (r != null) name = r.toString();
+                            } catch (Exception e2) {}
+                            if (TextUtils.isEmpty(name)) {
+                                try {
+                                    java.lang.reflect.Method m = label.getClass().getMethod("getLabelName");
+                                    Object r = m.invoke(label);
+                                    if (r != null) name = r.toString();
+                                } catch (Exception e3) {}
+                            }
+                            if (TextUtils.isEmpty(name)) {
+                                try {
+                                    java.lang.reflect.Field f = label.getClass().getField("name");
+                                    Object r = f.get(label);
+                                    if (r != null) name = r.toString();
+                                } catch (Exception e4) {}
+                            }
+                            if (TextUtils.isEmpty(name)) {
+                                try {
+                                    java.lang.reflect.Field f = label.getClass().getField("labelName");
+                                    Object r = f.get(label);
+                                    if (r != null) name = r.toString();
+                                } catch (Exception e5) {}
+                            }
+                            if (TextUtils.isEmpty(name)) name = "标签" + (i + 1);
+                            labelNames.add(name);
+                        }
+                        final String currentTag = getString(finalTagNameKey, "");
+                        int checkedIndex = -1;
+                        for (int i = 0; i < labelNames.size(); i++) {
+                            if (labelNames.get(i).equals(currentTag)) {
+                                checkedIndex = i;
+                                break;
+                            }
+                        }
+                        AlertDialog.Builder b = new AlertDialog.Builder(getTopActivity());
+                        b.setTitle("选择要添加的标签");
+                        b.setSingleChoiceItems(labelNames.toArray(new String[0]), checkedIndex, new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dialog, int which) {
+                                String selectedName = labelNames.get(which);
+                                putString(finalTagNameKey, selectedName);
+                                currentTagTv.setText("当前标签: " + selectedName);
+                                toast("已选择标签: " + selectedName);
+                                dialog.dismiss();
+                            }
+                        });
+                        b.setNegativeButton("取消", null);
+                        AlertDialog d = b.create();
+                        d.setOnShowListener(new DialogInterface.OnShowListener() {
+                            public void onShow(DialogInterface dialog) { setupUnifiedDialog((AlertDialog) dialog); }
+                        });
+                        d.show();
+                    } catch (Exception e) {
+                        toast("获取标签列表失败: " + e.getMessage());
+                        debugLog("[异常] 获取标签列表失败: " + e.getMessage());
+                    }
+                }
+            });
+        }
+
         final CheckBox enabledCheckBox = (CheckBox) enabledSwitchRow.getChildAt(1);
+        final CheckBox tagCheckBox = tagEnabledRow != null ? (CheckBox) tagEnabledRow.getChildAt(1) : null;
 
         final AlertDialog dialog = buildCommonAlertDialog(getTopActivity(), title, scrollView, "✅ 保存", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
                 try {
                     putBoolean(enabledKey, enabledCheckBox.isChecked());
+                    if (tagEnabledKey != null && tagCheckBox != null) {
+                        putBoolean(tagEnabledKey, tagCheckBox.isChecked());
+                    }
                     if (itemsKey.equals(AUTO_ACCEPT_REPLY_ITEMS_KEY)) {
                         saveAutoAcceptReplyItems(replyItems);
                     } else if (itemsKey.equals(GREET_ON_ACCEPTED_REPLY_ITEMS_KEY)) {
@@ -6586,12 +6742,14 @@ private void showReplySequenceDialog(String title, String enabledKey, String del
 
 private void showAutoAcceptFriendDialog() {
     showReplySequenceDialog("✨ 好友请求自动处理设置 ✨", AUTO_ACCEPT_FRIEND_ENABLED_KEY, AUTO_ACCEPT_DELAY_KEY, AUTO_ACCEPT_REPLY_ITEMS_KEY,
-                            "%friendName%✨ 你好，很高兴认识你！", "⚠️ 勾选后将自动通过所有好友请求，并发送欢迎消息", "自动同意好友");
+                            "%friendName%✨ 你好，很高兴认识你！", "⚠️ 勾选后将自动通过所有好友请求，并发送欢迎消息", "自动同意好友",
+                            AUTO_ACCEPT_TAG_ENABLED_KEY, AUTO_ACCEPT_TAG_NAME_KEY);
 }
 
 private void showGreetOnAcceptedDialog() {
     showReplySequenceDialog("✨ 添加好友自动回复设置 ✨", GREET_ON_ACCEPTED_ENABLED_KEY, GREET_ON_ACCEPTED_DELAY_KEY, GREET_ON_ACCEPTED_REPLY_ITEMS_KEY,
-                            "哈喽，%friendName%！感谢通过好友请求，以后请多指教啦！", "⚠️ 勾选后，当好友通过你的请求时，将自动发送欢迎消息", "添加好友回复");
+                            "哈喽，%friendName%！感谢通过好友请求，以后请多指教啦！", "⚠️ 勾选后，当好友通过你的请求时，将自动发送欢迎消息", "添加好友回复",
+                            GREET_ON_ACCEPTED_TAG_ENABLED_KEY, GREET_ON_ACCEPTED_TAG_NAME_KEY);
 }
 
 private void updateReplyButtonsVisibility(Button editButton, Button delButton, int selectedCount) {
@@ -7591,6 +7749,8 @@ private String getTargetInfo(int targetType, Set targetWxids, Set excludedWxids,
         if (includedGroupMemberWxids != null && !includedGroupMemberWxids.isEmpty()) {
             sb.append(" 限成员:").append(includedGroupMemberWxids.size()).append("人");
         }
+    } else if (targetType == TARGET_TYPE_OFFICIAL) {
+        sb.append(" (指定公众号: ").append(targetWxids != null ? targetWxids.size() : 0).append("个)");
     } else {
         // 不指定模式，显示排除信息
         if (excludedWxids != null && !excludedWxids.isEmpty()) {
@@ -8478,8 +8638,10 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         final RadioGroup targetTypeGroup = createRadioGroup(getTopActivity(), LinearLayout.HORIZONTAL);
         final RadioButton targetTypeNoneRadio = createRadioButton(getTopActivity(), "不指定");
         final RadioButton targetTypeBothRadio = createRadioButton(getTopActivity(), "好友和群聊");
+        final RadioButton targetTypeOfficialRadio = createRadioButton(getTopActivity(), "公众号");
         targetTypeGroup.addView(targetTypeNoneRadio);
         targetTypeGroup.addView(targetTypeBothRadio);
+        targetTypeGroup.addView(targetTypeOfficialRadio);
         targetCard.addView(targetTypeGroup);
         layout.addView(targetCard);
 
@@ -8504,6 +8666,10 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         selectExcludeGroupsButton.setPadding(0, 20, 0, 0);
         layout.addView(selectExcludeGroupsButton);
 
+        final Button selectOfficialButton = new Button(getTopActivity());
+        selectOfficialButton.setPadding(0, 20, 0, 0);
+        layout.addView(selectOfficialButton);
+
         final Runnable updateSelectTargetsButton = new Runnable() {
             public void run() {
                 int targetType = (Integer) rule.get("targetType");
@@ -8514,6 +8680,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                 selectGroupsButton.setVisibility(View.GONE);
                 selectExcludeFriendsButton.setVisibility(View.GONE);
                 selectExcludeGroupsButton.setVisibility(View.GONE);
+                selectOfficialButton.setVisibility(View.GONE);
 
                 if (targetType == TARGET_TYPE_BOTH) {
                     // 好友和群聊模式：显示指定功能，隐藏排除功能
@@ -8555,6 +8722,21 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                     rule.put("excludedGroupIdsForMemberFilter", new HashSet());
                     rule.put("excludedGroupMemberWxids", new HashSet());
                     rule.put("excludedWxids", new HashSet());
+
+                } else if (targetType == TARGET_TYPE_OFFICIAL) {
+                    // 公众号模式
+                    Set targetWxids = (Set) rule.get("targetWxids");
+                    selectOfficialButton.setText("📢 指定公众号 (" + (targetWxids != null ? targetWxids.size() : 0) + "个)");
+                    styleUtilityButton(selectOfficialButton);
+                    selectOfficialButton.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showSelectTargetOfficialDialog(targetWxids, updateSelectTargetsButton); } });
+                    selectOfficialButton.setVisibility(View.VISIBLE);
+
+                    // 清空其他数据
+                    rule.put("excludedWxids", new HashSet());
+                    rule.put("excludedGroupIdsForMemberFilter", new HashSet());
+                    rule.put("excludedGroupMemberWxids", new HashSet());
+                    rule.put("includedGroupIdsForMemberFilter", new HashSet());
+                    rule.put("includedGroupMemberWxids", new HashSet());
 
                 } else {
                     // 不指定模式：显示排除功能
@@ -8603,13 +8785,16 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
 
         targetTypeGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             public void onCheckedChanged(RadioGroup group, int checkedId) {
-                rule.put("targetType", (checkedId == targetTypeBothRadio.getId()) ? TARGET_TYPE_BOTH : TARGET_TYPE_NONE);
+                if (checkedId == targetTypeBothRadio.getId()) rule.put("targetType", TARGET_TYPE_BOTH);
+                else if (checkedId == targetTypeOfficialRadio.getId()) rule.put("targetType", TARGET_TYPE_OFFICIAL);
+                else rule.put("targetType", TARGET_TYPE_NONE);
                 updateSelectTargetsButton.run();
             }
         });
 
         int currentTargetType = (Integer) rule.get("targetType");
         if (currentTargetType == TARGET_TYPE_BOTH) targetTypeGroup.check(targetTypeBothRadio.getId());
+        else if (currentTargetType == TARGET_TYPE_OFFICIAL) targetTypeGroup.check(targetTypeOfficialRadio.getId());
         else targetTypeGroup.check(targetTypeNoneRadio.getId());
         updateSelectTargetsButton.run();
 
@@ -8753,15 +8938,215 @@ private void showSelectTargetFriendsDialog(final Set currentSelectedWxids, final
                         names.add("👤 " + displayName + "\nID: " + friendInfo.getWxid());
                         ids.add(friendInfo.getWxid());
                     }
-                    showMultiSelectDialog("✨ 选择生效好友 ✨", names, ids, currentSelectedWxids, "🔍 搜索好友(昵称/备注)...", updateButtonCallback, new Runnable() {
-                        public void run() {
-                            updateSelectAllButton((AlertDialog) null, null, null);
-                        }
-                    });
+                    // 先弹出标签选择，再打开好友多选
+                    showFriendSelectWithTagOption("✨ 选择生效好友 ✨", names, ids, currentSelectedWxids, updateButtonCallback);
                 }
             });
         }
     });
+}
+
+private void showFriendSelectWithTagOption(final String title, final List names, final List ids, final Set currentSelectedWxids, final Runnable updateButtonCallback) {
+    final Activity act = getTopActivity();
+    if (act == null) { toast("无法获取窗口"); return; }
+
+    LinearLayout root = new LinearLayout(act);
+    root.setOrientation(LinearLayout.VERTICAL);
+    root.setPadding(24, 24, 24, 24);
+    root.setBackgroundColor(Color.parseColor("#FAFBF9"));
+
+    Button tagBtn = new Button(act);
+    tagBtn.setText("🏷️ 从标签获取好友");
+    styleUtilityButton(tagBtn);
+    root.addView(tagBtn);
+
+    final TextView tagInfo = new TextView(act);
+    tagInfo.setText("点击上方按钮，从已有标签中批量选择好友");
+    tagInfo.setTextSize(12);
+    tagInfo.setTextColor(Color.parseColor("#888888"));
+    tagInfo.setPadding(0, 0, 0, 16);
+    root.addView(tagInfo);
+
+    final EditText searchEditText = createStyledEditText("🔍 搜索好友(昵称/备注)...", "");
+    searchEditText.setSingleLine(true);
+    root.addView(searchEditText);
+
+    final ListView listView = new ListView(act);
+    setupListViewTouchForScroll(listView);
+    listView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
+    LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(50));
+    listView.setLayoutParams(listParams);
+    root.addView(listView);
+
+    final Set tempSelected = new HashSet(currentSelectedWxids);
+    final List currentFilteredIds = new ArrayList();
+    final List currentFilteredNames = new ArrayList();
+
+    final Runnable updateListRunnable = new Runnable() {
+        public void run() {
+            String searchText = searchEditText.getText().toString().toLowerCase();
+            currentFilteredIds.clear();
+            currentFilteredNames.clear();
+            for (int i = 0; i < names.size(); i++) {
+                String id = (String) ids.get(i);
+                String name = (String) names.get(i);
+                if (searchText.isEmpty() || name.toLowerCase().contains(searchText) || id.toLowerCase().contains(searchText)) {
+                    currentFilteredIds.add(id);
+                    currentFilteredNames.add(name);
+                }
+            }
+            ArrayAdapter adapter = new ArrayAdapter(act, android.R.layout.simple_list_item_multiple_choice, currentFilteredNames);
+            listView.setAdapter(adapter);
+            listView.clearChoices();
+            for (int j = 0; j < currentFilteredIds.size(); j++) {
+                listView.setItemChecked(j, tempSelected.contains(currentFilteredIds.get(j)));
+            }
+            adjustListViewHeight(listView, currentFilteredIds.size());
+        }
+    };
+
+    listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        public void onItemClick(AdapterView<?> parent, View view, int pos, long id) {
+            String selected = (String) currentFilteredIds.get(pos);
+            if (listView.isItemChecked(pos)) tempSelected.add(selected);
+            else tempSelected.remove(selected);
+        }
+    });
+
+    final Handler searchHandler = new Handler(Looper.getMainLooper());
+    final Runnable searchRunnable = new Runnable() { public void run() { updateListRunnable.run(); } };
+    searchEditText.addTextChangedListener(new TextWatcher() {
+        public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+        public void onTextChanged(CharSequence s, int start, int before, int count) {
+            searchHandler.removeCallbacks(searchRunnable);
+        }
+        public void afterTextChanged(Editable s) {
+            searchHandler.postDelayed(searchRunnable, 300);
+        }
+    });
+
+    tagBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            try {
+                List labels = getContactLabelList();
+                if (labels == null || labels.isEmpty()) {
+                    toast("当前没有可用的标签，请先在微信通讯录中创建标签");
+                    return;
+                }
+                final ArrayList<String> labelNames = new ArrayList<String>();
+                for (int i = 0; i < labels.size(); i++) {
+                    Object label = labels.get(i);
+                    String name = "";
+                    try {
+                        java.lang.reflect.Method m = label.getClass().getMethod("getName");
+                        Object r = m.invoke(label);
+                        if (r != null) name = r.toString();
+                    } catch (Exception e2) {}
+                    if (TextUtils.isEmpty(name)) {
+                        try {
+                            java.lang.reflect.Method m = label.getClass().getMethod("getLabelName");
+                            Object r = m.invoke(label);
+                            if (r != null) name = r.toString();
+                        } catch (Exception e3) {}
+                    }
+                    if (TextUtils.isEmpty(name)) {
+                        try {
+                            java.lang.reflect.Field f = label.getClass().getField("name");
+                            Object r = f.get(label);
+                            if (r != null) name = r.toString();
+                        } catch (Exception e4) {}
+                    }
+                    if (TextUtils.isEmpty(name)) {
+                        try {
+                            java.lang.reflect.Field f = label.getClass().getField("labelName");
+                            Object r = f.get(label);
+                            if (r != null) name = r.toString();
+                        } catch (Exception e5) {}
+                    }
+                    if (TextUtils.isEmpty(name)) name = "标签" + (i + 1);
+                    labelNames.add(name);
+                }
+                AlertDialog.Builder b = new AlertDialog.Builder(act);
+                b.setTitle("选择标签，查看并勾选好友");
+                b.setItems(labelNames.toArray(new String[0]), new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        String selectedLabelName = labelNames.get(which);
+                        dialog.dismiss();
+                        // 获取该标签下的好友wxid列表
+                        try {
+                            List<String> contacts = getContactByLabelName(selectedLabelName);
+                            if (contacts == null || contacts.isEmpty()) {
+                                toast("该标签下没有好友或获取失败");
+                                return;
+                            }
+                            // 过滤出在当前好友列表中的好友
+                            final List<String> tagFriendIds = new ArrayList<String>();
+                            final List<String> tagFriendNames = new ArrayList<String>();
+                            for (int i2 = 0; i2 < names.size(); i2++) {
+                                String id = (String) ids.get(i2);
+                                if (contacts.contains(id)) {
+                                    tagFriendIds.add(id);
+                                    tagFriendNames.add((String) names.get(i2));
+                                }
+                            }
+                            if (tagFriendIds.isEmpty()) {
+                                toast("该标签下的好友不在当前列表中");
+                                return;
+                            }
+                            // 弹出该标签好友的多选对话框，支持全选
+                            final Set<String> tagTempSelected = new HashSet<String>();
+                            for (String wxid : tagFriendIds) {
+                                if (tempSelected.contains(wxid)) tagTempSelected.add(wxid);
+                            }
+                            showMultiSelectDialog("🏷️ 「" + selectedLabelName + "」选择好友", tagFriendNames, tagFriendIds, tagTempSelected, "🔍 搜索...", new Runnable() {
+                                public void run() {
+                                    // 将标签对话框的选择同步到主选择
+                                    for (String wxid : tagFriendIds) {
+                                        if (tagTempSelected.contains(wxid)) tempSelected.add(wxid);
+                                        else tempSelected.remove(wxid);
+                                    }
+                                    updateListRunnable.run();
+                                    toast("已更新标签好友选择");
+                                }
+                            }, null);
+                        } catch (Exception e) {
+                            toast("获取标签好友失败: " + e.getMessage());
+                        }
+                    }
+                });
+                b.setNegativeButton("取消", null);
+                AlertDialog d = b.create();
+                d.setOnShowListener(new DialogInterface.OnShowListener() {
+                    public void onShow(DialogInterface dialog) { setupUnifiedDialog((AlertDialog) dialog); }
+                });
+                d.show();
+            } catch (Exception e) {
+                toast("获取标签列表失败: " + e.getMessage());
+            }
+        }
+    });
+
+    final AlertDialog dialog = buildCommonAlertDialog(act, title, new ScrollView(act) {{ addView(root); }},
+        "✅ 确定", new DialogInterface.OnClickListener() {
+            public void onClick(DialogInterface dialog, int which) {
+                currentSelectedWxids.clear();
+                currentSelectedWxids.addAll(tempSelected);
+                if (updateButtonCallback != null) updateButtonCallback.run();
+                dialog.dismiss();
+            }
+        }, "❌ 取消", new DialogInterface.OnClickListener() {
+            public void onClick(DialogInterface dialog, int which) {
+                dialog.dismiss();
+            }
+        }, null, null);
+
+    dialog.setOnShowListener(new DialogInterface.OnShowListener() {
+        public void onShow(DialogInterface dialogInterface) {
+            setupUnifiedDialog((AlertDialog) dialogInterface);
+        }
+    });
+    dialog.show();
+    updateListRunnable.run();
 }
 
 private void showSelectTargetGroupsDialog(final Set currentSelectedWxids, final Runnable updateButtonCallback) {
@@ -8820,7 +9205,7 @@ private void showSelectExcludeFriendsDialog(final Set currentSelectedWxids, fina
                         names.add("👤 " + displayName + "\nID: " + friendInfo.getWxid());
                         ids.add(friendInfo.getWxid());
                     }
-                    showMultiSelectDialog("✨ 选择排除好友 ✨", names, ids, currentSelectedWxids, "🔍 搜索好友(昵称/备注)...", updateButtonCallback, null);
+                    showFriendSelectWithTagOption("✨ 选择排除好友 ✨", names, ids, currentSelectedWxids, updateButtonCallback);
                 }
             });
         }
@@ -8857,6 +9242,33 @@ private void showSelectExcludeGroupsDialog(final Set currentSelectedWxids, final
                         ids.add(groupId);
                     }
                     showMultiSelectDialog("✨ 选择排除群聊 ✨", names, ids, currentSelectedWxids, "🔍 搜索群聊...", updateButtonCallback, null);
+                }
+            });
+        }
+    });
+}
+
+private void showSelectTargetOfficialDialog(final Set currentSelectedWxids, final Runnable updateButtonCallback) {
+    showLoadingDialog("📢 选择公众号", "  正在加载公众号列表...", new Runnable() {
+        public void run() {
+            List officialList = getOfficialList();
+            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                public void run() {
+                    if (officialList == null || officialList.isEmpty()) {
+                        toast("未获取到公众号列表");
+                        return;
+                    }
+                    List names = new ArrayList();
+                    List ids = new ArrayList();
+                    for (int i = 0; i < officialList.size(); i++) {
+                        FriendInfo info = (FriendInfo) officialList.get(i);
+                        String nickname = TextUtils.isEmpty(info.getNickname()) ? "未知公众号" : info.getNickname();
+                        String remark = info.getRemark();
+                        String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
+                        names.add("📢 " + displayName + "\nID: " + info.getWxid());
+                        ids.add(info.getWxid());
+                    }
+                    showMultiSelectDialog("✨ 选择公众号 ✨", names, ids, currentSelectedWxids, "🔍 搜索公众号...", updateButtonCallback, null);
                 }
             });
         }

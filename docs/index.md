@@ -21,9 +21,9 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.2
     linkText: 更新于 20260516
 
-  - title: 微信(桀翕)(1.0.1)
+  - title: 微信(桀翕)(1.0.3)
     details: 作者 桀翕
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E6%A1%80%E7%BF%95%2F%E5%BE%AE%E4%BF%A1%E5%AF%86%E5%8F%8B&filename=%E5%BE%AE%E4%BF%A1(%E6%A1%80%E7%BF%95)_1.0.1
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E6%A1%80%E7%BF%95%2F%E5%BE%AE%E4%BF%A1%E5%AF%86%E5%8F%8B&filename=%E5%BE%AE%E4%BF%A1(%E6%A1%80%E7%BF%95)_1.0.3
     linkText: 更新于 20260516
 
   - title: 分组管理(1.2.0)

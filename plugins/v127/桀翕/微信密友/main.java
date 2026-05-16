@@ -114,10 +114,30 @@ void forceRefreshUI() {
     }
 }
 
+// 从数据库中删除密友的 rconversation 记录，确保列表中不残留
+void deleteSecretConversations() {
+    if (sCachedInClause.isEmpty()) return;
+    String deleteSql = "DELETE FROM rconversation WHERE username" + sCachedInClause;
+    Iterator<Map.Entry<Integer, WeakReference<Object>>> it = sDbInstances.entrySet().iterator();
+    while (it.hasNext()) {
+        Map.Entry<Integer, WeakReference<Object>> entry = it.next();
+        Object db = entry.getValue().get();
+        if (db != null) {
+            try {
+                XposedHelpers.callMethod(db, "execSQL", deleteSql);
+                logx("[密友隐藏] 已从数据库删除密友会话记录");
+            } catch (Throwable e) {}
+        } else {
+            it.remove();
+        }
+    }
+}
+
 // ================= 动作执行器 (纯净静默版) =================
 void doHideAction(Activity ctx) {
     isHiddenMode = true;
     sSqlCache.clear(); 
+    deleteSecretConversations();
     forceRefreshUI();
     // 删除了高危的 toast 提示，实现真正的无痕退出
     if (ctx != null) ctx.finish(); 
@@ -196,16 +216,43 @@ void showPasswordVerifyDialog(final Activity ctx, final Runnable onSuccess) {
     styleDialogButtons(d);
 }
 
+// ================= 消息回调：最早期的密友消息检测 =================
+void onHandleMsg(Object msgInfoBean) {
+    try {
+        if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && !sCachedSecretWxids.isEmpty()) {
+            // isSend() == true 表示自己发的消息，不处理
+            if (msgInfoBean.isSend()) return;
+            String talker = msgInfoBean.getTalker();
+            if (!TextUtils.isEmpty(talker) && sCachedSecretWxids.contains(talker.trim())) {
+                lastSecretMessageTime = System.currentTimeMillis();
+                logx("[密友消息] 提前拦截: " + talker);
+            }
+        }
+    } catch (Throwable e) {
+        // 静默处理，不影响正常消息流
+    }
+}
+
 // ================= onLoad 生命周期 =================
 void onLoad() {
     mLogEnabled = getBoolean(KEY_LOG_ENABLE, true);
     mDebugLogEnabled = getBoolean(KEY_DEBUG_LOG_ENABLE, false);
     
-    logx(">> onLoad开始执行 [密友极致无痕 0卡顿 静默完全版]");
+    logx(">> onLoad开始执行 [密友]");
     updateSecretCache();              
     hookNotificationAndSound();       
     hookSecretFriendSQL();            
     hookDatabaseMethods();            
+    // 模块加载时如果已在隐身模式，延迟清理数据库中残留的密友会话记录
+    if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && !sCachedInClause.isEmpty()) {
+        new Thread(new Runnable() {
+            public void run() {
+                try { Thread.sleep(2000); } catch (Throwable e) {}
+                deleteSecretConversations();
+                forceRefreshUI();
+            }
+        }).start();
+    }
     logx(">> onLoad执行完成");
 }
 
@@ -216,31 +263,93 @@ void hookNotificationAndSound() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode) {
-                    if (System.currentTimeMillis() - lastSecretMessageTime < 2000) {
+                    if (System.currentTimeMillis() - lastSecretMessageTime < 5000) {
                         param.setResult(null); 
                     }
                 }
             }
         });
         
+        // 震动拦截
         try {
             Class<?> sysVibrator = XposedHelpers.findClass("android.os.SystemVibrator", hostContext.getClassLoader());
             XposedBridge.hookAllMethods(sysVibrator, "vibrate", new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                    if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && System.currentTimeMillis() - lastSecretMessageTime < 2000) {
+                    if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && System.currentTimeMillis() - lastSecretMessageTime < 5000) {
                         param.setResult(null);
                     }
                 }
             });
         } catch (Throwable ignored) {} 
 
+        // Vibrator 接口拦截（部分设备走接口）
+        try {
+            XposedBridge.hookAllMethods(android.os.Vibrator.class, "vibrate", new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && System.currentTimeMillis() - lastSecretMessageTime < 5000) {
+                        param.setResult(null);
+                    }
+                }
+            });
+        } catch (Throwable ignored) {}
+
+        // SoundPool 拦截
         try {
             XposedBridge.hookAllMethods(android.media.SoundPool.class, "play", new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                    if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && System.currentTimeMillis() - lastSecretMessageTime < 2000) {
+                    if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && System.currentTimeMillis() - lastSecretMessageTime < 5000) {
                         param.setResult(0); 
+                    }
+                }
+            });
+        } catch (Throwable ignored) {}
+
+        // MediaPlayer 拦截（微信新版消息提示音主要走这个）
+        try {
+            XposedBridge.hookAllMethods(android.media.MediaPlayer.class, "start", new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && System.currentTimeMillis() - lastSecretMessageTime < 5000) {
+                        param.setResult(null);
+                    }
+                }
+            });
+        } catch (Throwable ignored) {}
+
+        // Ringtone 拦截（系统通知铃声）
+        try {
+            XposedBridge.hookAllMethods(android.media.Ringtone.class, "play", new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && System.currentTimeMillis() - lastSecretMessageTime < 5000) {
+                        param.setResult(null);
+                    }
+                }
+            });
+        } catch (Throwable ignored) {}
+
+        // AudioTrack 拦截（低级音频播放）
+        try {
+            XposedBridge.hookAllMethods(android.media.AudioTrack.class, "play", new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && System.currentTimeMillis() - lastSecretMessageTime < 5000) {
+                        param.setResult(null);
+                    }
+                }
+            });
+        } catch (Throwable ignored) {}
+
+        // RingtoneManager 拦截
+        try {
+            XposedBridge.hookAllMethods(android.media.RingtoneManager.class, "getRingtone", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    if (getBoolean(KEY_SECRET_ENABLE, false) && isHiddenMode && System.currentTimeMillis() - lastSecretMessageTime < 5000) {
+                        param.setResult(null);
                     }
                 }
             });
@@ -428,20 +537,17 @@ void hookDatabaseMethods() {
                     }
 
                     if (!TextUtils.isEmpty(username) && !sCachedSecretWxids.isEmpty() && sCachedSecretWxids.contains(username)) {
+                        // 隐身模式下直接拦截 rconversation 写入，阻止密友会话条目出现在列表
+                        if (isHiddenMode) {
+                            param.setResult(null);
+                            logx("[密友隐藏] 拦截 rconversation 写入: " + username);
+                            return;
+                        }
+
                         Long currentFlag = values.getAsLong("flag");
                         String backupKey = "backup_flag_" + username;
-                        
-                        if (!isHiddenMode) {
-                            if (currentFlag != null && currentFlag > 0) {
-                                putString(backupKey, String.valueOf(currentFlag));
-                            }
-                        } else {
-                            String backupStr = getString(backupKey, "");
-                            if (!TextUtils.isEmpty(backupStr)) {
-                                try {
-                                    values.put("flag", Long.parseLong(backupStr));
-                                } catch (Exception e) {}
-                            }
+                        if (currentFlag != null && currentFlag > 0) {
+                            putString(backupKey, String.valueOf(currentFlag));
                         }
                     }
                 }

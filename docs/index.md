@@ -21,6 +21,11 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.2
     linkText: 更新于 20260516
 
+  - title: 微信(桀翕)(1.0.1)
+    details: 作者 桀翕
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E6%A1%80%E7%BF%95%2F%E5%BE%AE%E4%BF%A1%E5%AF%86%E5%8F%8B&filename=%E5%BE%AE%E4%BF%A1(%E6%A1%80%E7%BF%95)_1.0.1
+    linkText: 更新于 20260516
+
   - title: 分组管理(1.2.0)
     details: 作者 。。
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%88%86%E7%BB%84%E7%AE%A1%E7%90%86&filename=%E5%88%86%E7%BB%84%E7%AE%A1%E7%90%86_1.2.0
@@ -30,11 +35,6 @@ features:
     details: 作者 。。 & 周杰伦
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E&filename=%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E_1.1.0
     linkText: 更新于 20260514
-
-  - title: 微信密友(1.0.0)
-    details: 作者 桀翕
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E6%A1%80%E7%BF%95%2F%E5%BE%AE%E4%BF%A1%E5%AF%86%E5%8F%8B&filename=%E5%BE%AE%E4%BF%A1%E5%AF%86%E5%8F%8B_1.0.0
-    linkText: 更新于 20260509
 
   - title: 元启Ai回复(2.1)
     details: 作者 神明佑我

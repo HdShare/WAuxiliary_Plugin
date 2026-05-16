@@ -19,21 +19,6 @@ import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
-boolean getHookState() {
-    try {
-        de.robv.android.xposed.XposedBridge.class;
-        return true;
-    } catch (Throwable e) {
-        return false;
-    }
-}
-
-if (!getHookState()) return toast("请关闭LSPosed调用保护");
-
-import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XposedBridge;
-import de.robv.android.xposed.XposedHelpers;
-
 import me.hd.wauxv.data.bean.info.FriendInfo;
 import me.hd.wauxv.data.bean.info.GroupInfo;
 
@@ -70,8 +55,8 @@ Map cacheTalkerCfgMap = Collections.synchronizedMap(new HashMap());
 // 【安全优化1】使用 Set 确保精确匹配 O(1) 查询，杜绝 contains 导致的相似字符误杀
 Set cacheTargetSet = new HashSet();
 
-List notifyUnhooks = Collections.synchronizedList(new ArrayList());
-List resultUnhooks = Collections.synchronizedList(new ArrayList());
+List notifyHookHandles = Collections.synchronizedList(new ArrayList());
+List resultHookHandles = Collections.synchronizedList(new ArrayList());
 Pattern chatroomPattern = Pattern.compile("([A-Za-z0-9_\\-]+@chatroom)");
 long lastManualRingAt = 0L;
 BroadcastReceiver quickReplyReceiver = null;
@@ -97,6 +82,7 @@ boolean sNotifyHookInstalled = false;
 boolean sActivityResultHookInstalled = false;
 String sBootNonce = "";
 long sLastAutoReloadAt = 0L;
+Dialog sLoadingDialogRef = null;
 
 // ================= 生命周期 =================
 void warmupTalkerChannelsOnce() {
@@ -169,22 +155,14 @@ void ensureConfigLoadedForRuntime() {
 }
 
 void onUnload() {
-    for (int i = 0; i < notifyUnhooks.size(); i++) {
-        try {
-            Object uh = notifyUnhooks.get(i);
-            Method um = uh.getClass().getMethod("unhook", new Class[]{});
-            um.invoke(uh, new Object[]{});
-        } catch (Throwable ignored) {}
+    for (int i = 0; i < notifyHookHandles.size(); i++) {
+        try { unhook(notifyHookHandles.get(i)); } catch (Throwable ignored) {}
     }
-    notifyUnhooks.clear();
-    for (int i = 0; i < resultUnhooks.size(); i++) {
-        try {
-            Object uh = resultUnhooks.get(i);
-            Method um = uh.getClass().getMethod("unhook", new Class[]{});
-            um.invoke(uh, new Object[]{});
-        } catch (Throwable ignored) {}
+    notifyHookHandles.clear();
+    for (int i = 0; i < resultHookHandles.size(); i++) {
+        try { unhook(resultHookHandles.get(i)); } catch (Throwable ignored) {}
     }
-    resultUnhooks.clear();
+    resultHookHandles.clear();
     
     sCachedFriendNames = null;
     sCachedFriendIds = null;
@@ -494,11 +472,13 @@ Object safeGetFieldAny(Object obj, String[] fieldNames) {
         String fn = fieldNames[i];
         if (TextUtils.isEmpty(fn)) continue;
         try {
-            Object v = XposedHelpers.getObjectField(obj, fn);
+            java.lang.reflect.Field f = obj.getClass().getDeclaredField(fn);
+            f.setAccessible(true);
+            Object v = f.get(obj);
             if (v != null) return v;
         } catch (Throwable ignored) {}
         try {
-            java.lang.reflect.Field f = obj.getClass().getDeclaredField(fn);
+            java.lang.reflect.Field f = obj.getClass().getField(fn);
             f.setAccessible(true);
             Object v2 = f.get(obj);
             if (v2 != null) return v2;
@@ -805,6 +785,10 @@ boolean isSystemMessageLike(Object msg, String talker, String content, int type)
         if (asBool(sysObj)) return true;
     } catch (Throwable ignored) {}
     try {
+        Object patObj = safeInvokeAny(msg, new String[]{"isPat", "isPatMsg"});
+        if (asBool(patObj)) return true;
+    } catch (Throwable ignored) {}
+    try {
         // 微信常见系统消息类型：10000（系统文本）、10002（撤回/系统事件）
         if (type == 10000 || type == 10002) return true;
     } catch (Throwable ignored) {}
@@ -819,6 +803,7 @@ boolean isSystemMessageLike(Object msg, String talker, String content, int type)
     try {
         String c = TextUtils.isEmpty(content) ? "" : content.toLowerCase();
         if (c.contains("<sysmsg") || c.contains("系统消息") || c.contains("撤回了一条消息")) return true;
+        if (c.contains("拍了拍我") || c.contains("拍了拍你") || c.contains("拍了拍")) return true;
     } catch (Throwable ignored) {}
     return false;
 }
@@ -917,20 +902,9 @@ String freezeRingtoneUri(String rawUri) {
 }
 
 boolean shouldBlockNativeByCfg(Map cfg) {
-    int talkerMode = cfgGetInt(cfg, "mode", 1);
-    if (talkerMode == 0) return true;
-    if (isNowInMuteWindowByCfg(cfg)) return true;
-    // 只要配置了群规则，就走插件链路做逐条判定，避免原生通知绕过规则
-    boolean blockAtAll = cfgGetBool(cfg, "blockAll", cacheBlockAtAll);
-    boolean blockAtMe = cfgGetBool(cfg, "blockMe", cacheBlockAtMe);
-    String onlyMembers = cfgGet(cfg, "onlyMembers", "");
-    String blockMembers = cfgGet(cfg, "blockMembers", "");
-    if (blockAtAll || blockAtMe || !TextUtils.isEmpty(onlyMembers) || !TextUtils.isEmpty(blockMembers)) return true;
-
-    boolean showDetail = cfgGetBool(cfg, "showDetail", cacheShowDetail);
-    boolean quickReply = cfgGetBool(cfg, "quickReply", false);
-    // showDetail=开 且 quickReply=关 -> 保留原生；其余接管原生
-    return (!showDetail) || quickReply;
+    // 已配置会话统一拦截微信原生通知，全部走插件通知链路。
+    // 免打扰/时段静默仍由 onHandleMsg() 控制为不弹通知。
+    return true;
 }
 
 // ================= 核心 1：原生通知强力拦截器 =================
@@ -947,55 +921,53 @@ void hookSystemNotification() {
             Class[] ps = m.getParameterTypes();
             if (ps == null || ps.length == 0 || ps[ps.length - 1] != Notification.class) continue;
 
-            Object unhook = XposedBridge.hookMethod(m, new XC_MethodHook() {
-                protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
-                    try {
-                        ensureConfigLoadedForRuntime();
-                        if (cacheTargetSet.isEmpty()) return;
+            var handle = hookBefore(m, param -> {
+                try {
+                    ensureConfigLoadedForRuntime();
+                    if (cacheTargetSet.isEmpty()) return;
 
-                        Object[] args = param.args;
-                        if (args == null || args.length == 0) return;
-                        Notification n = (Notification) args[args.length - 1];
-                        if (n == null) return;
+                    Object[] args = param.args;
+                    if (args == null || args.length == 0) return;
+                    Notification n = (Notification) args[args.length - 1];
+                    if (n == null) return;
 
-                        if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) {
-                            return;
+                    if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) {
+                        return;
+                    }
+                    if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("jay_chn_v9_")) {
+                        return;
+                    }
+                    String talker = extractTalkerFromNotification(n);
+                    boolean shouldBlock = false;
+
+                    if (!TextUtils.isEmpty(talker) && cacheTargetSet.contains(talker)) {
+                        Map cfg0 = getTalkerCfg(talker);
+                        shouldBlock = shouldBlockNativeByCfg(cfg0);
+                    }
+                    if (!shouldBlock && TextUtils.isEmpty(talker) && n.extras != null) {
+                        String title = "";
+                        try {
+                            CharSequence cs = n.extras.getCharSequence(Notification.EXTRA_TITLE);
+                            if (cs != null) title = cs.toString().trim();
+                        } catch (Throwable ignored) {}
+                        String titleTalker = findTargetTalkerByTitle(title);
+                        if (TextUtils.isEmpty(titleTalker)) {
+                            try { titleTalker = findTalkerByGroupTitle(title); } catch (Throwable ignored) {}
                         }
-                        if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("jay_chn_v9_")) {
-                            return;
-                        }
-                        String talker = extractTalkerFromNotification(n);
-                        boolean shouldBlock = false;
-
-                        if (!TextUtils.isEmpty(talker) && cacheTargetSet.contains(talker)) {
-                            Map cfg0 = getTalkerCfg(talker);
+                        if (!TextUtils.isEmpty(titleTalker) && cacheTargetSet.contains(titleTalker)) {
+                            Map cfg0 = getTalkerCfg(titleTalker);
                             shouldBlock = shouldBlockNativeByCfg(cfg0);
                         }
-                        if (!shouldBlock && TextUtils.isEmpty(talker) && n.extras != null) {
-                            String title = "";
-                            try {
-                                CharSequence cs = n.extras.getCharSequence(Notification.EXTRA_TITLE);
-                                if (cs != null) title = cs.toString().trim();
-                            } catch (Throwable ignored) {}
-                            String titleTalker = findTargetTalkerByTitle(title);
-                            if (TextUtils.isEmpty(titleTalker)) {
-                                try { titleTalker = findTalkerByGroupTitle(title); } catch (Throwable ignored) {}
-                            }
-                            if (!TextUtils.isEmpty(titleTalker) && cacheTargetSet.contains(titleTalker)) {
-                                Map cfg0 = getTalkerCfg(titleTalker);
-                                shouldBlock = shouldBlockNativeByCfg(cfg0);
-                            }
-                        }
-
-                        if (shouldBlock) {
-                            param.setResult(null);
-                        }
-
-                    } catch (Throwable e) {
                     }
+
+                    if (shouldBlock) {
+                        param.setResult(null);
+                    }
+
+                } catch (Throwable e) {
                 }
             });
-            if (unhook != null) notifyUnhooks.add(unhook);
+            if (handle != null) notifyHookHandles.add(handle);
         }
     } catch (Throwable ignored) {
         sNotifyHookInstalled = false;
@@ -1383,51 +1355,49 @@ void sendCustomNotification(String talker, String title, String text, boolean us
 
 void hookActivityResultForRingtone() {
     try {
-        XC_MethodHook resultHook = new XC_MethodHook() {
-            protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
-                int requestCode = (Integer) param.args[0];
-                if (requestCode == REQ_PICK_RINGTONE_SYSTEM || requestCode == REQ_PICK_RINGTONE_FILE) {
-                    Intent data = (Intent) param.args[2];
-                    Uri uri = null;
-                    if (data != null && requestCode == REQ_PICK_RINGTONE_SYSTEM) {
-                        try { uri = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI); } catch (Throwable ignored) {}
-                        try {
-                            if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
-                                final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-                                hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
-                            }
-                        } catch (Throwable ignored) {}
-                    }
-                    if (data != null && uri == null && requestCode == REQ_PICK_RINGTONE_FILE) {
-                        try { uri = data.getData(); } catch (Throwable ignored) {}
-                        try {
-                            if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
-                                final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-                                hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
-                            }
-                        } catch (Throwable ignored) {}
-                    }
-                    String ring = uri == null ? "" : uri.toString();
-                    if (!TextUtils.isEmpty(ring)) {
-                        ring = freezeRingtoneUri(ring);
-                    }
-                    if (globalRingtoneValueRef != null && globalRingtoneValueRef.length > 0) {
-                        globalRingtoneValueRef[0] = ring;
-                    }
-                    final Activity top = globalSettingActivity;
-                    if (top != null && globalRingtoneValueView != null) {
-                        final String text = getRingtoneDisplayName(top, ring) + " >";
-                        top.runOnUiThread(new Runnable() {
-                            public void run() {
-                                try { globalRingtoneValueView.setText(text); } catch (Throwable ignored) {}
-                            }
-                        });
-                    }
+        var method = Activity.class.getDeclaredMethod("onActivityResult", int.class, int.class, Intent.class);
+        var handle = hookBefore(method, param -> {
+            int requestCode = (Integer) param.args[0];
+            if (requestCode == REQ_PICK_RINGTONE_SYSTEM || requestCode == REQ_PICK_RINGTONE_FILE) {
+                Intent data = (Intent) param.args[2];
+                Uri uri = null;
+                if (data != null && requestCode == REQ_PICK_RINGTONE_SYSTEM) {
+                    try { uri = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI); } catch (Throwable ignored) {}
+                    try {
+                        if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
+                            final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+                            hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                        }
+                    } catch (Throwable ignored) {}
+                }
+                if (data != null && uri == null && requestCode == REQ_PICK_RINGTONE_FILE) {
+                    try { uri = data.getData(); } catch (Throwable ignored) {}
+                    try {
+                        if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
+                            final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+                            hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                        }
+                    } catch (Throwable ignored) {}
+                }
+                String ring = uri == null ? "" : uri.toString();
+                if (!TextUtils.isEmpty(ring)) {
+                    ring = freezeRingtoneUri(ring);
+                }
+                if (globalRingtoneValueRef != null && globalRingtoneValueRef.length > 0) {
+                    globalRingtoneValueRef[0] = ring;
+                }
+                final Activity top = globalSettingActivity;
+                if (top != null && globalRingtoneValueView != null) {
+                    final String text = getRingtoneDisplayName(top, ring) + " >";
+                    top.runOnUiThread(new Runnable() {
+                        public void run() {
+                            try { globalRingtoneValueView.setText(text); } catch (Throwable ignored) {}
+                        }
+                    });
                 }
             }
-        };
-        Object uh = XposedHelpers.findAndHookMethod(Activity.class, "onActivityResult", int.class, int.class, Intent.class, resultHook);
-        resultUnhooks.add(uh);
+        });
+        if (handle != null) resultHookHandles.add(handle);
     } catch (Throwable ignored) {}
 }
 
@@ -2167,6 +2137,690 @@ void saveSelectedTargets(Set selectedIds) {
     putString(CFG_TARGETS, sb.toString());
 }
 
+Map buildBatchTalkerCfg(boolean isGroup, boolean dnd, boolean vibrate, boolean sound, boolean quickReply, boolean showDetail,
+                        boolean muteEnable, String muteStart, String muteEnd, String ringtone,
+                        boolean blockAll, boolean blockMe) {
+    Map newCfg = new HashMap();
+    newCfg.put("mode", dnd ? "0" : "1");
+    newCfg.put("vibrate", vibrate ? "1" : "0");
+    newCfg.put("sound", sound ? "1" : "0");
+    newCfg.put("quickReply", quickReply ? "1" : "0");
+    newCfg.put("ringtone", TextUtils.isEmpty(ringtone) ? "" : ringtone);
+    newCfg.put("showDetail", showDetail ? "1" : "0");
+    newCfg.put("muteEnable", muteEnable ? "1" : "0");
+    newCfg.put("muteStart", normalizeTime(muteStart, "23:00"));
+    newCfg.put("muteEnd", normalizeTime(muteEnd, "07:00"));
+    newCfg.put("blockAll", isGroup && blockAll ? "1" : "0");
+    newCfg.put("blockMe", isGroup && blockMe ? "1" : "0");
+    newCfg.put("onlyMembers", "");
+    newCfg.put("blockMembers", "");
+    return newCfg;
+}
+
+int applyBatchTalkerConfig(List ids, boolean isGroup, Map cfg, Set selectedIds) {
+    if (ids == null || cfg == null || selectedIds == null) return 0;
+    String encoded = encodeTalkerCfg(cfg);
+    int count = 0;
+    for (int i = 0; i < ids.size(); i++) {
+        String talkerId = String.valueOf(ids.get(i)).trim();
+        if (TextUtils.isEmpty(talkerId) || "null".equalsIgnoreCase(talkerId)) continue;
+        if (isGroup && !talkerId.endsWith("@chatroom")) continue;
+        if (!isGroup && talkerId.endsWith("@chatroom")) continue;
+        selectedIds.add(talkerId);
+        putString(CFG_TALKER_CFG_PREFIX + talkerId, encoded);
+        count++;
+    }
+    saveSelectedTargets(selectedIds);
+    loadConfigToCache();
+    return count;
+}
+
+String labelObjName(Object label) {
+    if (label == null) return "";
+    try {
+        Object v = safeInvokeAny(label, new String[]{"getLabelName", "getName", "getLabel", "getDisplayName"});
+        if (v != null && !TextUtils.isEmpty(String.valueOf(v))) return String.valueOf(v);
+    } catch (Throwable ignored) {}
+    try {
+        Object v2 = safeGetFieldAny(label, new String[]{"labelName", "name", "label", "displayName"});
+        if (v2 != null && !TextUtils.isEmpty(String.valueOf(v2))) return String.valueOf(v2);
+    } catch (Throwable ignored) {}
+    return String.valueOf(label);
+}
+
+String labelObjId(Object label) {
+    if (label == null) return "";
+    try {
+        Object v = safeInvokeAny(label, new String[]{"getLabelId", "getId", "getLabelID"});
+        if (v != null && !TextUtils.isEmpty(String.valueOf(v))) return String.valueOf(v);
+    } catch (Throwable ignored) {}
+    try {
+        Object v2 = safeGetFieldAny(label, new String[]{"labelId", "id", "labelID"});
+        if (v2 != null && !TextUtils.isEmpty(String.valueOf(v2))) return String.valueOf(v2);
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+List getFriendIdsByLabelSafe(String labelId, String labelName) {
+    try {
+        if (!TextUtils.isEmpty(labelId)) {
+            List byId = getContactByLabelId(labelId);
+            if (byId != null && !byId.isEmpty()) return byId;
+        }
+    } catch (Throwable ignored) {}
+    try {
+        if (!TextUtils.isEmpty(labelName)) {
+            List byName = getContactByLabelName(labelName);
+            if (byName != null) return byName;
+        }
+    } catch (Throwable ignored) {}
+    return new ArrayList();
+}
+
+void showBatchConfigDialog(final Activity ctx, final String title, final List targetIds, final boolean isGroup, final Set selectedIds, final Runnable onSaved) {
+    if (targetIds == null || targetIds.isEmpty()) {
+        toast("没有可批量设置的会话");
+        return;
+    }
+    try {
+        final boolean[] tmpEnable = {true};
+        final boolean[] tmpDnd = {false};
+        final boolean[] tmpVibrate = {cacheVibrate};
+        final boolean[] tmpSound = {cacheSound};
+        final boolean[] tmpQuickReply = {false};
+        final boolean[] tmpShowDetail = {cacheShowDetail};
+        final boolean[] tmpMuteEnable = {cacheMuteTimeEnable};
+        final String[] tmpMuteStart = {cacheMuteTimeStart};
+        final String[] tmpMuteEnd = {cacheMuteTimeEnd};
+        final String[] tmpRingtone = {""};
+        final boolean[] tmpBlockAll = {cacheBlockAtAll};
+        final boolean[] tmpBlockMe = {cacheBlockAtMe};
+
+        final LinearLayout body = new LinearLayout(ctx);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(ctx, 8), dp(ctx, 4), dp(ctx, 8), dp(ctx, 4));
+        addDarkSwitchRow(ctx, body, "启用此会话规则", tmpEnable[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpEnable[0] = c; }});
+        addDarkDivider(ctx, body);
+        addDarkSwitchRow(ctx, body, "免打扰(不弹通知)", tmpDnd[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpDnd[0] = c; }});
+        addDarkDivider(ctx, body);
+        addDarkSwitchRow(ctx, body, "震动", tmpVibrate[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpVibrate[0] = c; }});
+        addDarkDivider(ctx, body);
+        addDarkSwitchRow(ctx, body, "铃声", tmpSound[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpSound[0] = c; }});
+        addDarkDivider(ctx, body);
+        addDarkSwitchRow(ctx, body, "快捷回复", tmpQuickReply[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpQuickReply[0] = c; }});
+        addDarkDivider(ctx, body);
+        final TextView tvRing = addDarkClickRow(ctx, body, "选择铃声", getRingtoneDisplayName(ctx, tmpRingtone[0]) + " >");
+        ((View) tvRing.getParent()).setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                globalRingtoneValueView = tvRing;
+                globalRingtoneValueRef = tmpRingtone;
+                showRingtonePickStyleDialog(ctx, tmpRingtone, tvRing);
+            }
+        });
+        addDarkDivider(ctx, body);
+        addDarkSwitchRow(ctx, body, "通知显示消息详情", tmpShowDetail[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpShowDetail[0] = c; }});
+        addDarkDivider(ctx, body);
+        addDarkSwitchRow(ctx, body, "开启时段静默", tmpMuteEnable[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpMuteEnable[0] = c; }});
+        addDarkDivider(ctx, body);
+        final TextView[] tvTime = new TextView[2];
+        tvTime[0] = addDarkClickRow(ctx, body, "开始时间", tmpMuteStart[0] + " >");
+        ((View) tvTime[0].getParent()).setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showSingleTimePicker(ctx, "选择开始时间", tmpMuteStart, new Runnable() { public void run() { tvTime[0].setText(tmpMuteStart[0] + " >"); }}); }});
+        addDarkDivider(ctx, body);
+        tvTime[1] = addDarkClickRow(ctx, body, "结束时间", tmpMuteEnd[0] + " >");
+        ((View) tvTime[1].getParent()).setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showSingleTimePicker(ctx, "选择结束时间", tmpMuteEnd, new Runnable() { public void run() { tvTime[1].setText(tmpMuteEnd[0] + " >"); }}); }});
+        if (isGroup) {
+            addDarkDivider(ctx, body);
+            addDarkSwitchRow(ctx, body, "屏蔽@所有人", tmpBlockAll[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpBlockAll[0] = c; }});
+            addDarkDivider(ctx, body);
+            addDarkSwitchRow(ctx, body, "屏蔽@我", tmpBlockMe[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpBlockMe[0] = c; }});
+        }
+
+        ScrollView sv = new ScrollView(ctx);
+        LinearLayout.LayoutParams svLp = new LinearLayout.LayoutParams(-1, dp(ctx, isGroup ? 430 : 390));
+        svLp.topMargin = dp(ctx, 12);
+        sv.setLayoutParams(svLp);
+        sv.addView(body);
+
+        final Dialog d = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        d.setCancelable(true);
+
+        FrameLayout mask = new FrameLayout(ctx);
+        mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        mask.setBackgroundColor(Color.parseColor("#66000000"));
+
+        LinearLayout card = new LinearLayout(ctx);
+        card.setOrientation(LinearLayout.VERTICAL);
+        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-1, -2);
+        cardLp.leftMargin = dp(ctx, 16);
+        cardLp.rightMargin = dp(ctx, 16);
+        cardLp.gravity = Gravity.CENTER;
+        card.setLayoutParams(cardLp);
+        card.setPadding(dp(ctx, 16), dp(ctx, 16), dp(ctx, 16), dp(ctx, 12));
+        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
+        cardBg.setCornerRadius(dp(ctx, 20));
+        cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
+        card.setBackground(cardBg);
+
+        TextView tvTitle = new TextView(ctx);
+        tvTitle.setText(title + "\n将修改 " + targetIds.size() + " 个" + (isGroup ? "群聊" : "好友"));
+        tvTitle.setTextColor(Color.parseColor("#0F172A"));
+        tvTitle.setTextSize(18f);
+        tvTitle.setTypeface(null, Typeface.BOLD);
+        card.addView(tvTitle);
+        card.addView(sv);
+
+        LinearLayout actions = new LinearLayout(ctx);
+        actions.setGravity(Gravity.END);
+        LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(-1, -2);
+        actionsLp.topMargin = dp(ctx, 12);
+        actions.setLayoutParams(actionsLp);
+
+        TextView btnCancel = new TextView(ctx);
+        btnCancel.setText("取消");
+        btnCancel.setTextColor(Color.parseColor("#334155"));
+        btnCancel.setTextSize(14f);
+        btnCancel.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
+        GradientDrawable cancelBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
+        cancelBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
+        btnCancel.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), cancelBg, null));
+
+        TextView btnSave = new TextView(ctx);
+        btnSave.setText("批量保存");
+        btnSave.setTextColor(Color.WHITE);
+        btnSave.setTextSize(14f);
+        btnSave.setTypeface(null, Typeface.BOLD);
+        btnSave.setPadding(dp(ctx, 18), dp(ctx, 8), dp(ctx, 18), dp(ctx, 8));
+        GradientDrawable saveBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Color.parseColor("#2563EB"), Color.parseColor("#7C3AED")});
+        saveBg.setCornerRadius(dp(ctx, 999));
+        btnSave.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#55FFFFFF")), saveBg, null));
+
+        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-2, -2);
+        lpBtn.leftMargin = dp(ctx, 10);
+        actions.addView(btnCancel);
+        actions.addView(btnSave, lpBtn);
+        card.addView(actions);
+
+        mask.addView(card);
+        d.setContentView(mask);
+        mask.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { d.dismiss(); } });
+        card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {} });
+        btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { d.dismiss(); } });
+        btnSave.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (!tmpEnable[0]) {
+                    // 批量关闭规则：从 selectedIds 移除并清空配置
+                    for (int i = 0; i < targetIds.size(); i++) {
+                        String talkerId = String.valueOf(targetIds.get(i)).trim();
+                        if (TextUtils.isEmpty(talkerId) || "null".equalsIgnoreCase(talkerId)) continue;
+                        if (isGroup && !talkerId.endsWith("@chatroom")) continue;
+                        if (!isGroup && talkerId.endsWith("@chatroom")) continue;
+                        selectedIds.remove(talkerId);
+                        putString(CFG_TALKER_CFG_PREFIX + talkerId, "");
+                    }
+                    saveSelectedTargets(selectedIds);
+                    loadConfigToCache();
+                    if (onSaved != null) onSaved.run();
+                    globalRingtoneValueRef = null;
+                    globalRingtoneValueView = null;
+                    d.dismiss();
+                    toast("已批量关闭 " + targetIds.size() + " 个" + (isGroup ? "群聊" : "好友") + "的规则");
+                    return;
+                }
+                Map cfg = buildBatchTalkerCfg(isGroup, tmpDnd[0], tmpVibrate[0], tmpSound[0], tmpQuickReply[0], tmpShowDetail[0], tmpMuteEnable[0], tmpMuteStart[0], tmpMuteEnd[0], tmpRingtone[0], tmpBlockAll[0], tmpBlockMe[0]);
+                int count = applyBatchTalkerConfig(targetIds, isGroup, cfg, selectedIds);
+                if (onSaved != null) onSaved.run();
+                globalRingtoneValueRef = null;
+                globalRingtoneValueView = null;
+                d.dismiss();
+                toast("已批量设置 " + count + " 个" + (isGroup ? "群聊" : "好友"));
+            }
+        });
+
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+            w.setGravity(Gravity.CENTER);
+            w.setDimAmount(0.25f);
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+        }
+        d.show();
+    } catch (Throwable e) {
+        toast("打开批量设置失败");
+    }
+}
+
+void showBatchTalkerPickerDialog(final Activity ctx, final String title, final List names, final List ids, final boolean isGroup, final Set selectedIds, final Runnable onSaved) {
+    if (ids == null || ids.isEmpty()) {
+        toast("没有可选择的会话");
+        return;
+    }
+    try {
+        final Dialog dlg = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dlg.setCancelable(true);
+
+        FrameLayout mask = new FrameLayout(ctx);
+        mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        mask.setBackgroundColor(Color.parseColor("#66000000"));
+
+        LinearLayout card = new LinearLayout(ctx);
+        card.setOrientation(LinearLayout.VERTICAL);
+        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-1, -2);
+        cardLp.leftMargin = dp(ctx, 16);
+        cardLp.rightMargin = dp(ctx, 16);
+        cardLp.gravity = Gravity.CENTER;
+        card.setLayoutParams(cardLp);
+        card.setPadding(dp(ctx, 16), dp(ctx, 16), dp(ctx, 16), dp(ctx, 12));
+        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
+        cardBg.setCornerRadius(dp(ctx, 20));
+        cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
+        card.setBackground(cardBg);
+
+        TextView tvTitle = new TextView(ctx);
+        tvTitle.setText(title);
+        tvTitle.setTextSize(18f);
+        tvTitle.setTypeface(null, Typeface.BOLD);
+        tvTitle.setTextColor(Color.parseColor("#0F172A"));
+        card.addView(tvTitle);
+
+        final EditText etSearch = new EditText(ctx);
+        etSearch.setHint("搜索后勾选要批量修改的会话");
+        etSearch.setSingleLine(true);
+        etSearch.setTextSize(14f);
+        etSearch.setTextColor(Color.parseColor("#0F172A"));
+        etSearch.setHintTextColor(Color.parseColor("#94A3B8"));
+        GradientDrawable searchBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
+        searchBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
+        etSearch.setBackground(searchBg);
+        etSearch.setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10));
+        prepareSearchInput(ctx, etSearch);
+        LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(-1, -2);
+        searchLp.topMargin = dp(ctx, 12);
+        card.addView(etSearch, searchLp);
+
+        final TextView tvCount = new TextView(ctx);
+        tvCount.setTextSize(12f);
+        tvCount.setTextColor(Color.parseColor("#64748B"));
+        LinearLayout.LayoutParams cntLp = new LinearLayout.LayoutParams(-1, -2);
+        cntLp.topMargin = dp(ctx, 8);
+        card.addView(tvCount, cntLp);
+
+        LinearLayout quickActions = new LinearLayout(ctx);
+        quickActions.setGravity(Gravity.RIGHT);
+        LinearLayout.LayoutParams quickLp = new LinearLayout.LayoutParams(-1, -2);
+        quickLp.topMargin = dp(ctx, 8);
+        final TextView btnSelectAll = new TextView(ctx);
+        btnSelectAll.setText("全选当前");
+        btnSelectAll.setTextColor(Color.parseColor("#2563EB"));
+        btnSelectAll.setTextSize(13f);
+        btnSelectAll.setPadding(dp(ctx, 10), dp(ctx, 6), dp(ctx, 10), dp(ctx, 6));
+        btnSelectAll.setBackground(roundRect(Color.parseColor("#EFF6FF"), dp(ctx, 999)));
+        final TextView btnInvert = new TextView(ctx);
+        btnInvert.setText("反选当前");
+        btnInvert.setTextColor(Color.parseColor("#6D28D9"));
+        btnInvert.setTextSize(13f);
+        btnInvert.setPadding(dp(ctx, 10), dp(ctx, 6), dp(ctx, 10), dp(ctx, 6));
+        btnInvert.setBackground(roundRect(Color.parseColor("#F5F3FF"), dp(ctx, 999)));
+        final TextView btnClearPicked = new TextView(ctx);
+        btnClearPicked.setText("清空");
+        btnClearPicked.setTextColor(Color.parseColor("#334155"));
+        btnClearPicked.setTextSize(13f);
+        btnClearPicked.setPadding(dp(ctx, 10), dp(ctx, 6), dp(ctx, 10), dp(ctx, 6));
+        btnClearPicked.setBackground(roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999)));
+        LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(-2, -2);
+        qlp.leftMargin = dp(ctx, 8);
+        quickActions.addView(btnSelectAll);
+        quickActions.addView(btnInvert, qlp);
+        quickActions.addView(btnClearPicked, qlp);
+        card.addView(quickActions, quickLp);
+
+        LinearLayout listWrap = new LinearLayout(ctx);
+        listWrap.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable listBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
+        listBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
+        listWrap.setBackground(listBg);
+        LinearLayout.LayoutParams wrapLp = new LinearLayout.LayoutParams(-1, dp(ctx, 360));
+        wrapLp.topMargin = dp(ctx, 8);
+
+        final ListView lv = new ListView(ctx);
+        lv.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
+        lv.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E8EEF5")));
+        lv.setDividerHeight(1);
+        lv.setSelector(new android.graphics.drawable.ColorDrawable(Color.parseColor("#12000000")));
+        lv.setPadding(dp(ctx, 6), dp(ctx, 6), dp(ctx, 6), dp(ctx, 6));
+        lv.setClipToPadding(false);
+        listWrap.addView(lv, new LinearLayout.LayoutParams(-1, -1));
+        card.addView(listWrap, wrapLp);
+
+        final Set picked = new HashSet();
+        final List showNames = new ArrayList();
+        final List showIds = new ArrayList();
+        final Runnable update = new Runnable() {
+            public void run() {
+                showNames.clear();
+                showIds.clear();
+                String kw = etSearch.getText().toString().trim().toLowerCase();
+                for (int i = 0; i < ids.size(); i++) {
+                    String id = String.valueOf(ids.get(i));
+                    String name = i < names.size() ? String.valueOf(names.get(i)) : id;
+                    String low = (name + " " + id).toLowerCase();
+                    if (TextUtils.isEmpty(kw) || low.contains(kw)) {
+                        showNames.add(name);
+                        showIds.add(id);
+                    }
+                }
+                ArrayAdapter ad = new ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, showNames);
+                lv.setAdapter(ad);
+                for (int i = 0; i < showIds.size(); i++) lv.setItemChecked(i, picked.contains(String.valueOf(showIds.get(i))));
+                tvCount.setText("已选 " + picked.size() + " / 共 " + ids.size() + " 个");
+            }
+        };
+        lv.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            public void onItemClick(AdapterView parent, View view, int position, long id) {
+                String talkerId = String.valueOf(showIds.get(position));
+                if (lv.isItemChecked(position)) picked.add(talkerId);
+                else picked.remove(talkerId);
+                tvCount.setText("已选 " + picked.size() + " / 共 " + ids.size() + " 个");
+            }
+        });
+        etSearch.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            public void afterTextChanged(Editable s) { update.run(); }
+        });
+        btnSelectAll.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                for (int i = 0; i < showIds.size(); i++) picked.add(String.valueOf(showIds.get(i)));
+                update.run();
+            }
+        });
+        btnInvert.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                for (int i = 0; i < showIds.size(); i++) {
+                    String one = String.valueOf(showIds.get(i));
+                    if (picked.contains(one)) picked.remove(one);
+                    else picked.add(one);
+                }
+                update.run();
+            }
+        });
+        btnClearPicked.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                picked.clear();
+                update.run();
+            }
+        });
+
+        LinearLayout actions = new LinearLayout(ctx);
+        actions.setGravity(Gravity.END);
+        LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(-1, -2);
+        actionsLp.topMargin = dp(ctx, 12);
+        actions.setLayoutParams(actionsLp);
+
+        TextView btnCancel = new TextView(ctx);
+        btnCancel.setText("取消");
+        btnCancel.setTextColor(Color.parseColor("#334155"));
+        btnCancel.setTextSize(14f);
+        btnCancel.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
+        GradientDrawable cancelBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
+        cancelBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
+        btnCancel.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), cancelBg, null));
+
+        TextView btnNext = new TextView(ctx);
+        btnNext.setText("下一步");
+        btnNext.setTextColor(Color.WHITE);
+        btnNext.setTextSize(14f);
+        btnNext.setTypeface(null, Typeface.BOLD);
+        btnNext.setPadding(dp(ctx, 18), dp(ctx, 8), dp(ctx, 18), dp(ctx, 8));
+        GradientDrawable nextBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Color.parseColor("#2563EB"), Color.parseColor("#7C3AED")});
+        nextBg.setCornerRadius(dp(ctx, 999));
+        btnNext.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#55FFFFFF")), nextBg, null));
+
+        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-2, -2);
+        lpBtn.leftMargin = dp(ctx, 10);
+        actions.addView(btnCancel);
+        actions.addView(btnNext, lpBtn);
+        card.addView(actions);
+
+        mask.addView(card);
+        dlg.setContentView(mask);
+        mask.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
+        card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {} });
+        btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
+        btnNext.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (picked.isEmpty()) {
+                    toast("请先选择要批量修改的会话");
+                    return;
+                }
+                List pickedIds = new ArrayList();
+                pickedIds.addAll(picked);
+                dlg.dismiss();
+                showBatchConfigDialog(ctx, title, pickedIds, isGroup, selectedIds, onSaved);
+            }
+        });
+
+        Window w = dlg.getWindow();
+        if (w != null) {
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+            w.setGravity(Gravity.CENTER);
+            w.setDimAmount(0.25f);
+            w.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+            w.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+        dlg.show();
+        update.run();
+    } catch (Throwable e) {
+        toast("打开批量选择失败");
+    }
+}
+
+void showCustomLoadingDialog(Activity ctx, String msg) {
+    try {
+        Dialog d = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        d.setCancelable(false);
+
+        FrameLayout mask = new FrameLayout(ctx);
+        mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        mask.setBackgroundColor(Color.parseColor("#66000000"));
+
+        LinearLayout card = new LinearLayout(ctx);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(ctx, 16), dp(ctx, 14), dp(ctx, 16), dp(ctx, 14));
+        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-2, -2);
+        cardLp.gravity = Gravity.CENTER;
+        card.setLayoutParams(cardLp);
+        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
+        cardBg.setCornerRadius(dp(ctx, 16));
+        cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
+        card.setBackground(cardBg);
+
+        ProgressBar pb = new ProgressBar(ctx);
+        card.addView(pb);
+
+        TextView tv = new TextView(ctx);
+        tv.setText(msg);
+        tv.setTextColor(Color.parseColor("#0F172A"));
+        tv.setTextSize(14f);
+        LinearLayout.LayoutParams tvLp = new LinearLayout.LayoutParams(-2, -2);
+        tvLp.leftMargin = dp(ctx, 10);
+        card.addView(tv, tvLp);
+
+        mask.addView(card);
+        d.setContentView(mask);
+
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+            w.setGravity(Gravity.CENTER);
+            w.setDimAmount(0.25f);
+        }
+        d.show();
+        // 存引用以便关闭
+        sLoadingDialogRef = d;
+    } catch (Throwable ignored) {}
+}
+
+void dismissCustomLoadingDialog() {
+    try {
+        if (sLoadingDialogRef != null && sLoadingDialogRef.isShowing()) {
+            ((Dialog) sLoadingDialogRef).dismiss();
+        }
+    } catch (Throwable ignored) {}
+    sLoadingDialogRef = null;
+}
+
+void showLabelFriendPickerDialog(final Activity ctx, final Set selectedIds, final Runnable onSaved) {
+    showCustomLoadingDialog(ctx, "加载标签中...");
+    new Thread(new Runnable() {
+        public void run() {
+            final List labelNames = new ArrayList();
+            final List labelIds = new ArrayList();
+            try {
+                List labels = getContactLabelList();
+                if (labels != null) {
+                    for (int i = 0; i < labels.size(); i++) {
+                        Object label = labels.get(i);
+                        String name = labelObjName(label);
+                        String id = labelObjId(label);
+                        if (TextUtils.isEmpty(name) || "null".equalsIgnoreCase(name)) name = TextUtils.isEmpty(id) ? ("标签" + (i + 1)) : ("标签" + id);
+                        labelNames.add(name);
+                        labelIds.add(id);
+                    }
+                }
+            } catch (Throwable ignored) {}
+            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                public void run() {
+                    dismissCustomLoadingDialog();
+                    if (ctx.isFinishing() || ctx.isDestroyed()) return;
+                    if (labelNames.isEmpty()) {
+                        toast("没有读取到好友标签");
+                        return;
+                    }
+                    final Dialog dlg = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
+                    dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
+                    dlg.setCancelable(true);
+
+                    FrameLayout mask = new FrameLayout(ctx);
+                    mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+                    mask.setBackgroundColor(Color.parseColor("#66000000"));
+
+                    LinearLayout card = new LinearLayout(ctx);
+                    card.setOrientation(LinearLayout.VERTICAL);
+                    FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-1, -2);
+                    cardLp.leftMargin = dp(ctx, 16);
+                    cardLp.rightMargin = dp(ctx, 16);
+                    cardLp.gravity = Gravity.CENTER;
+                    card.setLayoutParams(cardLp);
+                    card.setPadding(dp(ctx, 16), dp(ctx, 16), dp(ctx, 16), dp(ctx, 12));
+                    GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
+                    cardBg.setCornerRadius(dp(ctx, 20));
+                    cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
+                    card.setBackground(cardBg);
+
+                    TextView tvTitle = new TextView(ctx);
+                    tvTitle.setText("选择好友标签");
+                    tvTitle.setTextColor(Color.parseColor("#0F172A"));
+                    tvTitle.setTextSize(18f);
+                    tvTitle.setTypeface(null, Typeface.BOLD);
+                    card.addView(tvTitle);
+
+                    TextView tvSub = new TextView(ctx);
+                    tvSub.setText("选择一个标签后，将进入好友多选界面");
+                    tvSub.setTextColor(Color.parseColor("#64748B"));
+                    tvSub.setTextSize(13f);
+                    LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
+                    subLp.topMargin = dp(ctx, 6);
+                    card.addView(tvSub, subLp);
+
+                    LinearLayout listWrap = new LinearLayout(ctx);
+                    listWrap.setOrientation(LinearLayout.VERTICAL);
+                    GradientDrawable listBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
+                    listBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
+                    listWrap.setBackground(listBg);
+                    LinearLayout.LayoutParams wrapLp = new LinearLayout.LayoutParams(-1, dp(ctx, 420));
+                    wrapLp.topMargin = dp(ctx, 12);
+
+                    final ListView lv = new ListView(ctx);
+                    lv.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E8EEF5")));
+                    lv.setDividerHeight(1);
+                    lv.setSelector(new android.graphics.drawable.ColorDrawable(Color.parseColor("#12000000")));
+                    lv.setPadding(dp(ctx, 6), dp(ctx, 6), dp(ctx, 6), dp(ctx, 6));
+                    lv.setClipToPadding(false);
+                    ArrayAdapter ad = new ArrayAdapter(ctx, android.R.layout.simple_list_item_1, labelNames);
+                    lv.setAdapter(ad);
+                    listWrap.addView(lv, new LinearLayout.LayoutParams(-1, -1));
+                    card.addView(listWrap, wrapLp);
+
+                    LinearLayout actions = new LinearLayout(ctx);
+                    actions.setGravity(Gravity.END);
+                    LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(-1, -2);
+                    actionsLp.topMargin = dp(ctx, 12);
+                    TextView btnCancel = new TextView(ctx);
+                    btnCancel.setText("取消");
+                    btnCancel.setTextColor(Color.parseColor("#334155"));
+                    btnCancel.setTextSize(14f);
+                    btnCancel.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
+                    GradientDrawable cancelBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
+                    cancelBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
+                    btnCancel.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), cancelBg, null));
+                    actions.addView(btnCancel);
+                    card.addView(actions, actionsLp);
+
+                    mask.addView(card);
+                    dlg.setContentView(mask);
+                    mask.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
+                    card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {} });
+                    btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
+                    lv.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+                        public void onItemClick(AdapterView parent, View view, int which, long id) {
+                            final String labelName = String.valueOf(labelNames.get(which));
+                            final String labelId = String.valueOf(labelIds.get(which));
+                            try { dlg.dismiss(); } catch (Throwable ignored) {}
+                            showCustomLoadingDialog(ctx, "读取标签好友中...");
+                            new Thread(new Runnable() {
+                                public void run() {
+                                    final List ids = getFriendIdsByLabelSafe(labelId, labelName);
+                                    new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                        public void run() {
+                                            dismissCustomLoadingDialog();
+                                            if (ids == null || ids.isEmpty()) {
+                                                toast("该标签下没有好友");
+                                                return;
+                                            }
+                                            List labelNames2 = new ArrayList();
+                                            for (int i = 0; i < ids.size(); i++) {
+                                                String wxid = String.valueOf(ids.get(i));
+                                                String nm = "";
+                                                try { nm = getFriendName(wxid); } catch (Throwable ignored) {}
+                                                if (TextUtils.isEmpty(nm)) nm = wxid;
+                                                labelNames2.add(nm);
+                                            }
+                                            showBatchTalkerPickerDialog(ctx, "标签好友：" + labelName, labelNames2, ids, false, selectedIds, onSaved);
+                                        }
+                                    });
+                                }
+                            }).start();
+                        }
+                    });
+
+                    Window w = dlg.getWindow();
+                    if (w != null) {
+                        w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+                        w.setGravity(Gravity.CENTER);
+                        w.setDimAmount(0.25f);
+                    }
+                    dlg.show();
+                }
+            });
+        }
+    }).start();
+}
+
 void applyDialogSize(AlertDialog d, float widthRatio, float heightRatio) {
     try {
         if (d == null || d.getWindow() == null) return;
@@ -2831,7 +3485,6 @@ TextView addDarkClickRow(Activity ctx, LinearLayout parent, String title, String
     parent.addView(row);
     return r;
 }
-
 void buildListUI(final Activity ctx, final List fNames, final List fIds, final List gNames, final List gIds) {
     LinearLayout root = new LinearLayout(ctx);
     root.setOrientation(LinearLayout.VERTICAL);
@@ -2888,6 +3541,23 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
     LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(-1, -2);
     searchLp.topMargin = dp(ctx, 12);
     root.addView(etSearch, searchLp);
+
+    LinearLayout batchCard = new LinearLayout(ctx);
+    batchCard.setOrientation(LinearLayout.VERTICAL);
+    LinearLayout.LayoutParams batchLp = new LinearLayout.LayoutParams(-1, -2);
+    batchLp.topMargin = dp(ctx, 10);
+    GradientDrawable batchBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
+    batchBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
+    batchCard.setBackground(batchBg);
+    final LinearLayout rowBatchFriend = createRowText(ctx, "批量修改私聊", "多选好友 >", true);
+    final LinearLayout rowBatchGroup = createRowText(ctx, "批量修改群聊", "多选群聊 >", true);
+    final LinearLayout rowLabelFriend = createRowText(ctx, "标签好友", "按标签批量 >", true);
+    batchCard.addView(rowBatchFriend);
+    addDarkDivider(ctx, batchCard);
+    batchCard.addView(rowBatchGroup);
+    addDarkDivider(ctx, batchCard);
+    batchCard.addView(rowLabelFriend);
+    root.addView(batchCard, batchLp);
 
     FrameLayout listWrap = new FrameLayout(ctx);
     GradientDrawable listWrapBg = roundRect(Color.parseColor("#F5F7FB"), dp(ctx, 12));
@@ -3128,6 +3798,22 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
             listDialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
     } catch (Throwable ignored) {}
+
+    rowBatchFriend.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showBatchTalkerPickerDialog(ctx, "批量修改私聊", fNameStr, fIdStr, false, selectedIds, new Runnable() { public void run() { updateList.run(); } });
+        }
+    });
+    rowBatchGroup.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showBatchTalkerPickerDialog(ctx, "批量修改群聊", gNameStr, gIdStr, true, selectedIds, new Runnable() { public void run() { updateList.run(); } });
+        }
+    });
+    rowLabelFriend.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showLabelFriendPickerDialog(ctx, selectedIds, new Runnable() { public void run() { updateList.run(); } });
+        }
+    });
 
     tvCancel.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) { listDialog.dismiss(); }

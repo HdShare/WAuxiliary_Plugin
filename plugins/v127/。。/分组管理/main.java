@@ -38,6 +38,8 @@ import org.json.JSONObject;
 // 全局变量缓存
 private List sCachedFriendList = null;
 private List sCachedGroupList = null;
+private List sCachedOfficialList = null;
+private List sCachedContactLabelList = null;
 
 /**
  * 自动获取并分辨当前是主体微信还是分身微信的配置路径
@@ -66,6 +68,8 @@ public void onLoad() {
             try {
                 if (sCachedFriendList == null) sCachedFriendList = getFriendList();
                 if (sCachedGroupList == null) sCachedGroupList = getGroupList();
+                if (sCachedOfficialList == null) sCachedOfficialList = getOfficialList();
+                if (sCachedContactLabelList == null) sCachedContactLabelList = getContactLabelList();
             } catch (Exception e) {
                 log("预加载联系人失败: " + e.getMessage());
             }
@@ -74,6 +78,21 @@ public void onLoad() {
     log("分组管理插件已加载，当前路径: " + getGroupFilePath());
 }
 
+
+
+
+public void openSettings() {
+    new Handler(Looper.getMainLooper()).post(new Runnable() {
+        public void run() {
+            try {
+                showMainDialog(getTargetTalker());
+            } catch (Exception e) {
+                log("打开插件设置失败: " + e.getMessage());
+                toast("打开插件设置失败: " + e.getMessage());
+            }
+        }
+    });
+}
 
 public boolean onClickSendBtn(String text) {
     if ("分组管理".equals(text) || "修改分组".equals(text) || "分组设置".equals(text)) {
@@ -143,7 +162,7 @@ private void showMainDialog(final String currentTalker) {
     LinearLayout root = new LinearLayout(getTopActivity());
     root.setOrientation(LinearLayout.VERTICAL);
     root.setPadding(32, 32, 32, 32);
-    root.setBackgroundColor(Color.parseColor("#FAFBF9"));
+    root.setBackgroundColor(getDialogBgColor());
     scrollView.addView(root);
 
     root.addView(createSectionTitle("📁 自定义分组管理"));
@@ -151,7 +170,7 @@ private void showMainDialog(final String currentTalker) {
     // 提示当前处于哪个聊天界面
     if (!TextUtils.isEmpty(currentTalker)) {
         TextView talkerTip = createPromptText("📍 当前聊天: " + formatMemberDisplay(currentTalker));
-        talkerTip.setTextColor(Color.parseColor("#4CAF50"));
+        talkerTip.setTextColor(isDarkMode() ? Color.parseColor("#81C784") : Color.parseColor("#4CAF50"));
         root.addView(talkerTip);
     }
     
@@ -295,6 +314,8 @@ private void showManageMembersDialog(final JSONArray groupArray, final int posit
         public void run() {
             if (sCachedFriendList == null) sCachedFriendList = getFriendList();
             if (sCachedGroupList == null) sCachedGroupList = getGroupList();
+            if (sCachedOfficialList == null) sCachedOfficialList = getOfficialList();
+            if (sCachedContactLabelList == null) sCachedContactLabelList = getContactLabelList();
 
             new Handler(Looper.getMainLooper()).post(new Runnable() {
                 public void run() {
@@ -341,6 +362,28 @@ private void showManageMembersDialog(final JSONArray groupArray, final int posit
                     btnRow1.addView(addGroupBtn);
                     root.addView(btnRow1);
 
+                    // --- 第二排按钮：加公众号、按标签添加好友 ---
+                    LinearLayout btnRow2 = new LinearLayout(getTopActivity());
+                    btnRow2.setOrientation(LinearLayout.HORIZONTAL);
+
+                    Button addOfficialBtn = new Button(getTopActivity());
+                    addOfficialBtn.setText("📢 添加公众号");
+                    styleUtilityButton(addOfficialBtn);
+                    LinearLayout.LayoutParams p3 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                    p3.setMargins(0,0,8,0);
+                    addOfficialBtn.setLayoutParams(p3);
+
+                    Button addLabelFriendBtn = new Button(getTopActivity());
+                    addLabelFriendBtn.setText("🏷️ 按标签添加好友");
+                    styleUtilityButton(addLabelFriendBtn);
+                    LinearLayout.LayoutParams p4 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                    p4.setMargins(8,0,0,0);
+                    addLabelFriendBtn.setLayoutParams(p4);
+
+                    btnRow2.addView(addOfficialBtn);
+                    btnRow2.addView(addLabelFriendBtn);
+                    root.addView(btnRow2);
+
                     final Runnable saveAndRefresh = new Runnable() {
                         public void run() {
                             JSONArray newIdListArray = new JSONArray();
@@ -357,9 +400,9 @@ private void showManageMembersDialog(final JSONArray groupArray, final int posit
                     addManualBtn.setText("✍️ 手动输入 wxid (支持公众号)");
                     styleUtilityButton(addManualBtn);
                     GradientDrawable btnBg = (GradientDrawable) addManualBtn.getBackground();
-                    btnBg.setColor(Color.parseColor("#FFF3E0"));
-                    btnBg.setStroke(2, Color.parseColor("#FFE0B2"));
-                    addManualBtn.setTextColor(Color.parseColor("#E65100"));
+                    btnBg.setColor(isDarkMode() ? Color.parseColor("#3A2D1B") : Color.parseColor("#FFF3E0"));
+                    btnBg.setStroke(2, isDarkMode() ? Color.parseColor("#8A6D3B") : Color.parseColor("#FFE0B2"));
+                    addManualBtn.setTextColor(isDarkMode() ? Color.parseColor("#FFCC80") : Color.parseColor("#E65100"));
                     root.addView(addManualBtn);
 
                     // --- 🌟 第三个超级按钮：一键添加当前上下文对象 ---
@@ -368,9 +411,9 @@ private void showManageMembersDialog(final JSONArray groupArray, final int posit
                         addCurrentBtn.setText("📌 添加当前聊天: " + formatMemberDisplay(currentTalker) + " 到此分组");
                         styleUtilityButton(addCurrentBtn);
                         GradientDrawable curBg = (GradientDrawable) addCurrentBtn.getBackground();
-                        curBg.setColor(Color.parseColor("#E8F5E9"));
-                        curBg.setStroke(2, Color.parseColor("#A5D6A7"));
-                        addCurrentBtn.setTextColor(Color.parseColor("#2E7D32"));
+                        curBg.setColor(isDarkMode() ? Color.parseColor("#1F3A24") : Color.parseColor("#E8F5E9"));
+                        curBg.setStroke(2, isDarkMode() ? Color.parseColor("#4D8B57") : Color.parseColor("#A5D6A7"));
+                        addCurrentBtn.setTextColor(isDarkMode() ? Color.parseColor("#A5D6A7") : Color.parseColor("#2E7D32"));
                         
                         addCurrentBtn.setOnClickListener(new View.OnClickListener() {
                             public void onClick(View v) {
@@ -448,6 +491,32 @@ private void showManageMembersDialog(final JSONArray groupArray, final int posit
                         }
                     });
 
+                    addOfficialBtn.setOnClickListener(new View.OnClickListener() {
+                        public void onClick(View v) {
+                            Set<String> currentSet = new HashSet<>(idList);
+                            showOfficialSelectionDialog(currentSet, new Runnable() {
+                                public void run() {
+                                    idList.clear();
+                                    idList.addAll(currentSet);
+                                    fullSaveAndRefresh.run();
+                                }
+                            });
+                        }
+                    });
+
+                    addLabelFriendBtn.setOnClickListener(new View.OnClickListener() {
+                        public void onClick(View v) {
+                            Set<String> currentSet = new HashSet<>(idList);
+                            showLabelFriendSelectionDialog(currentSet, new Runnable() {
+                                public void run() {
+                                    idList.clear();
+                                    idList.addAll(currentSet);
+                                    fullSaveAndRefresh.run();
+                                }
+                            });
+                        }
+                    });
+
                     addManualBtn.setOnClickListener(new View.OnClickListener() {
                         public void onClick(View v) {
                             showManualAddDialog(currentTalker, new Runnable() {
@@ -506,7 +575,7 @@ private void showManualAddDialog(final String defaultWxid, final Runnable onFini
     root.addView(idEdit);
     
     TextView tipView = createPromptText("提示：如果您不知道wxid，可以直接在目标公众号的聊天界面输入“分组管理”即可一键抓取添加！");
-    tipView.setTextColor(Color.parseColor("#E65100"));
+    tipView.setTextColor(isDarkMode() ? Color.parseColor("#FFCC80") : Color.parseColor("#E65100"));
     root.addView(tipView);
 
     AlertDialog dialog = buildCommonAlertDialog(getTopActivity(), "✍️ 手动添加目标", root, "添加", new DialogInterface.OnClickListener() {
@@ -656,6 +725,254 @@ private void showGroupSelectionDialog(final Set<String> targetSet, final Runnabl
     });
 }
 
+private void showOfficialSelectionDialog(final Set<String> targetSet, final Runnable onFinish) {
+    showLoadingDialog("加载中", "正在获取公众号列表...", new Runnable() {
+        public void run() {
+            if (sCachedOfficialList == null) sCachedOfficialList = getOfficialList();
+            
+            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                public void run() {
+                    List<String> names = new ArrayList<>();
+                    List<String> ids = new ArrayList<>();
+                    
+                    if (sCachedOfficialList != null) {
+                        for (int i=0; i<sCachedOfficialList.size(); i++) {
+                            FriendInfo f = (FriendInfo) sCachedOfficialList.get(i);
+                            String nickname = TextUtils.isEmpty(f.getNickname()) ? "未知公众号" : f.getNickname();
+                            String remark = f.getRemark();
+                            String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
+                            String wxid = f.getWxid();
+                            
+                            if (!TextUtils.isEmpty(wxid)) {
+                                names.add("📢 " + displayName + "[" + wxid + "]");
+                                ids.add(wxid);
+                            }
+                        }
+                    }
+                    showMultiSelectDialog("添加公众号", names, ids, targetSet, "搜索公众号名称/备注/wxid...", onFinish);
+                }
+            });
+        }
+    });
+}
+
+private void showLabelFriendSelectionDialog(final Set<String> targetSet, final Runnable onFinish) {
+    showLoadingDialog("加载中", "正在获取标签列表...", new Runnable() {
+        public void run() {
+            if (sCachedContactLabelList == null) sCachedContactLabelList = getContactLabelList();
+            if (sCachedFriendList == null) sCachedFriendList = getFriendList();
+            
+            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                public void run() {
+                    final List<String> labelNames = new ArrayList<>();
+                    final List<String> labelIds = new ArrayList<>();
+                    final List<String> labelDisplayList = new ArrayList<>();
+                    
+                    if (sCachedContactLabelList != null) {
+                        for (int i=0; i<sCachedContactLabelList.size(); i++) {
+                            Object label = sCachedContactLabelList.get(i);
+                            String labelName = getContactLabelName(label);
+                            String labelId = getContactLabelId(label);
+
+                            if (TextUtils.isEmpty(labelName)) labelName = String.valueOf(label);
+                            if (TextUtils.isEmpty(labelId)) labelId = "";
+
+                            final String finalLabelName = labelName;
+                            final String finalLabelId = labelId;
+                            int memberCount = -1;
+                            try {
+                                List tmp = null;
+                                if (!TextUtils.isEmpty(finalLabelId)) tmp = getContactByLabelId(finalLabelId);
+                                if ((tmp == null || tmp.size() == 0) && !TextUtils.isEmpty(finalLabelName)) tmp = getContactByLabelName(finalLabelName);
+                                if (tmp != null) memberCount = tmp.size();
+                            } catch (Throwable e) {}
+
+                            labelNames.add(labelName);
+                            labelIds.add(labelId);
+                            String countText = memberCount >= 0 ? "，" + memberCount + "人" : "";
+                            String idText = TextUtils.isEmpty(labelId) ? "" : "[" + labelId + "]";
+                            labelDisplayList.add("🏷️ " + labelName + idText + countText);
+                        }
+                    }
+                    
+                    if (labelDisplayList.isEmpty()) {
+                        toast("未获取到标签列表");
+                        return;
+                    }
+                    
+                    AlertDialog.Builder builder = new AlertDialog.Builder(getTopActivity());
+                    builder.setTitle("选择好友标签");
+                    builder.setItems(labelDisplayList.toArray(new String[labelDisplayList.size()]), new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            final String labelId = labelIds.get(which);
+                            final String labelName = labelNames.get(which);
+                            showLoadingDialog("加载中", "正在读取标签 [" + labelName + "] 的好友...", new Runnable() {
+                                public void run() {
+                                    List<String> wxidList = null;
+                                    try {
+                                        if (!TextUtils.isEmpty(labelId)) wxidList = getContactByLabelId(labelId);
+                                    } catch (Throwable e) {
+                                        log("通过标签ID获取联系人失败，尝试标签名: " + e);
+                                    }
+                                    if (wxidList == null || wxidList.size() == 0) {
+                                        try {
+                                            if (!TextUtils.isEmpty(labelName)) wxidList = getContactByLabelName(labelName);
+                                        } catch (Throwable e) {
+                                            log("通过标签名获取联系人失败: " + e);
+                                        }
+                                    }
+                                    final List<String> finalWxidList = wxidList;
+                                    new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                        public void run() {
+                                            showLabelContactSelectionDialog(labelName, finalWxidList, targetSet, onFinish);
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    });
+                    builder.setNegativeButton("取消", null);
+                    AlertDialog labelDialog = builder.create();
+                    setupUnifiedDialog(labelDialog);
+                    labelDialog.show();
+                }
+            });
+        }
+    });
+}
+
+private void showLabelContactSelectionDialog(String labelName, List<String> wxidList, final Set<String> targetSet, final Runnable onFinish) {
+    List<String> names = new ArrayList<>();
+    List<String> ids = new ArrayList<>();
+    if (wxidList != null) {
+        for (int i=0; i<wxidList.size(); i++) {
+            String wxid = wxidList.get(i);
+            if (TextUtils.isEmpty(wxid)) continue;
+            names.add(formatMemberDisplay(wxid));
+            ids.add(wxid);
+        }
+    }
+    if (ids.isEmpty()) {
+        toast("标签 [" + labelName + "] 下没有获取到好友");
+        return;
+    }
+    showMultiSelectDialog("选择 [" + labelName + "] 的好友", names, ids, targetSet, "搜索昵称/备注/wxid...", onFinish);
+}
+
+private Object getNoArgMethodValue(Object obj, String methodName) {
+    if (obj == null || TextUtils.isEmpty(methodName)) return null;
+    try {
+        java.lang.reflect.Method[] publicMethods = obj.getClass().getMethods();
+        for (int i=0; i<publicMethods.length; i++) {
+            if (methodName.equals(publicMethods[i].getName()) && publicMethods[i].getParameterTypes().length == 0) {
+                publicMethods[i].setAccessible(true);
+                return publicMethods[i].invoke(obj, new Object[0]);
+            }
+        }
+    } catch (Throwable e) {}
+    try {
+        Class c = obj.getClass();
+        while (c != null) {
+            try {
+                java.lang.reflect.Method m = c.getDeclaredMethod(methodName, new Class[0]);
+                m.setAccessible(true);
+                return m.invoke(obj, new Object[0]);
+            } catch (Throwable e) {}
+            c = c.getSuperclass();
+        }
+    } catch (Throwable e) {}
+    return null;
+}
+
+private Object getFieldValueDeep(Object obj, String fieldName) {
+    if (obj == null || TextUtils.isEmpty(fieldName)) return null;
+    try {
+        Class c = obj.getClass();
+        while (c != null) {
+            try {
+                java.lang.reflect.Field f = c.getDeclaredField(fieldName);
+                f.setAccessible(true);
+                return f.get(obj);
+            } catch (Throwable e) {}
+            c = c.getSuperclass();
+        }
+    } catch (Throwable e) {}
+    return null;
+}
+
+private String getContactLabelName(Object label) {
+    if (label == null) return "";
+
+    String[] methodNames = {"getName", "getLabelName", "getLabel", "getTitle", "name", "labelName"};
+    for (int i=0; i<methodNames.length; i++) {
+        Object v = getNoArgMethodValue(label, methodNames[i]);
+        if (v != null && !TextUtils.isEmpty(String.valueOf(v))) return String.valueOf(v);
+    }
+
+    String[] fieldNames = {"name", "labelName", "label", "title", "label_name"};
+    for (int i=0; i<fieldNames.length; i++) {
+        Object v = getFieldValueDeep(label, fieldNames[i]);
+        if (v != null && !TextUtils.isEmpty(String.valueOf(v))) return String.valueOf(v);
+    }
+
+    dumpContactLabelBean(label);
+    return "";
+}
+
+private String getContactLabelId(Object label) {
+    if (label == null) return "";
+
+    String[] methodNames = {"getId", "getLabelId", "getLabelID", "id", "labelId"};
+    for (int i=0; i<methodNames.length; i++) {
+        Object v = getNoArgMethodValue(label, methodNames[i]);
+        if (v != null && !TextUtils.isEmpty(String.valueOf(v))) return String.valueOf(v);
+    }
+
+    String[] fieldNames = {"id", "labelId", "labelID", "label_id"};
+    for (int i=0; i<fieldNames.length; i++) {
+        Object v = getFieldValueDeep(label, fieldNames[i]);
+        if (v != null && !TextUtils.isEmpty(String.valueOf(v))) return String.valueOf(v);
+    }
+
+    dumpContactLabelBean(label);
+    return "";
+}
+
+private void dumpContactLabelBean(Object label) {
+    try {
+        if (label == null) return;
+        StringBuilder sb = new StringBuilder();
+        sb.append("ContactLabelBean结构: class=").append(label.getClass().getName());
+        sb.append(", toString=").append(String.valueOf(label));
+
+        sb.append(", fields=");
+        Class c = label.getClass();
+        while (c != null) {
+            java.lang.reflect.Field[] fields = c.getDeclaredFields();
+            for (int i=0; i<fields.length; i++) {
+                try {
+                    fields[i].setAccessible(true);
+                    sb.append(c.getSimpleName()).append(".").append(fields[i].getName()).append("=").append(String.valueOf(fields[i].get(label))).append("; ");
+                } catch (Throwable e) {
+                    sb.append(c.getSimpleName()).append(".").append(fields[i].getName()).append("=?; ");
+                }
+            }
+            c = c.getSuperclass();
+        }
+
+        sb.append(", methods=");
+        java.lang.reflect.Method[] methods = label.getClass().getMethods();
+        for (int i=0; i<methods.length; i++) {
+            if (methods[i].getParameterTypes().length == 0) {
+                sb.append(methods[i].getName()).append("(); ");
+            }
+        }
+        log(sb.toString());
+    } catch (Throwable e) {
+        try { log("解析 ContactLabelBean 结构失败: " + e); } catch (Throwable ignore) {}
+    }
+}
+
 private void showMultiSelectDialog(String title, final List allItems, final List idList, final Set selectedIds, String searchHint, final Runnable onConfirm) {
     try {
         final Set tempSelected = new HashSet();
@@ -669,7 +986,7 @@ private void showMultiSelectDialog(String title, final List allItems, final List
         LinearLayout mainLayout = new LinearLayout(getTopActivity());
         mainLayout.setOrientation(LinearLayout.VERTICAL);
         mainLayout.setPadding(24, 24, 24, 24);
-        mainLayout.setBackgroundColor(Color.parseColor("#FAFBF9"));
+        mainLayout.setBackgroundColor(getDialogBgColor());
         scrollView.addView(mainLayout);
         
         final EditText searchEditText = createStyledEditText(searchHint, "");
@@ -833,11 +1150,56 @@ private String getGroupName(String groupWxid) {
 // ========== 🎨 现代 UI 组件构建 ==========
 // ==========================================
 
+private boolean isDarkMode() {
+    try {
+        int nightModeFlags = getTopActivity().getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        return nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+    } catch (Exception e) {
+        return false;
+    }
+}
+
+private int getDialogBgColor() {
+    return isDarkMode() ? Color.parseColor("#1E1F22") : Color.parseColor("#FAFBF9");
+}
+
+private int getCardBgColor() {
+    return isDarkMode() ? Color.parseColor("#2A2B2F") : Color.parseColor("#FFFFFF");
+}
+
+private int getPrimaryTextColor() {
+    return isDarkMode() ? Color.parseColor("#F1F3F5") : Color.parseColor("#333333");
+}
+
+private int getSecondaryTextColor() {
+    return isDarkMode() ? Color.parseColor("#C9CDD4") : Color.parseColor("#666666");
+}
+
+private int getHintTextColor() {
+    return isDarkMode() ? Color.parseColor("#8F959E") : Color.parseColor("#999999");
+}
+
+private int getStrokeColor() {
+    return isDarkMode() ? Color.parseColor("#4A4D55") : Color.parseColor("#E0E0E0");
+}
+
+private int getButtonTextColor() {
+    return isDarkMode() ? Color.parseColor("#9CCFFF") : Color.parseColor("#4A90E2");
+}
+
+private int getButtonBgColor() {
+    return isDarkMode() ? Color.parseColor("#263241") : Color.parseColor("#F5FBFF");
+}
+
+private int getButtonStrokeColor() {
+    return isDarkMode() ? Color.parseColor("#3F5E75") : Color.parseColor("#BBD7E6");
+}
+
 private TextView createSectionTitle(String text) {
     TextView textView = new TextView(getTopActivity());
     textView.setText(text);
     textView.setTextSize(16);
-    textView.setTextColor(Color.parseColor("#333333"));
+    textView.setTextColor(getPrimaryTextColor());
     try { textView.getPaint().setFakeBoldText(true); } catch (Exception e) {}
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -852,7 +1214,7 @@ private TextView createPromptText(String text) {
     TextView tv = new TextView(getTopActivity());
     tv.setText(text);
     tv.setTextSize(13);
-    tv.setTextColor(Color.parseColor("#666666"));
+    tv.setTextColor(getSecondaryTextColor());
     tv.setPadding(0, 0, 0, 16);
     return tv;
 }
@@ -863,12 +1225,12 @@ private EditText createStyledEditText(String hint, String initialText) {
     editText.setText(initialText);
     editText.setPadding(32, 28, 32, 28);
     editText.setTextSize(14);
-    editText.setTextColor(Color.parseColor("#333333"));
-    editText.setHintTextColor(Color.parseColor("#999999"));
+    editText.setTextColor(getPrimaryTextColor());
+    editText.setHintTextColor(getHintTextColor());
     GradientDrawable shape = new GradientDrawable();
     shape.setCornerRadius(24);
-    shape.setColor(Color.parseColor("#FFFFFF"));
-    shape.setStroke(2, Color.parseColor("#E0E0E0"));
+    shape.setColor(getCardBgColor());
+    shape.setStroke(2, getStrokeColor());
     editText.setBackground(shape);
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -880,11 +1242,11 @@ private EditText createStyledEditText(String hint, String initialText) {
 }
 
 private void styleUtilityButton(Button button) {
-    button.setTextColor(Color.parseColor("#4A90E2"));
+    button.setTextColor(getButtonTextColor());
     GradientDrawable shape = new GradientDrawable();
     shape.setCornerRadius(20);
-    shape.setStroke(3, Color.parseColor("#BBD7E6"));
-    shape.setColor(Color.parseColor("#F5FBFF"));
+    shape.setStroke(3, getButtonStrokeColor());
+    shape.setColor(getButtonBgColor());
     button.setBackground(shape);
     button.setAllCaps(false);
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -894,7 +1256,6 @@ private void styleUtilityButton(Button button) {
     params.setMargins(0, 16, 0, 8);
     button.setLayoutParams(params);
 }
-
 private AlertDialog buildCommonAlertDialog(Context context, String title, View view, String positiveBtnText, DialogInterface.OnClickListener positiveListener, String negativeBtnText, DialogInterface.OnClickListener negativeListener, String neutralBtnText, DialogInterface.OnClickListener neutralListener) {
     AlertDialog.Builder builder = new AlertDialog.Builder(context);
     builder.setTitle(title);
@@ -915,7 +1276,7 @@ private void setupUnifiedDialog(AlertDialog dialog) {
     try {
         GradientDrawable dialogBg = new GradientDrawable();
         dialogBg.setCornerRadius(48);
-        dialogBg.setColor(Color.parseColor("#FAFBF9"));
+        dialogBg.setColor(getDialogBgColor());
         dialog.getWindow().setBackgroundDrawable(dialogBg);
     } catch(Exception e) {}
     
@@ -930,12 +1291,23 @@ private void setupUnifiedDialog(AlertDialog dialog) {
     }
     Button negativeButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
     if (negativeButton != null) {
-        negativeButton.setTextColor(Color.parseColor("#333333"));
+        negativeButton.setTextColor(getPrimaryTextColor());
         GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(20);
-        shape.setColor(Color.parseColor("#F1F3F5"));
+        shape.setColor(isDarkMode() ? Color.parseColor("#34363C") : Color.parseColor("#F1F3F5"));
         negativeButton.setBackground(shape);
         negativeButton.setAllCaps(false);
+    }
+
+    Button neutralButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+    if (neutralButton != null) {
+        neutralButton.setTextColor(isDarkMode() ? Color.parseColor("#9CCFFF") : Color.parseColor("#4A90E2"));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(20);
+        shape.setColor(isDarkMode() ? Color.parseColor("#263241") : Color.parseColor("#F5FBFF"));
+        shape.setStroke(2, isDarkMode() ? Color.parseColor("#3F5E75") : Color.parseColor("#BBD7E6"));
+        neutralButton.setBackground(shape);
+        neutralButton.setAllCaps(false);
     }
 }
 
@@ -973,6 +1345,11 @@ private int dpToPx(int dp) {
 }
 
 private void setupListViewTouchForScroll(ListView listView) {
+    try {
+        listView.setBackgroundColor(getDialogBgColor());
+        listView.setCacheColorHint(getDialogBgColor());
+        listView.setDividerHeight(1);
+    } catch (Exception e) {}
     listView.setOnTouchListener(new View.OnTouchListener() {
         public boolean onTouch(View v, MotionEvent event) {
             switch (event.getAction()) {

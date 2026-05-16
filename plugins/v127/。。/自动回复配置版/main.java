@@ -3767,6 +3767,59 @@ private boolean isCurrentTimeInRuleRange(Map<String, Object> rule) {
     }
 }
 
+// ===== 新增：多关键词与多回复随机辅助 =====
+private final Random autoReplyRandom = new Random();
+
+/**
+ * 文本回复随机选择：reply 用 "|" 分隔多条文案，命中后随机选一条；不含 "|" 时原样返回。
+ * 仅对 REPLY_TYPE_TEXT 在 processAutoReply 中调用。
+ */
+private String pickRandomReply(String reply) {
+    if (reply == null) return null;
+    if (!reply.contains("|")) return reply;
+    String[] parts = reply.split("\\|");
+    java.util.List<String> candidates = new java.util.ArrayList<String>();
+    for (int i = 0; i < parts.length; i++) {
+        String p = parts[i];
+        if (p != null && p.length() > 0) candidates.add(p);
+    }
+    if (candidates.isEmpty()) return reply;
+    return candidates.get(autoReplyRandom.nextInt(candidates.size()));
+}
+
+/**
+ * 模糊匹配多关键词：keyword 用 "|" 分隔多个，任一命中即视为匹配。
+ * 空 keyword 行为与原 contains("") 一致（永真）。
+ */
+private boolean matchAnyKeywordFuzzy(String content, String keyword) {
+    if (content == null) return false;
+    if (keyword == null || keyword.length() == 0) return true; // 等价于 content.contains("")
+    if (!keyword.contains("|")) return content.contains(keyword);
+    String[] parts = keyword.split("\\|");
+    for (int i = 0; i < parts.length; i++) {
+        String k = parts[i];
+        if (k == null || k.length() == 0) continue;
+        if (content.contains(k)) return true;
+    }
+    return false;
+}
+
+/**
+ * 全字匹配多关键词：keyword 用 "|" 分隔多个，任一与 content 完全相等即匹配。
+ */
+private boolean matchAnyKeywordExact(String content, String keyword) {
+    if (content == null) return keyword == null;
+    if (keyword == null) return false;
+    if (!keyword.contains("|")) return content.equals(keyword);
+    String[] parts = keyword.split("\\|");
+    for (int i = 0; i < parts.length; i++) {
+        String k = parts[i];
+        if (k == null) continue;
+        if (content.equals(k)) return true;
+    }
+    return false;
+}
+
 private void processAutoReply(final Object msgInfoBean) {
     try {
         final String rawContent = getFieldString(msgInfoBean, "originContent");
@@ -3975,9 +4028,8 @@ private void processAutoReply(final Object msgInfoBean) {
                     case MATCH_TYPE_ANY:
                         isMatch = true;
                         debugLog("[调试-关键词匹配] 匹配类型=ANY");
-                        break;
-                    case MATCH_TYPE_EXACT:
-                        isMatch = content.equals(keyword);
+case MATCH_TYPE_EXACT:
+                        isMatch = matchAnyKeywordExact(content, keyword);
                         debugLog("[调试-关键词匹配] 匹配类型=EXACT, isMatch=" + isMatch);
                         break;
                     case MATCH_TYPE_REGEX:
@@ -3987,8 +4039,9 @@ private void processAutoReply(final Object msgInfoBean) {
                         debugLog("[调试-关键词匹配] 匹配类型=REGEX, isMatch=" + isMatch);
                         break;
                     case MATCH_TYPE_FUZZY: default:
-                        isMatch = content.contains(keyword);
+                        isMatch = matchAnyKeywordFuzzy(content, keyword);
                         debugLog("[调试-关键词匹配] 匹配类型=FUZZY, isMatch=" + isMatch);
+                        break;
                         break;
                 }
             }
@@ -4016,8 +4069,13 @@ private void processAutoReply(final Object msgInfoBean) {
         for (int i = 0; i < matchedRules.size(); i++) {
             final Map<String, Object> finalRule = (Map<String, Object>) matchedRules.get(i);
             long delaySeconds = (Long) finalRule.get("delaySeconds");
-            String replyContent = buildReplyContent((String) finalRule.get("reply"), msgInfoBean);
+            String replyBase = (String) finalRule.get("reply");
             int replyType = (Integer) finalRule.get("replyType");
+            // 仅文本回复支持多回复随机（reply 用 "|" 分隔多条文案）
+            if (replyType == REPLY_TYPE_TEXT) {
+                replyBase = pickRandomReply(replyBase);
+            }
+            String replyContent = buildReplyContent(replyBase, msgInfoBean);
             boolean replyAsQuote = (Boolean) finalRule.get("replyAsQuote");
             List mediaPaths = (List) finalRule.get("mediaPaths");
 
@@ -7854,7 +7912,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
 
         LinearLayout keywordCard = createCardLayout();
         keywordCard.addView(createSectionTitle("关键词"));
-        final EditText keywordEdit = createStyledEditText("输入触发关键词...", (String) rule.get("keyword"));
+        final EditText keywordEdit = createStyledEditText("输入触发关键词,支持识别多个关键词,多个关键词用|分隔", (String) rule.get("keyword"));
         keywordCard.addView(keywordEdit);
         layout.addView(keywordCard);
 
@@ -7891,7 +7949,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
         replyContentLabel.setTextSize(14);
         replyContentLabel.setTextColor(Color.parseColor("#333333"));
         replyContentLabel.setPadding(0, 0, 0, 16);
-        final EditText replyEdit = createStyledEditText("输入自动回复内容...", (String) rule.get("reply"));
+        final EditText replyEdit = createStyledEditText("输入自动回复内容,支持回复多个内容,多个内容用|分隔", (String) rule.get("reply"));
         replyEdit.setMinLines(3);
         replyEdit.setGravity(Gravity.TOP);
 
@@ -8187,7 +8245,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                     cardOrderLayout.setVisibility(View.GONE);
                 } else {
                     replyContentLabel.setText("回复内容:");
-                    replyEdit.setHint("输入自动回复内容...");
+                    replyEdit.setHint("输入触发关键词,支持识别多个关键词,多个关键词用|分隔");
                 }
 
                 String btnText = "选择媒体文件/文件夹";
@@ -8545,7 +8603,7 @@ private void showEditRuleDialog(final Map<String, Object> rule, final List rules
                     keywordEdit.setHint("已禁用（匹配任何消息）");
                 } else {
                     keywordEdit.setEnabled(true);
-                    keywordEdit.setHint("输入触发关键词...");
+                    keywordEdit.setHint("输入触发关键词,支持识别多个关键词,多个关键词用|分隔");
                 }
             }
         });

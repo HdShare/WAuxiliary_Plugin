@@ -1,4 +1,4 @@
-# 微信密友
+# 微信
 
 作者：桀翕 | TG：@jiexi1314 | 交流群：https://t.me/jieximy
 

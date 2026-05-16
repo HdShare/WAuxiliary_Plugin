@@ -62,16 +62,53 @@ static Map<String, String> sSqlCache = new ConcurrentHashMap<>();
 static Map<Integer, WeakReference<Object>> sDbInstances = new ConcurrentHashMap<>();
 
 // ================= 日志工具 =================
+static final int MAX_LOG_LINES = 88;
+static int sLogWriteCount = 0;
+
 void logx(Object msg) {
     if (mLogEnabled) {
         log(msg);
+        // 调试日志关闭时才裁剪
+        if (!mDebugLogEnabled && ++sLogWriteCount >= 10) {
+            sLogWriteCount = 0;
+            trimLogFile();
+        }
     }
 }
 
 void logDebug(Object msg) {
     if (mDebugLogEnabled) {
         log("[SQL调试] " + msg);
+        // 调试日志开启时不限制行数
     }
+}
+
+// 自动裁剪日志文件，保留最新 MAX_LOG_LINES 行
+void trimLogFile() {
+    try {
+        Object logFile = getLogFile();
+        if (logFile == null) return;
+        java.io.File f = (java.io.File) logFile;
+        if (!f.exists() || f.length() < 1024) return;
+        
+        java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(f));
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            lines.add(line);
+        }
+        reader.close();
+        
+        if (lines.size() > MAX_LOG_LINES) {
+            java.util.List<String> keep = lines.subList(lines.size() - MAX_LOG_LINES, lines.size());
+            java.io.BufferedWriter writer = new java.io.BufferedWriter(new java.io.FileWriter(f));
+            for (String l : keep) {
+                writer.write(l);
+                writer.newLine();
+            }
+            writer.close();
+        }
+    } catch (Throwable e) {}
 }
 
 // 极速更新内存缓存
@@ -238,7 +275,7 @@ void onLoad() {
     mLogEnabled = getBoolean(KEY_LOG_ENABLE, true);
     mDebugLogEnabled = getBoolean(KEY_DEBUG_LOG_ENABLE, false);
     
-    logx(">> onLoad开始执行 [密友]");
+    logx(">> onLoad开始执行 [微信密友]");
     updateSecretCache();              
     hookNotificationAndSound();       
     hookSecretFriendSQL();            
@@ -419,6 +456,13 @@ void hookSecretFriendSQL() {
                 }
             }
 
+            // 跳过精确查询（username='xxx'），减少不必要的 SQL 改写，大幅降低卡顿
+            boolean isExactQuery = lowerSql.contains("username='") || lowerSql.contains("username ='");
+            if (isExactQuery && !isFts) {
+                putCacheSafely(originalSql, "");
+                return;
+            }
+
             String filter = "";
 
             if (lowerSql.contains("from fts5metacontact")) {
@@ -426,13 +470,10 @@ void hookSecretFriendSQL() {
             } else if (lowerSql.contains("from fts5message")) {
                 filter = "talker NOT" + sCachedInClause;
             } else if (lowerSql.contains("from rconversation")) {
-                if (!lowerSql.contains("username =") && !lowerSql.contains("username=")) {
-                    filter = "username NOT" + sCachedInClause;
-                }
+                filter = "username NOT" + sCachedInClause;
             } else if (lowerSql.contains("from rcontact")) {
-                if (!lowerSql.contains("username =") && !lowerSql.contains("username=")) {
-                    filter = "username NOT" + sCachedInClause;
-                }
+                // 假删除效果：同时按 username 和 alias 过滤
+                filter = "(username NOT" + sCachedInClause + " AND alias NOT" + sCachedInClause + ")";
             }
 
             if (!filter.isEmpty()) {

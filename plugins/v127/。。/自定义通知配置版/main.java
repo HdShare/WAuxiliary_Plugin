@@ -19,6 +19,21 @@ import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
+boolean getHookState() {
+    try {
+        de.robv.android.xposed.XposedBridge.class;
+        return true;
+    } catch (Throwable e) {
+        return false;
+    }
+}
+
+if (!getHookState()) return toast("请关闭LSPosed调用保护");
+
+import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XposedBridge;
+import de.robv.android.xposed.XposedHelpers;
+
 import me.hd.wauxv.data.bean.info.FriendInfo;
 import me.hd.wauxv.data.bean.info.GroupInfo;
 
@@ -55,8 +70,8 @@ Map cacheTalkerCfgMap = Collections.synchronizedMap(new HashMap());
 // 【安全优化1】使用 Set 确保精确匹配 O(1) 查询，杜绝 contains 导致的相似字符误杀
 Set cacheTargetSet = new HashSet();
 
-List notifyHookHandles = Collections.synchronizedList(new ArrayList());
-List resultHookHandles = Collections.synchronizedList(new ArrayList());
+List notifyUnhooks = Collections.synchronizedList(new ArrayList());
+List resultUnhooks = Collections.synchronizedList(new ArrayList());
 Pattern chatroomPattern = Pattern.compile("([A-Za-z0-9_\\-]+@chatroom)");
 long lastManualRingAt = 0L;
 BroadcastReceiver quickReplyReceiver = null;
@@ -155,14 +170,22 @@ void ensureConfigLoadedForRuntime() {
 }
 
 void onUnload() {
-    for (int i = 0; i < notifyHookHandles.size(); i++) {
-        try { unhook(notifyHookHandles.get(i)); } catch (Throwable ignored) {}
+    for (int i = 0; i < notifyUnhooks.size(); i++) {
+        try {
+            Object uh = notifyUnhooks.get(i);
+            Method um = uh.getClass().getMethod("unhook", new Class[]{});
+            um.invoke(uh, new Object[]{});
+        } catch (Throwable ignored) {}
     }
-    notifyHookHandles.clear();
-    for (int i = 0; i < resultHookHandles.size(); i++) {
-        try { unhook(resultHookHandles.get(i)); } catch (Throwable ignored) {}
+    notifyUnhooks.clear();
+    for (int i = 0; i < resultUnhooks.size(); i++) {
+        try {
+            Object uh = resultUnhooks.get(i);
+            Method um = uh.getClass().getMethod("unhook", new Class[]{});
+            um.invoke(uh, new Object[]{});
+        } catch (Throwable ignored) {}
     }
-    resultHookHandles.clear();
+    resultUnhooks.clear();
     
     sCachedFriendNames = null;
     sCachedFriendIds = null;
@@ -472,13 +495,11 @@ Object safeGetFieldAny(Object obj, String[] fieldNames) {
         String fn = fieldNames[i];
         if (TextUtils.isEmpty(fn)) continue;
         try {
-            java.lang.reflect.Field f = obj.getClass().getDeclaredField(fn);
-            f.setAccessible(true);
-            Object v = f.get(obj);
+            Object v = XposedHelpers.getObjectField(obj, fn);
             if (v != null) return v;
         } catch (Throwable ignored) {}
         try {
-            java.lang.reflect.Field f = obj.getClass().getField(fn);
+            java.lang.reflect.Field f = obj.getClass().getDeclaredField(fn);
             f.setAccessible(true);
             Object v2 = f.get(obj);
             if (v2 != null) return v2;
@@ -921,53 +942,55 @@ void hookSystemNotification() {
             Class[] ps = m.getParameterTypes();
             if (ps == null || ps.length == 0 || ps[ps.length - 1] != Notification.class) continue;
 
-            var handle = hookBefore(m, param -> {
-                try {
-                    ensureConfigLoadedForRuntime();
-                    if (cacheTargetSet.isEmpty()) return;
+            Object unhook = XposedBridge.hookMethod(m, new XC_MethodHook() {
+                protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
+                    try {
+                        ensureConfigLoadedForRuntime();
+                        if (cacheTargetSet.isEmpty()) return;
 
-                    Object[] args = param.args;
-                    if (args == null || args.length == 0) return;
-                    Notification n = (Notification) args[args.length - 1];
-                    if (n == null) return;
+                        Object[] args = param.args;
+                        if (args == null || args.length == 0) return;
+                        Notification n = (Notification) args[args.length - 1];
+                        if (n == null) return;
 
-                    if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) {
-                        return;
-                    }
-                    if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("jay_chn_v9_")) {
-                        return;
-                    }
-                    String talker = extractTalkerFromNotification(n);
-                    boolean shouldBlock = false;
-
-                    if (!TextUtils.isEmpty(talker) && cacheTargetSet.contains(talker)) {
-                        Map cfg0 = getTalkerCfg(talker);
-                        shouldBlock = shouldBlockNativeByCfg(cfg0);
-                    }
-                    if (!shouldBlock && TextUtils.isEmpty(talker) && n.extras != null) {
-                        String title = "";
-                        try {
-                            CharSequence cs = n.extras.getCharSequence(Notification.EXTRA_TITLE);
-                            if (cs != null) title = cs.toString().trim();
-                        } catch (Throwable ignored) {}
-                        String titleTalker = findTargetTalkerByTitle(title);
-                        if (TextUtils.isEmpty(titleTalker)) {
-                            try { titleTalker = findTalkerByGroupTitle(title); } catch (Throwable ignored) {}
+                        if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) {
+                            return;
                         }
-                        if (!TextUtils.isEmpty(titleTalker) && cacheTargetSet.contains(titleTalker)) {
-                            Map cfg0 = getTalkerCfg(titleTalker);
+                        if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("jay_chn_v9_")) {
+                            return;
+                        }
+                        String talker = extractTalkerFromNotification(n);
+                        boolean shouldBlock = false;
+
+                        if (!TextUtils.isEmpty(talker) && cacheTargetSet.contains(talker)) {
+                            Map cfg0 = getTalkerCfg(talker);
                             shouldBlock = shouldBlockNativeByCfg(cfg0);
                         }
-                    }
+                        if (!shouldBlock && TextUtils.isEmpty(talker) && n.extras != null) {
+                            String title = "";
+                            try {
+                                CharSequence cs = n.extras.getCharSequence(Notification.EXTRA_TITLE);
+                                if (cs != null) title = cs.toString().trim();
+                            } catch (Throwable ignored) {}
+                            String titleTalker = findTargetTalkerByTitle(title);
+                            if (TextUtils.isEmpty(titleTalker)) {
+                                try { titleTalker = findTalkerByGroupTitle(title); } catch (Throwable ignored) {}
+                            }
+                            if (!TextUtils.isEmpty(titleTalker) && cacheTargetSet.contains(titleTalker)) {
+                                Map cfg0 = getTalkerCfg(titleTalker);
+                                shouldBlock = shouldBlockNativeByCfg(cfg0);
+                            }
+                        }
 
-                    if (shouldBlock) {
-                        param.setResult(null);
-                    }
+                        if (shouldBlock) {
+                            param.setResult(null);
+                        }
 
-                } catch (Throwable e) {
+                    } catch (Throwable e) {
+                    }
                 }
             });
-            if (handle != null) notifyHookHandles.add(handle);
+            if (unhook != null) notifyUnhooks.add(unhook);
         }
     } catch (Throwable ignored) {
         sNotifyHookInstalled = false;
@@ -1355,49 +1378,51 @@ void sendCustomNotification(String talker, String title, String text, boolean us
 
 void hookActivityResultForRingtone() {
     try {
-        var method = Activity.class.getDeclaredMethod("onActivityResult", int.class, int.class, Intent.class);
-        var handle = hookBefore(method, param -> {
-            int requestCode = (Integer) param.args[0];
-            if (requestCode == REQ_PICK_RINGTONE_SYSTEM || requestCode == REQ_PICK_RINGTONE_FILE) {
-                Intent data = (Intent) param.args[2];
-                Uri uri = null;
-                if (data != null && requestCode == REQ_PICK_RINGTONE_SYSTEM) {
-                    try { uri = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI); } catch (Throwable ignored) {}
-                    try {
-                        if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
-                            final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-                            hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
-                        }
-                    } catch (Throwable ignored) {}
-                }
-                if (data != null && uri == null && requestCode == REQ_PICK_RINGTONE_FILE) {
-                    try { uri = data.getData(); } catch (Throwable ignored) {}
-                    try {
-                        if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
-                            final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-                            hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
-                        }
-                    } catch (Throwable ignored) {}
-                }
-                String ring = uri == null ? "" : uri.toString();
-                if (!TextUtils.isEmpty(ring)) {
-                    ring = freezeRingtoneUri(ring);
-                }
-                if (globalRingtoneValueRef != null && globalRingtoneValueRef.length > 0) {
-                    globalRingtoneValueRef[0] = ring;
-                }
-                final Activity top = globalSettingActivity;
-                if (top != null && globalRingtoneValueView != null) {
-                    final String text = getRingtoneDisplayName(top, ring) + " >";
-                    top.runOnUiThread(new Runnable() {
-                        public void run() {
-                            try { globalRingtoneValueView.setText(text); } catch (Throwable ignored) {}
-                        }
-                    });
+        XC_MethodHook resultHook = new XC_MethodHook() {
+            protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
+                int requestCode = (Integer) param.args[0];
+                if (requestCode == REQ_PICK_RINGTONE_SYSTEM || requestCode == REQ_PICK_RINGTONE_FILE) {
+                    Intent data = (Intent) param.args[2];
+                    Uri uri = null;
+                    if (data != null && requestCode == REQ_PICK_RINGTONE_SYSTEM) {
+                        try { uri = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI); } catch (Throwable ignored) {}
+                        try {
+                            if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
+                                final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+                                hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                    if (data != null && uri == null && requestCode == REQ_PICK_RINGTONE_FILE) {
+                        try { uri = data.getData(); } catch (Throwable ignored) {}
+                        try {
+                            if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
+                                final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+                                hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                    String ring = uri == null ? "" : uri.toString();
+                    if (!TextUtils.isEmpty(ring)) {
+                        ring = freezeRingtoneUri(ring);
+                    }
+                    if (globalRingtoneValueRef != null && globalRingtoneValueRef.length > 0) {
+                        globalRingtoneValueRef[0] = ring;
+                    }
+                    final Activity top = globalSettingActivity;
+                    if (top != null && globalRingtoneValueView != null) {
+                        final String text = getRingtoneDisplayName(top, ring) + " >";
+                        top.runOnUiThread(new Runnable() {
+                            public void run() {
+                                try { globalRingtoneValueView.setText(text); } catch (Throwable ignored) {}
+                            }
+                        });
+                    }
                 }
             }
-        });
-        if (handle != null) resultHookHandles.add(handle);
+        };
+        Object uh = XposedHelpers.findAndHookMethod(Activity.class, "onActivityResult", int.class, int.class, Intent.class, resultHook);
+        resultUnhooks.add(uh);
     } catch (Throwable ignored) {}
 }
 
@@ -2223,7 +2248,6 @@ void showBatchConfigDialog(final Activity ctx, final String title, final List ta
         return;
     }
     try {
-        final boolean[] tmpEnable = {true};
         final boolean[] tmpDnd = {false};
         final boolean[] tmpVibrate = {cacheVibrate};
         final boolean[] tmpSound = {cacheSound};
@@ -2239,8 +2263,6 @@ void showBatchConfigDialog(final Activity ctx, final String title, final List ta
         final LinearLayout body = new LinearLayout(ctx);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(dp(ctx, 8), dp(ctx, 4), dp(ctx, 8), dp(ctx, 4));
-        addDarkSwitchRow(ctx, body, "启用此会话规则", tmpEnable[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpEnable[0] = c; }});
-        addDarkDivider(ctx, body);
         addDarkSwitchRow(ctx, body, "免打扰(不弹通知)", tmpDnd[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpDnd[0] = c; }});
         addDarkDivider(ctx, body);
         addDarkSwitchRow(ctx, body, "震动", tmpVibrate[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpVibrate[0] = c; }});
@@ -2348,25 +2370,6 @@ void showBatchConfigDialog(final Activity ctx, final String title, final List ta
         btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { d.dismiss(); } });
         btnSave.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                if (!tmpEnable[0]) {
-                    // 批量关闭规则：从 selectedIds 移除并清空配置
-                    for (int i = 0; i < targetIds.size(); i++) {
-                        String talkerId = String.valueOf(targetIds.get(i)).trim();
-                        if (TextUtils.isEmpty(talkerId) || "null".equalsIgnoreCase(talkerId)) continue;
-                        if (isGroup && !talkerId.endsWith("@chatroom")) continue;
-                        if (!isGroup && talkerId.endsWith("@chatroom")) continue;
-                        selectedIds.remove(talkerId);
-                        putString(CFG_TALKER_CFG_PREFIX + talkerId, "");
-                    }
-                    saveSelectedTargets(selectedIds);
-                    loadConfigToCache();
-                    if (onSaved != null) onSaved.run();
-                    globalRingtoneValueRef = null;
-                    globalRingtoneValueView = null;
-                    d.dismiss();
-                    toast("已批量关闭 " + targetIds.size() + " 个" + (isGroup ? "群聊" : "好友") + "的规则");
-                    return;
-                }
                 Map cfg = buildBatchTalkerCfg(isGroup, tmpDnd[0], tmpVibrate[0], tmpSound[0], tmpQuickReply[0], tmpShowDetail[0], tmpMuteEnable[0], tmpMuteStart[0], tmpMuteEnd[0], tmpRingtone[0], tmpBlockAll[0], tmpBlockMe[0]);
                 int count = applyBatchTalkerConfig(targetIds, isGroup, cfg, selectedIds);
                 if (onSaved != null) onSaved.run();

@@ -1,14 +1,38 @@
 {
-  "generatedAt": "2026-05-16",
-  "totalPlugins": 57,
+  "generatedAt": "2026-05-18",
+  "totalPlugins": 58,
   "plugins": [
+    {
+      "name": "僵尸粉检测",
+      "author": "。。 & 周杰伦",
+      "version": "1.0.0",
+      "updateTime": 20260518,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/僵尸粉检测",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%83%B5%E5%B0%B8%E7%B2%89%E6%A3%80%E6%B5%8B&filename=%E5%83%B5%E5%B0%B8%E7%B2%89%E6%A3%80%E6%B5%8B_1.0.0"
+    },
     {
       "name": "群发助手",
       "author": "。。",
-      "version": "1.3.2",
-      "updateTime": 20260516,
+      "version": "1.3.3",
+      "updateTime": 20260518,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/群发助手",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B&filename=%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B_1.3.2"
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B&filename=%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B_1.3.3"
+    },
+    {
+      "name": "自定义通知配置版",
+      "author": "。。 & 周杰伦",
+      "version": "1.3.3",
+      "updateTime": 20260518,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/自定义通知配置版",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.3"
+    },
+    {
+      "name": "音频转换",
+      "author": "。。",
+      "version": "1.3.0",
+      "updateTime": 20260518,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/音频转换",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E9%9F%B3%E9%A2%91%E8%BD%AC%E6%8D%A2&filename=%E9%9F%B3%E9%A2%91%E8%BD%AC%E6%8D%A2_1.3.0"
     },
     {
       "name": "自动回复配置版",
@@ -17,14 +41,6 @@
       "updateTime": 20260516,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/自动回复配置版",
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D%E9%85%8D%E7%BD%AE%E7%89%88_2.3.3"
-    },
-    {
-      "name": "自定义通知配置版",
-      "author": "。。 & 周杰伦",
-      "version": "1.3.2",
-      "updateTime": 20260516,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/自定义通知配置版",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.2"
     },
     {
       "name": "微信(桀翕)",
@@ -257,14 +273,6 @@
       "updateTime": 20260424,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/进退群配置版",
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%BF%9B%E9%80%80%E7%BE%A4%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%BF%9B%E9%80%80%E7%BE%A4%E9%85%8D%E7%BD%AE%E7%89%88_2.3.3"
-    },
-    {
-      "name": "音频转换",
-      "author": "。。",
-      "version": "1.2.0",
-      "updateTime": 20260410,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/音频转换",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E9%9F%B3%E9%A2%91%E8%BD%AC%E6%8D%A2&filename=%E9%9F%B3%E9%A2%91%E8%BD%AC%E6%8D%A2_1.2.0"
     },
     {
       "name": "天气查询配置版",

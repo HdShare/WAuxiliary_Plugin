@@ -6,19 +6,29 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
-  - title: 群发助手(1.3.2)
+  - title: 僵尸粉检测(1.0.0)
+    details: 作者 。。 & 周杰伦
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%83%B5%E5%B0%B8%E7%B2%89%E6%A3%80%E6%B5%8B&filename=%E5%83%B5%E5%B0%B8%E7%B2%89%E6%A3%80%E6%B5%8B_1.0.0
+    linkText: 更新于 20260518
+
+  - title: 群发助手(1.3.3)
     details: 作者 。。
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B&filename=%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B_1.3.2
-    linkText: 更新于 20260516
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B&filename=%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B_1.3.3
+    linkText: 更新于 20260518
+
+  - title: 自定义通知配置版(1.3.3)
+    details: 作者 。。 & 周杰伦
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.3
+    linkText: 更新于 20260518
+
+  - title: 音频转换(1.3.0)
+    details: 作者 。。
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E9%9F%B3%E9%A2%91%E8%BD%AC%E6%8D%A2&filename=%E9%9F%B3%E9%A2%91%E8%BD%AC%E6%8D%A2_1.3.0
+    linkText: 更新于 20260518
 
   - title: 自动回复配置版(2.3.3)
     details: 作者 。。
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D%E9%85%8D%E7%BD%AE%E7%89%88_2.3.3
-    linkText: 更新于 20260516
-
-  - title: 自定义通知配置版(1.3.2)
-    details: 作者 。。 & 周杰伦
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.2
     linkText: 更新于 20260516
 
   - title: 微信(桀翕)(1.0.3)
@@ -165,11 +175,6 @@ features:
     details: 作者 。。
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%BF%9B%E9%80%80%E7%BE%A4%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%BF%9B%E9%80%80%E7%BE%A4%E9%85%8D%E7%BD%AE%E7%89%88_2.3.3
     linkText: 更新于 20260424
-
-  - title: 音频转换(1.2.0)
-    details: 作者 。。
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E9%9F%B3%E9%A2%91%E8%BD%AC%E6%8D%A2&filename=%E9%9F%B3%E9%A2%91%E8%BD%AC%E6%8D%A2_1.2.0
-    linkText: 更新于 20260410
 
   - title: 天气查询配置版(2.2.0)
     details: 作者 晚药

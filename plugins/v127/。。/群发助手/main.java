@@ -2,6 +2,7 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.widget.Toast;
 import android.widget.CheckBox;
 import java.util.ArrayList;
@@ -106,6 +107,9 @@ boolean isTaskRunning = false;
 Handler scheduleHandler = new Handler(Looper.getMainLooper());
 boolean sendPipelineWarmed = false;
 final Object sendWarmLock = new Object();
+PowerManager.WakeLock massSendWakeLock = null;
+int massSendWakeLockRefs = 0;
+final Object massSendWakeLockLock = new Object();
 
 // 常量定义
 final int SEND_TYPE_TEXT = 0;
@@ -151,6 +155,24 @@ public void onLoad() {
             warmupSendPipeline(false, "onLoad");
         }
     }, 1500);
+}
+
+public void onUnload() {
+    try {
+        Iterator it = scheduledRunnables.values().iterator();
+        while (it.hasNext()) {
+            try { scheduleHandler.removeCallbacks((Runnable) it.next()); } catch (Exception ignored) {}
+        }
+        scheduledRunnables.clear();
+    } catch (Exception ignored) {}
+    try {
+        Iterator it2 = taskPrewarmRunnables.values().iterator();
+        while (it2.hasNext()) {
+            try { scheduleHandler.removeCallbacks((Runnable) it2.next()); } catch (Exception ignored) {}
+        }
+        taskPrewarmRunnables.clear();
+    } catch (Exception ignored) {}
+    releaseAllMassSendWakeLocks("onUnload");
 }
 
 /**
@@ -374,6 +396,53 @@ private void scheduleTaskPrewarm(final String taskId, long delayMillis) {
     scheduleHandler.postDelayed(prewarmRunnable, prewarmDelay);
 }
 
+private void acquireMassSendWakeLock(String reason) {
+    synchronized (massSendWakeLockLock) {
+        try {
+            massSendWakeLockRefs++;
+            if (massSendWakeLock != null && massSendWakeLock.isHeld()) return;
+            Context ctx = getBestContext();
+            if (ctx == null) return;
+            PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+            if (pm == null) return;
+            massSendWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "wauxv:mass-send");
+            massSendWakeLock.setReferenceCounted(false);
+            massSendWakeLock.acquire(2 * 60 * 60 * 1000L);
+            log("已申请群发后台保活 WakeLock: " + reason);
+        } catch (Exception e) {
+            log("群发 WakeLock 申请失败: " + e.getMessage());
+        }
+    }
+}
+
+private void releaseMassSendWakeLock(String reason) {
+    synchronized (massSendWakeLockLock) {
+        try {
+            if (massSendWakeLockRefs > 0) massSendWakeLockRefs--;
+            if (massSendWakeLockRefs > 0) return;
+            if (massSendWakeLock != null && massSendWakeLock.isHeld()) {
+                massSendWakeLock.release();
+                log("已释放群发后台保活 WakeLock: " + reason);
+            }
+        } catch (Exception ignored) {}
+        massSendWakeLock = null;
+        massSendWakeLockRefs = 0;
+    }
+}
+
+private void releaseAllMassSendWakeLocks(String reason) {
+    synchronized (massSendWakeLockLock) {
+        try {
+            if (massSendWakeLock != null && massSendWakeLock.isHeld()) {
+                massSendWakeLock.release();
+                log("已强制释放群发后台保活 WakeLock: " + reason);
+            }
+        } catch (Exception ignored) {}
+        massSendWakeLock = null;
+        massSendWakeLockRefs = 0;
+    }
+}
+
 /**
  * 高精度定时执行（精确到毫秒级，误差<100ms）
  */
@@ -409,6 +478,7 @@ private void scheduleTaskWithPrecision(final String taskId, JSONObject task, lon
 private void executeTaskSend(final String taskId) {
     final JSONObject task = (JSONObject) scheduledTasks.get(taskId);
     if (task == null) return;
+    acquireMassSendWakeLock("定时任务:" + taskId);
     warmupSendPipeline(false, "before_executeTaskSend");
 
     long planTime = task.optLong("planTime", 0);
@@ -452,6 +522,7 @@ private void executeTaskSend(final String taskId) {
 
     new Thread(new Runnable() {
         public void run() {
+            try {
             int success = 0;
             int fail = 0;
 
@@ -595,6 +666,11 @@ private void executeTaskSend(final String taskId) {
                 }
             } catch (Exception e) {
                 log("任务完成收尾失败: " + e.getMessage());
+            }
+            } catch (Exception e) {
+                log("任务执行异常: " + e.getMessage());
+            } finally {
+                releaseMassSendWakeLock("定时任务:" + taskId);
             }
         }
     }).start();
@@ -1552,6 +1628,7 @@ private void createAndSaveTask(long planTime, List<Integer> repeatDays) {
  * 立即执行发送
  */
 private void executeImmediateSend() {
+    acquireMassSendWakeLock("立即发送");
     warmupSendPipeline(false, "before_executeImmediateSend");
     final List<String> targets = new ArrayList<String>(massSendTargetWxids);
     final int type = massSendType;
@@ -1562,6 +1639,7 @@ private void executeImmediateSend() {
 
     new Thread(new Runnable() {
         public void run() {
+            try {
             int success = 0;
             int fail = 0;
             
@@ -1655,6 +1733,11 @@ private void executeImmediateSend() {
             new Handler(Looper.getMainLooper()).post(new Runnable() {
                 public void run() { toast("✅ 发送完成\n" + report); }
             });
+            } catch (Exception e) {
+                log("立即发送异常: " + e.getMessage());
+            } finally {
+                releaseMassSendWakeLock("立即发送");
+            }
         }
     }).start();
 }
@@ -1825,6 +1908,7 @@ private void showTaskOperationMenu(final String taskId, final JSONObject task, f
             if (sel.contains("取消") || sel.contains("终止") || sel.contains("删除记录")) {
                 cancelTaskTimer(taskId);
                 scheduledTasks.remove(taskId);
+                if ("running".equals(task.optString("status", ""))) releaseMassSendWakeLock("取消任务:" + taskId);
                 saveAllTasks();
                 int pos = taskIds.indexOf(taskId);
                 if (pos >= 0) {

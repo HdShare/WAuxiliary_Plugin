@@ -1,72 +1,21 @@
-import android.app.AlertDialog;
-import android.content.DialogInterface;
-import android.os.Handler;
-import android.os.Looper;
-import android.widget.Toast;
-import android.widget.CheckBox;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.Iterator;
-import java.util.UUID;
+import android.app.*;
+import android.content.*;
+import android.graphics.*;
+import android.graphics.drawable.*;
+import android.os.*;
+import android.text.*;
+import android.text.style.*;
+import android.view.*;
+import android.widget.*;
+import java.text.*;
+import java.util.*;
 import me.hd.wauxv.data.bean.info.FriendInfo;
 import me.hd.wauxv.data.bean.info.GroupInfo;
-import android.text.TextUtils;
-import android.widget.Button;
-import android.widget.ListView;
-import android.view.View;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.text.TextWatcher;
-import android.text.Editable;
-import android.widget.ArrayAdapter;
-import android.widget.AdapterView;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Locale;
-import android.view.Gravity;
-import android.widget.TextView;
-import android.widget.ScrollView;
 import java.lang.reflect.Method;
 import java.util.regex.Pattern;
-import android.widget.RadioGroup;
-import android.widget.RadioButton;
-import java.util.Arrays;
-import android.text.InputType;
-import android.content.Context;
-import java.util.Random;
-import java.io.File;
-import java.io.FilenameFilter;
-import java.util.Calendar;
-import android.widget.TimePicker;
-import android.widget.DatePicker;
-import android.app.DatePickerDialog;
-import android.app.TimePickerDialog;
-import java.io.IOException;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.Objects;
-import android.view.MotionEvent;
-import java.util.Collections;
-import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
-import android.text.SpannableStringBuilder;
-import android.text.style.ForegroundColorSpan;
-import android.text.style.AbsoluteSizeSpan;
-import android.os.Build;
+import org.json.JSONObject;
+import org.json.JSONArray;
 
-// 引入 FastJSON 用于数据存储
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONArray;
-import com.alibaba.fastjson2.TypeReference;
-
-// ==========================================
-// ========== 🔔 微信关键词通知助手 ==========
-// ==========================================
 
 // 全局配置
 Map<String, Boolean> keywordMap = new HashMap<>(); // 关键词集合，key=关键词，value=是否全字匹配
@@ -76,6 +25,8 @@ boolean filterMode = false; // false=排除模式, true=仅生效模式
 boolean enabled = true; // 总开关
 boolean notifyEnabled = true; // 通知开关
 boolean toastEnabled = true; // Toast开关
+boolean anyKeywordGroupNotifyEnabled = false; // 任意关键词-群聊通知
+boolean anyKeywordPrivateNotifyEnabled = false; // 任意关键词-私聊通知
 boolean atMeEnabled = true; // @我通知开关
 boolean atAllEnabled = true; // @所有人或群公告通知开关
 boolean quietHoursEnabled = false; // 免打扰模式
@@ -122,6 +73,8 @@ final String KEY_FILTER_MODE = "filter_mode";
 final String KEY_ENABLED = "enabled";
 final String KEY_NOTIFY = "notify_enabled";
 final String KEY_TOAST = "toast_enabled";
+final String KEY_ANY_KEYWORD_GROUP_NOTIFY = "any_keyword_group_notify_enabled";
+final String KEY_ANY_KEYWORD_PRIVATE_NOTIFY = "any_keyword_private_notify_enabled";
 final String KEY_AT_ME = "at_me_enabled";
 final String KEY_AT_ALL = "at_all_enabled";
 final String KEY_QUIET = "quiet_hours_enabled";
@@ -168,25 +121,27 @@ private void loadConfig() {
         if (keywordsJson != null && !keywordsJson.isEmpty()) {
             JSONObject keywordsObj = null;
             try {
-                keywordsObj = JSON.parseObject(keywordsJson);
+                keywordsObj = new JSONObject(keywordsJson);
             } catch (Exception e) {
                 log("parseObject 失败: " + e.getMessage() + "，尝试兼容旧版数组格式");
             }
 
             if (keywordsObj != null) {
-                for (String keyword : keywordsObj.keySet()) {
-                    Boolean isWholeWord = keywordsObj.getBoolean(keyword);
-                    keywordMap.put(keyword, isWholeWord != null ? isWholeWord : false);
+                keywordMap.clear();
+                java.util.Iterator<String> keys = keywordsObj.keys();
+                while (keys.hasNext()) {
+                    String keyword = keys.next();
+                    boolean isWholeWord = keywordsObj.optBoolean(keyword, false);
+                    keywordMap.put(keyword, isWholeWord);
                 }
             } else {
                 // 兼容旧版格式（纯数组）
                 try {
-                    JSONArray keywordsArray = JSON.parseArray(keywordsJson);
-                    if (keywordsArray != null && !keywordsArray.isEmpty()) {
-                        keywordMap.clear();
-                        for (int i = 0; i < keywordsArray.size(); i++) {
-                            keywordMap.put(keywordsArray.getString(i), false);
-                        }
+                    JSONArray keywordsArray = new JSONArray(keywordsJson);
+                    keywordMap.clear();
+                    for (int i = 0; i < keywordsArray.length(); i++) {
+                        String kw = keywordsArray.optString(i, "");
+                        if (!TextUtils.isEmpty(kw)) keywordMap.put(kw, false);
                     }
                 } catch (Exception e) {
                     log("parseArray 失败: " + e.getMessage() + "，使用默认空配置");
@@ -199,6 +154,8 @@ private void loadConfig() {
         enabled = getLong(CONFIG_KEY, KEY_ENABLED, 1) == 1;
         notifyEnabled = getLong(CONFIG_KEY, KEY_NOTIFY, 1) == 1;
         toastEnabled = getLong(CONFIG_KEY, KEY_TOAST, 1) == 1;
+        anyKeywordGroupNotifyEnabled = getLong(CONFIG_KEY, KEY_ANY_KEYWORD_GROUP_NOTIFY, 0) == 1;
+        anyKeywordPrivateNotifyEnabled = getLong(CONFIG_KEY, KEY_ANY_KEYWORD_PRIVATE_NOTIFY, 0) == 1;
         atMeEnabled = getLong(CONFIG_KEY, KEY_AT_ME, 1) == 1;
         atAllEnabled = getLong(CONFIG_KEY, KEY_AT_ALL, 1) == 1;
         quietHoursEnabled = getLong(CONFIG_KEY, KEY_QUIET, 0) == 1;
@@ -223,12 +180,11 @@ private void loadConfig() {
         String excludesJson = getString(CONFIG_KEY, KEY_EXCLUDE_CONTACTS, "[]");
         if (excludesJson != null && !excludesJson.isEmpty()) {
             try {
-                JSONArray excludesArray = JSON.parseArray(excludesJson);
-                if (excludesArray != null) {
-                    excludeContactSet.clear();
-                    for (int i = 0; i < excludesArray.size(); i++) {
-                        excludeContactSet.add(excludesArray.getString(i));
-                    }
+                JSONArray excludesArray = new JSONArray(excludesJson);
+                excludeContactSet.clear();
+                for (int i = 0; i < excludesArray.length(); i++) {
+                    String id = excludesArray.optString(i, "");
+                    if (!TextUtils.isEmpty(id)) excludeContactSet.add(id);
                 }
             } catch (Exception e) {
                 log("解析排除联系人配置出错，使用默认配置: " + e.getMessage());
@@ -240,12 +196,11 @@ private void loadConfig() {
         String includesJson = getString(CONFIG_KEY, KEY_INCLUDE_CONTACTS, "[]");
         if (includesJson != null && !includesJson.isEmpty()) {
             try {
-                JSONArray includesArray = JSON.parseArray(includesJson);
-                if (includesArray != null) {
-                    includeContactSet.clear();
-                    for (int i = 0; i < includesArray.size(); i++) {
-                        includeContactSet.add(includesArray.getString(i));
-                    }
+                JSONArray includesArray = new JSONArray(includesJson);
+                includeContactSet.clear();
+                for (int i = 0; i < includesArray.length(); i++) {
+                    String id = includesArray.optString(i, "");
+                    if (!TextUtils.isEmpty(id)) includeContactSet.add(id);
                 }
             } catch (Exception e) {
                 log("解析仅生效联系人配置出错，使用默认配置: " + e.getMessage());
@@ -266,6 +221,8 @@ private void saveConfig() {
         putLong(CONFIG_KEY, KEY_ENABLED, enabled ? 1 : 0);
         putLong(CONFIG_KEY, KEY_NOTIFY, notifyEnabled ? 1 : 0);
         putLong(CONFIG_KEY, KEY_TOAST, toastEnabled ? 1 : 0);
+        putLong(CONFIG_KEY, KEY_ANY_KEYWORD_GROUP_NOTIFY, anyKeywordGroupNotifyEnabled ? 1 : 0);
+        putLong(CONFIG_KEY, KEY_ANY_KEYWORD_PRIVATE_NOTIFY, anyKeywordPrivateNotifyEnabled ? 1 : 0);
         putLong(CONFIG_KEY, KEY_AT_ME, atMeEnabled ? 1 : 0);
         putLong(CONFIG_KEY, KEY_AT_ALL, atAllEnabled ? 1 : 0);
         putLong(CONFIG_KEY, KEY_QUIET, quietHoursEnabled ? 1 : 0);
@@ -296,13 +253,13 @@ private void saveConfig() {
         // 保存排除联系人列表
         JSONArray excludesArray = new JSONArray();
         for (String contactId : excludeContactSet) {
-            excludesArray.add(contactId);
+            excludesArray.put(contactId);
         }
         putString(CONFIG_KEY, KEY_EXCLUDE_CONTACTS, excludesArray.toString());
         // 保存仅生效联系人列表
         JSONArray includesArray = new JSONArray();
         for (String contactId : includeContactSet) {
-            includesArray.add(contactId);
+            includesArray.put(contactId);
         }
         putString(CONFIG_KEY, KEY_INCLUDE_CONTACTS, includesArray.toString());
     } catch (Exception e) {
@@ -317,58 +274,107 @@ public void onHandleMsg(Object msgInfoBean) {
     if (!enabled) return;
 
     try {
-        // 获取消息内容
-        String content = "";
-        try {
-            Method getContentMethod = msgInfoBean.getClass().getMethod("getContent");
-            content = (String) getContentMethod.invoke(msgInfoBean);
-        } catch (Exception e) {
-            return;
-        }
-
+        // 兼容不同运行环境的消息字段命名
+        String content = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+            "getOriginContent", "originContent",
+            "getMsgContent", "msgContent",
+            "getContent", "content",
+            "getText", "text"
+        });
         if (TextUtils.isEmpty(content)) return;
 
-        // 检查是否是群聊
-        boolean isGroupChat = false;
-        try {
-            Method isGroupChatMethod = msgInfoBean.getClass().getMethod("isGroupChat");
-            isGroupChat = (Boolean) isGroupChatMethod.invoke(msgInfoBean);
-        } catch (Exception e) {}
+        String rawContent = content;
+        int msgType = getMsgIntCompat(msgInfoBean, new String[]{"getType", "type", "getMsgType", "msgType"}, -1);
 
-        // 检查是否是自己发的消息
-        boolean isSend = false;
-        try {
-            Method isSendMethod = msgInfoBean.getClass().getMethod("isSend");
-            isSend = (Boolean) isSendMethod.invoke(msgInfoBean);
-        } catch (Exception e) {}
+        boolean isTextMsg = invokeMsgBoolean(msgInfoBean, "isText");
+        boolean isQuoteMsg = invokeMsgBoolean(msgInfoBean, "isQuote");
+        boolean isEmojiMsg = invokeMsgBoolean(msgInfoBean, "isEmoji");
+        boolean isImageMsg = invokeMsgBoolean(msgInfoBean, "isImage");
+
+        if (TextUtils.isEmpty(content)) return;
+        // 图片消息走轻量路径，避免在部分机型上解析XML引发异常
+        if (isImageMsg || msgType == 3 || content.contains("<img")) {
+            content = "[图片]";
+        } else {
+            content = normalizeMessageContent(msgInfoBean, content);
+            content = stripGroupSenderPrefix(content);
+        }
+        if (TextUtils.isEmpty(content)) return;
+
+        // 检查是否是群聊（兼容字段）
+        boolean isGroupChat = getMsgBooleanCompat(msgInfoBean, new String[]{"isGroupChat", "groupChat", "isGroup", "isChatroom", "isChatRoom"}, false);
+
+        // 检查是否是自己发的消息（兼容字段）
+        boolean isSend = getMsgBooleanCompat(msgInfoBean, new String[]{"isSend", "send", "isSelfSend"}, false);
 
         if (isSend) return; // 忽略自己发的消息
 
-        // 获取发送者的wxid
-        String senderWxid = "";
-        try {
-            Method getTalkerMethod = msgInfoBean.getClass().getMethod("getTalker");
-            senderWxid = (String) getTalkerMethod.invoke(msgInfoBean);
-        } catch (Exception e) {}
+        // 获取会话ID（群聊一般为 xxx@chatroom）
+        String talkerWxid = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+            "getTalker", "talker",
+            "getSessionId", "sessionId",
+            "getChatId", "chatId"
+        });
+        // 获取真实发送者ID（群聊成员/私聊对方）
+        String realSenderWxid = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+            "getSendTalker", "sendTalker",
+            "getSenderWxid", "senderWxid",
+            "getSender", "sender",
+            "getFromUser", "fromUser"
+        });
+        String senderWxid = !TextUtils.isEmpty(realSenderWxid) ? realSenderWxid : talkerWxid;
+        if (!isGroupChat && !TextUtils.isEmpty(talkerWxid) && talkerWxid.endsWith("@chatroom")) {
+            isGroupChat = true;
+        }
+        if (TextUtils.isEmpty(talkerWxid)) {
+            talkerWxid = senderWxid;
+        }
+        if (isGroupChat && !TextUtils.isEmpty(talkerWxid) && !talkerWxid.endsWith("@chatroom")) {
+            talkerWxid = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+                "getTalker", "talker",
+                "getSessionId", "sessionId",
+                "getChatId", "chatId"
+            });
+        }
+        if (isGroupChat && !TextUtils.isEmpty(realSenderWxid) && realSenderWxid.endsWith("@chatroom")) {
+            realSenderWxid = "";
+        }
+        if (isGroupChat && TextUtils.isEmpty(realSenderWxid)) {
+            String parsedSender = extractGroupSenderWxidFromRawContent(rawContent);
+            if (!TextUtils.isEmpty(parsedSender) && !parsedSender.endsWith("@chatroom")) {
+                realSenderWxid = parsedSender;
+            }
+        }
+        if (isGroupChat && !TextUtils.isEmpty(realSenderWxid)) {
+            senderWxid = realSenderWxid;
+        } else if (!TextUtils.isEmpty(talkerWxid)) {
+            senderWxid = talkerWxid;
+        }
 
         // 根据过滤模式判断是否处理该联系人的消息
-        if (!TextUtils.isEmpty(senderWxid)) {
+        if (!TextUtils.isEmpty(talkerWxid)) {
             if (filterMode) {
                 // 仅生效模式：只处理白名单中的联系人
-                if (!includeContactSet.contains(senderWxid)) {
+                if (!includeContactSet.contains(talkerWxid)) {
                     return;
                 }
             } else {
                 // 排除模式：排除黑名单中的联系人
-                if (excludeContactSet.contains(senderWxid)) {
+                if (excludeContactSet.contains(talkerWxid)) {
                     return;
                 }
             }
         }
 
-        // 匹配关键词（如果有关键词）
-        if (!keywordMap.isEmpty()) {
-            String matchedKeyword = null;
+        String matchedKeyword = null;
+        // 任意关键词通知：仅对纯文字消息或引用回复(type=57)生效
+        boolean anyKeywordSceneEnabled = (isGroupChat && anyKeywordGroupNotifyEnabled) || (!isGroupChat && anyKeywordPrivateNotifyEnabled);
+        if (anyKeywordSceneEnabled) {
+            boolean anyKeywordEligible = isEligibleForAnyKeywordNotify(msgInfoBean, msgType, rawContent, isTextMsg, isQuoteMsg, isEmojiMsg);
+            if (anyKeywordEligible) {
+                matchedKeyword = "任意关键词";
+            }
+        } else if (!keywordMap.isEmpty()) {
             for (String keyword : keywordMap.keySet()) {
                 Boolean isWholeWord = keywordMap.get(keyword);
                 boolean matched = false;
@@ -392,19 +398,20 @@ public void onHandleMsg(Object msgInfoBean) {
                     break;
                 }
             }
+        }
 
-            if (matchedKeyword != null) {
-                // 获取发送者信息
-                String senderInfo = getSenderInfo(msgInfoBean, isGroupChat);
+        if (matchedKeyword != null) {
+            // 获取发送者信息
+            String senderInfo = getSenderInfo(msgInfoBean, isGroupChat);
+            String wxidDisplay = buildWxidDisplay(msgInfoBean, isGroupChat, senderWxid);
 
-                // 触发通知
-                triggerNotification(matchedKeyword, content, senderInfo, senderWxid, isGroupChat);
+            // 触发通知
+            triggerNotification(matchedKeyword, content, senderInfo, wxidDisplay, talkerWxid, isGroupChat);
 
-                // 更新最后匹配时间
-                lastMatchTime = System.currentTimeMillis();
-                lastMatchedKeyword = matchedKeyword;
-                saveConfig();
-            }
+            // 更新最后匹配时间
+            lastMatchTime = System.currentTimeMillis();
+            lastMatchedKeyword = matchedKeyword;
+            saveConfig();
         }
 
         // 被@通知检查（仅群聊）
@@ -437,9 +444,10 @@ public void onHandleMsg(Object msgInfoBean) {
             if (atType != null) {
                 // 获取发送者信息
                 String senderInfo = getSenderInfo(msgInfoBean, isGroupChat);
+                String wxidDisplay = buildWxidDisplay(msgInfoBean, isGroupChat, senderWxid);
 
                 // 触发通知
-                triggerNotification(atType, content, senderInfo, senderWxid, isGroupChat);
+                triggerNotification(atType, content, senderInfo, wxidDisplay, talkerWxid, isGroupChat);
 
                 // 更新最后匹配时间
                 lastMatchTime = System.currentTimeMillis();
@@ -447,9 +455,239 @@ public void onHandleMsg(Object msgInfoBean) {
                 saveConfig();
             }
         }
-    } catch (Exception e) {
-        log("处理消息失败: " + e.getMessage());
+    } catch (Throwable e) {
+        log("处理消息失败: " + e.toString());
     }
+}
+
+private String getFirstNonEmptyMsgText(Object msgInfoBean, String[] names) {
+    if (msgInfoBean == null || names == null) return "";
+    for (String name : names) {
+        try {
+            Object v = invokeMsgAny(msgInfoBean, name);
+            if (v == null) continue;
+            String s = String.valueOf(v).trim();
+            if (!TextUtils.isEmpty(s) && !"null".equalsIgnoreCase(s)) return s;
+        } catch (Throwable ignored) {}
+    }
+    return "";
+}
+
+private boolean getMsgBooleanCompat(Object msgInfoBean, String[] names, boolean def) {
+    if (msgInfoBean == null || names == null) return def;
+    for (String name : names) {
+        try {
+            Object v = invokeMsgAny(msgInfoBean, name);
+            if (v == null) continue;
+            if (v instanceof Boolean) return (Boolean) v;
+            return Boolean.parseBoolean(String.valueOf(v));
+        } catch (Throwable ignored) {}
+    }
+    return def;
+}
+
+private int getMsgIntCompat(Object msgInfoBean, String[] names, int def) {
+    if (msgInfoBean == null || names == null) return def;
+    for (String name : names) {
+        try {
+            Object v = invokeMsgAny(msgInfoBean, name);
+            if (v == null) continue;
+            if (v instanceof Number) return ((Number) v).intValue();
+            return Integer.parseInt(String.valueOf(v));
+        } catch (Throwable ignored) {}
+    }
+    return def;
+}
+
+private Object invokeMsgAny(Object msgInfoBean, String name) {
+    if (msgInfoBean == null || TextUtils.isEmpty(name)) return null;
+    Class cls = msgInfoBean.getClass();
+    try {
+        Method m = cls.getMethod(name);
+        return m.invoke(msgInfoBean);
+    } catch (Throwable ignored) {}
+    try {
+        java.lang.reflect.Field f = cls.getDeclaredField(name);
+        f.setAccessible(true);
+        return f.get(msgInfoBean);
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+/**
+ * 判断是否可触发任意关键词通知
+ * 仅允许：纯文字消息 或 引用回复(type=57)
+ */
+private boolean isEligibleForAnyKeywordNotify(Object msgInfoBean, int msgType, String rawContent, boolean isTextMsg, boolean isQuoteMsg, boolean isEmojiMsg) {
+    if (msgType == 47) return false;
+    if (isEmojiMsg) return false;
+
+    boolean isNonTextByApi = invokeMsgBoolean(msgInfoBean, "isImage")
+        || invokeMsgBoolean(msgInfoBean, "isVoice")
+        || invokeMsgBoolean(msgInfoBean, "isVideo")
+        || invokeMsgBoolean(msgInfoBean, "isApp")
+        || invokeMsgBoolean(msgInfoBean, "isFile")
+        || invokeMsgBoolean(msgInfoBean, "isLink")
+        || invokeMsgBoolean(msgInfoBean, "isLocation")
+        || invokeMsgBoolean(msgInfoBean, "isShareCard")
+        || invokeMsgBoolean(msgInfoBean, "isPat")
+        || invokeMsgBoolean(msgInfoBean, "isSystem")
+        || invokeMsgBoolean(msgInfoBean, "isVoip")
+        || invokeMsgBoolean(msgInfoBean, "isVoipVoice")
+        || invokeMsgBoolean(msgInfoBean, "isVoipVideo");
+    if (isNonTextByApi && !isQuoteMsg) return false;
+
+    if (isQuoteMsg) return true;
+    if (isTextMsg && isLikelyPlainText(rawContent)) return true;
+    if (isReferenceReplyMessage(msgType, rawContent)) return true;
+    if (msgType == 1 && isLikelyPlainText(rawContent)) return true;
+    return false;
+}
+
+private boolean isLikelyPlainText(String rawContent) {
+    if (TextUtils.isEmpty(rawContent)) return false;
+    String c = rawContent.trim();
+    if (TextUtils.isEmpty(c)) return false;
+    if (c.startsWith("<?xml") || c.contains("<msg") || c.contains("<appmsg") || c.startsWith("<")) return false;
+    if ("[动画表情]".equals(c) || "[表情]".equals(c) || "[图片]".equals(c) || "[语音]".equals(c)
+        || "[视频]".equals(c) || "[文件]".equals(c) || "[链接]".equals(c)) return false;
+    if (c.matches("^(\\[[^\\[\\]\\s]{1,20}\\])+$")) return false;
+    return true;
+}
+
+private boolean isReferenceReplyMessage(int msgType, String rawContent) {
+    if (TextUtils.isEmpty(rawContent)) return false;
+    String c = rawContent.trim();
+    if (TextUtils.isEmpty(c)) return false;
+    if (!(c.startsWith("<?xml") || c.contains("<msg") || c.contains("<appmsg"))) return false;
+    String appType = getAppMsgType(c);
+    return "57".equals(appType);
+}
+
+private String getAppMsgType(String xml) {
+    if (TextUtils.isEmpty(xml)) return "";
+    String appMsgBlock = extractRegexGroup(xml, "(?is)<appmsg\\b[^>]*>(.*?)</appmsg>");
+    if (!TextUtils.isEmpty(appMsgBlock)) {
+        String appType = sanitizeXmlText(extractXmlTagValue(appMsgBlock, "type"));
+        if (!TextUtils.isEmpty(appType)) return appType;
+    }
+    return sanitizeXmlText(extractXmlTagValue(xml, "type"));
+}
+
+private String normalizeMessageContent(Object msgInfoBean, String rawContent) {
+    if (TextUtils.isEmpty(rawContent)) return rawContent;
+
+    try {
+        if (invokeMsgBoolean(msgInfoBean, "isQuote")) {
+            Method getQuoteMsgMethod = msgInfoBean.getClass().getMethod("getQuoteMsg");
+            Object quoteMsg = getQuoteMsgMethod.invoke(msgInfoBean);
+            if (quoteMsg != null) {
+                String title = "";
+                String quoteContent = "";
+                try {
+                    Method getTitleMethod = quoteMsg.getClass().getMethod("getTitle");
+                    Object titleObj = getTitleMethod.invoke(quoteMsg);
+                    title = titleObj == null ? "" : String.valueOf(titleObj);
+                } catch (Exception e) {}
+                try {
+                    Method getContentMethod = quoteMsg.getClass().getMethod("getContent");
+                    Object contentObj = getContentMethod.invoke(quoteMsg);
+                    quoteContent = contentObj == null ? "" : String.valueOf(contentObj);
+                } catch (Exception e) {}
+
+                String titleText = sanitizeXmlText(title);
+                String referText = sanitizeXmlText(quoteContent);
+                if (!TextUtils.isEmpty(titleText) && !TextUtils.isEmpty(referText)) return titleText + " | 引用: " + referText;
+                if (!TextUtils.isEmpty(titleText)) return titleText;
+                if (!TextUtils.isEmpty(referText)) return referText;
+            }
+        }
+    } catch (Exception e) {}
+
+    String content = rawContent.trim();
+    if (TextUtils.isEmpty(content)) return content;
+    if (!(content.startsWith("<?xml") || content.contains("<msg") || content.contains("<appmsg"))) return content;
+
+    try {
+        String appType = getAppMsgType(content);
+        if ("57".equals(appType)) {
+            String titleText = sanitizeXmlText(extractXmlTagValue(content, "title"));
+            String referBlock = extractRegexGroup(content, "(?is)<refermsg>(.*?)</refermsg>");
+            String referText = sanitizeXmlText(extractXmlTagValue(referBlock, "content"));
+            if (!TextUtils.isEmpty(titleText) && !TextUtils.isEmpty(referText)) return titleText + " | 引用: " + referText;
+            if (!TextUtils.isEmpty(titleText)) return titleText;
+            if (!TextUtils.isEmpty(referText)) return referText;
+        }
+
+        String titleText = sanitizeXmlText(extractXmlTagValue(content, "title"));
+        if (!TextUtils.isEmpty(titleText) && !"null".equalsIgnoreCase(titleText)) return titleText;
+        String contentText = sanitizeXmlText(extractXmlTagValue(content, "content"));
+        if (!TextUtils.isEmpty(contentText) && !"null".equalsIgnoreCase(contentText)) return contentText;
+    } catch (Exception e) {
+        log("归一化消息内容失败: " + e.getMessage());
+    }
+    return content;
+}
+
+private boolean invokeMsgBoolean(Object msgInfoBean, String methodName) {
+    if (msgInfoBean == null || TextUtils.isEmpty(methodName)) return false;
+    try {
+        Method method = msgInfoBean.getClass().getMethod(methodName);
+        Object val = method.invoke(msgInfoBean);
+        if (val instanceof Boolean) return (Boolean) val;
+        if (val != null) return Boolean.parseBoolean(String.valueOf(val));
+    } catch (Throwable e) {}
+    return false;
+}
+
+private String extractXmlTagValue(String xml, String tagName) {
+    if (TextUtils.isEmpty(xml) || TextUtils.isEmpty(tagName)) return "";
+    String regex = "(?is)<" + Pattern.quote(tagName) + ">(?:<!\\[CDATA\\[(.*?)\\]\\]>|(.*?))</" + Pattern.quote(tagName) + ">";
+    String cdata = extractRegexGroup(xml, regex, 1);
+    if (!TextUtils.isEmpty(cdata)) return cdata;
+    String plain = extractRegexGroup(xml, regex, 2);
+    return plain == null ? "" : plain;
+}
+
+private String extractRegexGroup(String text, String regex) {
+    return extractRegexGroup(text, regex, 1);
+}
+
+private String extractRegexGroup(String text, String regex, int group) {
+    if (TextUtils.isEmpty(text) || TextUtils.isEmpty(regex)) return "";
+    try {
+        java.util.regex.Matcher matcher = Pattern.compile(regex, Pattern.DOTALL | Pattern.CASE_INSENSITIVE).matcher(text);
+        if (matcher.find() && matcher.groupCount() >= group) {
+            String val = matcher.group(group);
+            return val == null ? "" : val;
+        }
+    } catch (Throwable e) {}
+    return "";
+}
+
+private String sanitizeXmlText(String text) {
+    if (TextUtils.isEmpty(text)) return "";
+    String v = text
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#10;", "\n")
+        .replace("&#13;", "\r")
+        .trim();
+    v = v.replaceAll("(?is)<[^>]+>", " ").replaceAll("\\s+", " ").trim();
+    return v;
+}
+
+private String stripGroupSenderPrefix(String content) {
+    if (TextUtils.isEmpty(content)) return "";
+    try {
+        String c = content.trim();
+        c = c.replaceFirst("^[A-Za-z0-9_\\-]+:\\n", "");
+        return c.trim();
+    } catch (Throwable ignored) {}
+    return content;
 }
 
 /**
@@ -457,57 +695,102 @@ public void onHandleMsg(Object msgInfoBean) {
  */
 private String getSenderInfo(Object msgInfoBean, boolean isGroupChat) {
     try {
-        String talker = "";
-        String sendTalker = "";
-        String displayName = "";
+        String talker = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+            "getTalker", "talker", "getSessionId", "sessionId", "getChatId", "chatId"
+        });
+        String sendTalker = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+            "getSendTalker", "sendTalker", "getSenderWxid", "senderWxid", "getSender", "sender", "getFromUser", "fromUser"
+        });
+        String displayName = getFirstNonEmptyMsgText(msgInfoBean, new String[]{"getDisplayName", "displayName"});
 
-        // 获取talker
-        try {
-            Method getTalkerMethod = msgInfoBean.getClass().getMethod("getTalker");
-            talker = (String) getTalkerMethod.invoke(msgInfoBean);
-        } catch (Exception e) {}
-
-        // 获取发送者ID
-        try {
-            Method getSendTalkerMethod = msgInfoBean.getClass().getMethod("getSendTalker");
-            sendTalker = (String) getSendTalkerMethod.invoke(msgInfoBean);
-        } catch (Exception e) {}
-
-        // 优先从反射获取displayName
-        try {
-            Method getDisplayNameMethod = msgInfoBean.getClass().getMethod("getDisplayName");
-            displayName = (String) getDisplayNameMethod.invoke(msgInfoBean);
-        } catch (Exception e) {}
-
-        // 如果是群聊，优先尝试获取群成员名称
-        if (isGroupChat && !TextUtils.isEmpty(sendTalker)) {
-            // 获取群名称
-            String groupName = getGroupName(talker);
-
-            // 获取群成员名称
-            String memberName = "";
-            if (sendTalker.endsWith("@chatroom")) {
-                // 发送者是群聊本身
-                memberName = groupName;
-            } else {
-                memberName = getGroupMemberDisplayName(talker, sendTalker);
-                if (TextUtils.isEmpty(memberName)) {
-                    memberName = getFriendDisplayName(sendTalker);
+        if (isGroupChat || (!TextUtils.isEmpty(talker) && talker.endsWith("@chatroom"))) {
+            if (TextUtils.isEmpty(talker) || !talker.endsWith("@chatroom")) {
+                String talkerCompat = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+                    "getContentTalker", "contentTalker",
+                    "getChatUser", "chatUser",
+                    "getRoomId", "roomId"
+                });
+                if (!TextUtils.isEmpty(talkerCompat) && talkerCompat.endsWith("@chatroom")) {
+                    talker = talkerCompat;
                 }
             }
-
-            return groupName + " | " + memberName;
-        } else {
-            // 私聊
-            if (!TextUtils.isEmpty(displayName)) {
-                return displayName;
+            if (TextUtils.isEmpty(talker) || !talker.endsWith("@chatroom")) {
+                String rawContentForTalker = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+                    "getOriginContent", "originContent",
+                    "getMsgContent", "msgContent",
+                    "getContent", "content",
+                    "getText", "text"
+                });
+                String parsedTalker = extractChatroomId(rawContentForTalker);
+                if (!TextUtils.isEmpty(parsedTalker)) talker = parsedTalker;
             }
-            return getFriendDisplayName(talker);
+
+            String groupName = getGroupName(talker);
+            if (TextUtils.isEmpty(groupName) || "未知群聊".equals(groupName)) {
+                groupName = (!TextUtils.isEmpty(talker) && talker.endsWith("@chatroom")) ? talker : "群聊";
+            }
+
+            String rawContentForSender = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+                "getOriginContent", "originContent",
+                "getMsgContent", "msgContent",
+                "getContent", "content",
+                "getText", "text"
+            });
+            String parsedSender = extractGroupSenderWxidFromRawContent(rawContentForSender);
+            if (!TextUtils.isEmpty(parsedSender) && !parsedSender.endsWith("@chatroom")) {
+                sendTalker = parsedSender;
+            }
+
+            String memberName = "";
+            if (!TextUtils.isEmpty(sendTalker) && !sendTalker.endsWith("@chatroom")) {
+                memberName = getGroupMemberDisplayName(talker, sendTalker);
+                if (TextUtils.isEmpty(memberName)) memberName = getFriendDisplayName(sendTalker);
+            }
+            if (TextUtils.isEmpty(memberName)) memberName = displayName;
+            if (TextUtils.isEmpty(memberName) || "未知好友".equals(memberName)) memberName = sendTalker;
+            if (TextUtils.isEmpty(memberName)) memberName = "未知成员";
+            return groupName + " | " + memberName;
         }
+
+        if (!TextUtils.isEmpty(displayName)) return displayName;
+        String privateName = getFriendDisplayName(talker);
+        if (!TextUtils.isEmpty(privateName) && !privateName.equals(talker)) return privateName;
+        if (!TextUtils.isEmpty(sendTalker) && !sendTalker.endsWith("@chatroom")) {
+            String senderName = getFriendDisplayName(sendTalker);
+            if (!TextUtils.isEmpty(senderName)) return senderName;
+            return sendTalker;
+        }
+        return !TextUtils.isEmpty(talker) ? talker : "未知来源";
     } catch (Exception e) {
         log("获取发送者信息失败: " + e.getMessage());
         return "未知来源";
     }
+}
+
+private String extractGroupSenderWxidFromRawContent(String rawContent) {
+    if (TextUtils.isEmpty(rawContent)) return "";
+    try {
+        String c = rawContent.trim();
+        if (TextUtils.isEmpty(c)) return "";
+        java.util.regex.Matcher m = Pattern.compile("^([A-Za-z0-9_\\-]+?):\\n").matcher(c);
+        if (m.find()) {
+            String sender = m.group(1);
+            return TextUtils.isEmpty(sender) ? "" : sender.trim();
+        }
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+private String extractChatroomId(String rawContent) {
+    if (TextUtils.isEmpty(rawContent)) return "";
+    try {
+        java.util.regex.Matcher m = Pattern.compile("([A-Za-z0-9_\\-]+@chatroom)").matcher(rawContent);
+        if (m.find()) {
+            String room = m.group(1);
+            return TextUtils.isEmpty(room) ? "" : room.trim();
+        }
+    } catch (Throwable ignored) {}
+    return "";
 }
 
 /**
@@ -559,30 +842,24 @@ private String getGroupMemberDisplayName(String groupWxid, String memberWxid) {
 /**
  * 触发通知
  */
-private void triggerNotification(String keyword, String content, String senderInfo, String senderWxid, boolean isGroupChat) {
-    // 检查免打扰模式
+private void triggerNotification(String keyword, String content, String senderInfo, String displayWxid, String openTalker, boolean isGroupChat) {
     if (quietHoursEnabled) {
         int currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-        boolean inQuietTime = false;
-        if (quietStartHour >= quietEndHour) {
-            inQuietTime = currentHour >= quietStartHour || currentHour < quietEndHour;
-        } else {
-            inQuietTime = currentHour >= quietStartHour && currentHour < quietEndHour;
-        }
-        if (inQuietTime) {
-            return; // 免打扰时间段，不发送通知
-        }
+        boolean inQuietTime = quietStartHour >= quietEndHour
+            ? (currentHour >= quietStartHour || currentHour < quietEndHour)
+            : (currentHour >= quietStartHour && currentHour < quietEndHour);
+        if (inQuietTime) return;
     }
 
     final String finalSenderInfo = senderInfo;
     final String finalContent = content;
     final String finalKeyword = keyword;
-    final String finalWxid = senderWxid;
+    final String finalDisplayWxid = displayWxid;
+    final String finalOpenTalker = openTalker;
     final boolean finalIsGroupChat = isGroupChat;
     final boolean isAtMe = finalKeyword.equals("@我");
     final boolean isAtAll = finalKeyword.equals("@所有人");
 
-    // 发送系统通知
     if (notifyEnabled) {
         new Handler(Looper.getMainLooper()).post(new Runnable() {
             public void run() {
@@ -604,13 +881,12 @@ private void triggerNotification(String keyword, String content, String senderIn
                         notifyContentTemplate = customKeywordNotifyContent;
                     }
 
-                    // 使用自定义通知文字
                     if (!TextUtils.isEmpty(notifyTitleTemplate)) {
-                        // 支持变量替换: %keyword% 关键词, %sender% 发送者, %content% 内容, %type% 类型, %wxid% 发送者ID
                         title = notifyTitleTemplate
                             .replace("%keyword%", finalKeyword)
                             .replace("%sender%", finalSenderInfo)
-                            .replace("%wxid%", finalWxid)
+                            .replace("%wxid%", finalDisplayWxid)
+                            .replace("%content%", finalContent)
                             .replace("%type%", typeStr);
                     } else {
                         title = (isAtMe || isAtAll) ? "🔔 被" + finalKeyword + "通知" : "🔔 命中关键词: " + finalKeyword;
@@ -620,14 +896,14 @@ private void triggerNotification(String keyword, String content, String senderIn
                         body = notifyContentTemplate
                             .replace("%keyword%", finalKeyword)
                             .replace("%sender%", finalSenderInfo)
-                            .replace("%wxid%", finalWxid)
+                            .replace("%wxid%", finalDisplayWxid)
                             .replace("%content%", finalContent)
                             .replace("%type%", typeStr);
                     } else {
                         body = typeStr + " [" + finalSenderInfo + "]: " + finalContent;
                     }
 
-                    notify(title, body);
+                    sendKeywordNotification(finalOpenTalker, highlightKeywordText(title, finalKeyword), highlightKeywordText(body, finalKeyword), finalIsGroupChat);
                 } catch (Exception e) {
                     log("发送通知失败: " + e.getMessage());
                 }
@@ -635,7 +911,6 @@ private void triggerNotification(String keyword, String content, String senderIn
         });
     }
 
-    // 发送Toast
     if (toastEnabled) {
         new Handler(Looper.getMainLooper()).post(new Runnable() {
             public void run() {
@@ -650,11 +925,10 @@ private void triggerNotification(String keyword, String content, String senderIn
                         toastTemplate = customKeywordToastText;
                     }
                     if (!TextUtils.isEmpty(toastTemplate)) {
-                        // 支持变量替换
                         toastMsg = toastTemplate
                             .replace("%keyword%", finalKeyword)
                             .replace("%sender%", finalSenderInfo)
-                            .replace("%wxid%", finalWxid)
+                            .replace("%wxid%", finalDisplayWxid)
                             .replace("%content%", finalContent)
                             .replace("%type%", finalIsGroupChat ? "群消息" : "好友");
                     } else {
@@ -667,6 +941,140 @@ private void triggerNotification(String keyword, String content, String senderIn
             }
         });
     }
+}
+
+private Intent[] buildChatOpenIntents(String talker) {
+    Intent home = null;
+    Intent chat = null;
+    try {
+        home = new Intent();
+        home.setComponent(new ComponentName(hostContext.getPackageName(), "com.tencent.mm.ui.LauncherUI"));
+        home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    } catch (Throwable ignored) {}
+    if (home == null) {
+        try {
+            home = hostContext.getPackageManager().getLaunchIntentForPackage(hostContext.getPackageName());
+            if (home != null) {
+                home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            }
+        } catch (Throwable ignored) {}
+    }
+    try {
+        chat = new Intent();
+        chat.setComponent(new ComponentName(hostContext.getPackageName(), "com.tencent.mm.ui.chatting.ChattingUI"));
+        chat.putExtra("Chat_User", talker);
+        chat.putExtra("Chat_Mode", 1);
+        chat.putExtra("finish_direct", true);
+        chat.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    } catch (Throwable ignored) {}
+    if (home != null && chat != null) return new Intent[]{home, chat};
+    if (chat != null) return new Intent[]{chat};
+    if (home != null) return new Intent[]{home};
+    return null;
+}
+
+private void ensureKeywordNotifyChannel(NotificationManager nm, String channelId) {
+    if (nm == null || Build.VERSION.SDK_INT < 26 || TextUtils.isEmpty(channelId)) return;
+    try {
+        NotificationChannel channel = nm.getNotificationChannel(channelId);
+        if (channel == null) {
+            channel = new NotificationChannel(channelId, "关键词通知", NotificationManager.IMPORTANCE_HIGH);
+            channel.enableVibration(true);
+            channel.setVibrationPattern(new long[]{0, 250, 250, 250});
+            nm.createNotificationChannel(channel);
+        }
+    } catch (Throwable ignored) {}
+}
+
+private void sendKeywordNotification(String talker, CharSequence title, CharSequence text, boolean isGroupChat) {
+    try {
+        NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        String channelId = "keyword_notify_v1";
+        ensureKeywordNotifyChannel(nm, channelId);
+
+        Notification.Builder builder;
+        if (Build.VERSION.SDK_INT >= 26) builder = new Notification.Builder(hostContext, channelId);
+        else builder = new Notification.Builder(hostContext);
+
+        builder.setContentTitle(title)
+               .setContentText(text)
+               .setSmallIcon(android.R.drawable.stat_notify_chat)
+               .setAutoCancel(true)
+               .setOnlyAlertOnce(false);
+        try { builder.setCategory(Notification.CATEGORY_MESSAGE); } catch (Throwable ignored) {}
+        try { builder.setVisibility(Notification.VISIBILITY_PRIVATE); } catch (Throwable ignored) {}
+        try { builder.setPriority(Notification.PRIORITY_HIGH); } catch (Throwable ignored) {}
+        try { builder.setWhen(System.currentTimeMillis()); } catch (Throwable ignored) {}
+        try { builder.setShowWhen(true); } catch (Throwable ignored) {}
+        try { builder.setColor(Color.parseColor("#70A1B8")); } catch (Throwable ignored) {}
+        try {
+            builder.setStyle(new Notification.BigTextStyle()
+                .bigText(text)
+                .setBigContentTitle(title)
+                .setSummaryText(isGroupChat ? "群消息" : "好友消息"));
+        } catch (Throwable ignored) {}
+        try { builder.setSubText(isGroupChat ? "群消息" : "好友消息"); } catch (Throwable ignored) {}
+
+        Intent[] intents = buildChatOpenIntents(talker);
+        if (intents != null && intents.length > 0) {
+            builder.setContentIntent(PendingIntent.getActivities(hostContext, talker.hashCode(), intents, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+        }
+
+        Bundle extras = new Bundle();
+        extras.putBoolean("is_keyword_notify", true);
+        extras.putString("talker", talker);
+        extras.putBoolean("is_group_chat", isGroupChat);
+        builder.setExtras(extras);
+
+        int notifyId = ("kw_notify_v1_" + talker).hashCode();
+        nm.notify(notifyId, builder.build());
+    } catch (Throwable e) {
+        log("发送系统通知失败: " + e.getMessage());
+    }
+}
+
+private CharSequence highlightKeywordText(String text, String keyword) {
+    if (TextUtils.isEmpty(text) || TextUtils.isEmpty(keyword)) return text;
+    try {
+        String raw = String.valueOf(text);
+        SpannableStringBuilder ssb = new SpannableStringBuilder(raw);
+        int color = Color.parseColor("#FF9800");
+        int from = 0;
+        while (true) {
+            int idx = raw.indexOf(keyword, from);
+            if (idx < 0) break;
+            ssb.setSpan(new ForegroundColorSpan(color), idx, idx + keyword.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            from = idx + keyword.length();
+        }
+        return ssb;
+    } catch (Throwable ignored) {}
+    return text;
+}
+
+private String buildWxidDisplay(Object msgInfoBean, boolean isGroupChat, String senderWxid) {
+    if (!isGroupChat) return senderWxid;
+    String talkerWxid = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+        "getTalker", "talker",
+        "getSessionId", "sessionId",
+        "getChatId", "chatId",
+        "getContentTalker", "contentTalker",
+        "getChatUser", "chatUser",
+        "getRoomId", "roomId"
+    });
+    if (TextUtils.isEmpty(talkerWxid) || !talkerWxid.endsWith("@chatroom")) {
+        String rawContent = getFirstNonEmptyMsgText(msgInfoBean, new String[]{
+            "getOriginContent", "originContent",
+            "getMsgContent", "msgContent",
+            "getContent", "content",
+            "getText", "text"
+        });
+        String parsedTalker = extractChatroomId(rawContent);
+        if (!TextUtils.isEmpty(parsedTalker)) talkerWxid = parsedTalker;
+    }
+    if (TextUtils.isEmpty(talkerWxid)) return senderWxid;
+    if (TextUtils.isEmpty(senderWxid) || senderWxid.endsWith("@chatroom")) return talkerWxid;
+    return talkerWxid + "|" + senderWxid;
 }
 
 // 入口函数
@@ -700,6 +1108,7 @@ private void showMainDialog() {
     StringBuilder statusSb = new StringBuilder();
     statusSb.append("监控状态: ").append(enabled ? "✅ 开启" : "❌ 关闭").append("\n");
     statusSb.append("关键词数量: ").append(keywordMap.size()).append("\n");
+    statusSb.append("任意关键词-群聊: ").append(anyKeywordGroupNotifyEnabled ? "✅" : "❌").append("  私聊: ").append(anyKeywordPrivateNotifyEnabled ? "✅" : "❌").append("\n");
     statusSb.append("过滤模式: ").append(filterMode ? "🎯 仅生效模式" : "🚫 排除模式").append("\n");
     if (filterMode) {
         statusSb.append("仅生效联系人: ").append(includeContactSet.size()).append(" 个\n");
@@ -731,6 +1140,7 @@ private void showMainDialog() {
             StringBuilder sb = new StringBuilder();
             sb.append("监控状态: ").append(enabled ? "✅ 开启" : "❌ 关闭").append("\n");
             sb.append("关键词数量: ").append(keywordMap.size()).append("\n");
+            sb.append("任意关键词-群聊: ").append(anyKeywordGroupNotifyEnabled ? "✅" : "❌").append("  私聊: ").append(anyKeywordPrivateNotifyEnabled ? "✅" : "❌").append("\n");
             sb.append("过滤模式: ").append(filterMode ? "🎯 仅生效模式" : "🚫 排除模式").append("\n");
             if (filterMode) {
                 sb.append("仅生效联系人: ").append(includeContactSet.size()).append(" 个\n");
@@ -888,6 +1298,26 @@ private void showMainDialog() {
     });
     notifyCard.addView(toastRow);
 
+    // 任意关键词-群聊通知开关
+    final LinearLayout anyKeywordGroupRow = createSwitchRow("任意关键词-群聊通知", anyKeywordGroupNotifyEnabled, 14, new ToggleCallback() {
+        public void onToggle(boolean checked) {
+            anyKeywordGroupNotifyEnabled = checked;
+            saveConfig();
+            toast("群聊任意关键词通知已" + (checked ? "开启" : "关闭"));
+        }
+    });
+    notifyCard.addView(anyKeywordGroupRow);
+
+    // 任意关键词-私聊通知开关
+    final LinearLayout anyKeywordPrivateRow = createSwitchRow("任意关键词-私聊通知", anyKeywordPrivateNotifyEnabled, 14, new ToggleCallback() {
+        public void onToggle(boolean checked) {
+            anyKeywordPrivateNotifyEnabled = checked;
+            saveConfig();
+            toast("私聊任意关键词通知已" + (checked ? "开启" : "关闭"));
+        }
+    });
+    notifyCard.addView(anyKeywordPrivateRow);
+
     // 被@我通知开关
     final LinearLayout atMeRow = createSwitchRow("@我通知", atMeEnabled, 14, new ToggleCallback() {
         public void onToggle(boolean checked) {
@@ -1043,13 +1473,7 @@ private LinearLayout createIncludeContactCard() {
     includeDisplayList = new ArrayList<>();
 
     for (String contactId : includeContactList) {
-        String displayName = contactId;
-        if (contactId.endsWith("@chatroom")) {
-            displayName = "💬 群聊: " + getGroupName(contactId);
-        } else {
-            displayName = "👤 " + getFriendDisplayName(contactId);
-        }
-        includeDisplayList.add(displayName);
+        includeDisplayList.add(buildContactDisplayName(contactId));
     }
 
     includeAdapter = new ArrayAdapter<>(getTopActivity(), android.R.layout.simple_list_item_1, includeDisplayList);
@@ -1061,13 +1485,7 @@ private LinearLayout createIncludeContactCard() {
             includeContactList.addAll(includeContactSet);
             includeDisplayList.clear();
             for (String contactId : includeContactList) {
-                String displayName = contactId;
-                if (contactId.endsWith("@chatroom")) {
-                    displayName = "💬 群聊: " + getGroupName(contactId);
-                } else {
-                    displayName = "👤 " + getFriendDisplayName(contactId);
-                }
-                includeDisplayList.add(displayName);
+                includeDisplayList.add(buildContactDisplayName(contactId));
             }
             includeAdapter.notifyDataSetChanged();
             includeCountTv.setText("已添加 " + includeContactSet.size() + " 个联系人");
@@ -1087,16 +1505,6 @@ private LinearLayout createIncludeContactCard() {
         }
     };
 
-    includeListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-        public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-            if (position < includeContactList.size()) {
-                String contactId = includeContactList.get(position);
-                String displayName = includeDisplayList.get(position);
-                showRemoveIncludeContactDialog(contactId, displayName, refreshListRunnable);
-            }
-        }
-    });
-
     int itemHeight = dpToPx(48);
     int listHeight = Math.max(Math.min(includeContactList.size() * itemHeight, dpToPx(200)), dpToPx(48));
     LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
@@ -1113,9 +1521,13 @@ private LinearLayout createIncludeContactCard() {
     includeClearBtn.setTextColor(Color.parseColor("#D32F2F"));
     includeClearBtn.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
-            showClearIncludeContactsConfirmDialog();
-        }
-    });
+                showClearContactsConfirmDialog(includeContactSet, "🗑️ 清空仅生效列表", "确定要清空所有仅生效联系人吗?", new Runnable() {
+                    public void run() {
+                        refreshIncludeDisplay();
+                    }
+                }, "✅ 已清空仅生效列表");
+            }
+        });
     includeClearBtn.setVisibility(includeContactSet.size() > 1 ? View.VISIBLE : View.GONE);
     includeCard.addView(includeClearBtn);
 
@@ -1138,7 +1550,7 @@ private LinearLayout createIncludeContactCard() {
             if (position < includeContactList.size()) {
                 String contactId = includeContactList.get(position);
                 String displayName = includeDisplayList.get(position);
-                showRemoveIncludeContactDialog(contactId, displayName, fullRefreshRunnable);
+                showRemoveContactDialog(includeContactSet, "仅生效", contactId, displayName, "✅ 已移除仅生效", "将不再触发通知。", fullRefreshRunnable);
             }
         }
     });
@@ -1214,13 +1626,7 @@ private LinearLayout createExcludeContactCard() {
     excludeDisplayList = new ArrayList<>();
 
     for (String contactId : excludeContactList) {
-        String displayName = contactId;
-        if (contactId.endsWith("@chatroom")) {
-            displayName = "💬 群聊: " + getGroupName(contactId);
-        } else {
-            displayName = "👤 " + getFriendDisplayName(contactId);
-        }
-        excludeDisplayList.add(displayName);
+        excludeDisplayList.add(buildContactDisplayName(contactId));
     }
 
     excludeAdapter = new ArrayAdapter<>(getTopActivity(), android.R.layout.simple_list_item_1, excludeDisplayList);
@@ -1232,13 +1638,7 @@ private LinearLayout createExcludeContactCard() {
             excludeContactList.addAll(excludeContactSet);
             excludeDisplayList.clear();
             for (String contactId : excludeContactList) {
-                String displayName = contactId;
-                if (contactId.endsWith("@chatroom")) {
-                    displayName = "💬 群聊: " + getGroupName(contactId);
-                } else {
-                    displayName = "👤 " + getFriendDisplayName(contactId);
-                }
-                excludeDisplayList.add(displayName);
+                excludeDisplayList.add(buildContactDisplayName(contactId));
             }
             excludeAdapter.notifyDataSetChanged();
             excludeCountTv.setText("已排除 " + excludeContactSet.size() + " 个联系人");
@@ -1258,16 +1658,6 @@ private LinearLayout createExcludeContactCard() {
         }
     };
 
-    excludeListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-        public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-            if (position < excludeContactList.size()) {
-                String contactId = excludeContactList.get(position);
-                String displayName = excludeDisplayList.get(position);
-                showRemoveExcludeContactDialog(contactId, displayName, refreshListRunnable);
-            }
-        }
-    });
-
     int itemHeight = dpToPx(48);
     int listHeight = Math.max(Math.min(excludeContactList.size() * itemHeight, dpToPx(200)), dpToPx(48));
     LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
@@ -1284,9 +1674,13 @@ private LinearLayout createExcludeContactCard() {
     excludeClearBtn.setTextColor(Color.parseColor("#D32F2F"));
     excludeClearBtn.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
-            showClearExcludeContactsConfirmDialog();
-        }
-    });
+                showClearContactsConfirmDialog(excludeContactSet, "🗑️ 清空排除列表", "确定要清空所有排除联系人吗？", new Runnable() {
+                    public void run() {
+                        refreshExcludeDisplay();
+                    }
+                }, "✅ 已清空排除列表");
+            }
+        });
     excludeClearBtn.setVisibility(excludeContactSet.size() > 1 ? View.VISIBLE : View.GONE);
     excludeCard.addView(excludeClearBtn);
 
@@ -1309,7 +1703,7 @@ private LinearLayout createExcludeContactCard() {
             if (position < excludeContactList.size()) {
                 String contactId = excludeContactList.get(position);
                 String displayName = excludeDisplayList.get(position);
-                showRemoveExcludeContactDialog(contactId, displayName, fullRefreshRunnable);
+                showRemoveContactDialog(excludeContactSet, "排除", contactId, displayName, "✅ 已移除排除", "将正常检查关键词。", fullRefreshRunnable);
             }
         }
     });
@@ -1333,93 +1727,9 @@ private void showAddKeywordDialog() {
     input.setPadding(24, 24, 24, 24);
     root.addView(input);
 
-    // 匹配模式选择 - 使用按钮点击切换
-    TextView modeLabel = new TextView(getTopActivity());
-    modeLabel.setText("匹配模式:");
-    modeLabel.setTextSize(14);
-    modeLabel.setTextColor(Color.parseColor("#666666"));
-    modeLabel.setPadding(0, 24, 0, 12);
-    root.addView(modeLabel);
-
-    // 匹配模式按钮容器
-    LinearLayout buttonContainer = new LinearLayout(getTopActivity());
-    buttonContainer.setOrientation(LinearLayout.HORIZONTAL);
-    buttonContainer.setWeightSum(2);
-    buttonContainer.setPadding(0, 0, 0, 16);
-
-    // 模糊匹配按钮
-    final TextView fuzzyBtn = new TextView(getTopActivity());
-    fuzzyBtn.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-    fuzzyBtn.setText("🔍 模糊匹配");
-    fuzzyBtn.setTextSize(14);
-    fuzzyBtn.setGravity(Gravity.CENTER);
-    fuzzyBtn.setPadding(16, 20, 16, 20);
-    fuzzyBtn.setBackgroundResource(android.R.drawable.btn_default);
-    fuzzyBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
-    fuzzyBtn.setTextColor(Color.WHITE);
-
-    // 全字匹配按钮
-    final TextView wholeWordBtn = new TextView(getTopActivity());
-    wholeWordBtn.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-    wholeWordBtn.setText("📝 全字匹配");
-    wholeWordBtn.setTextSize(14);
-    wholeWordBtn.setGravity(Gravity.CENTER);
-    wholeWordBtn.setPadding(16, 20, 16, 20);
-    wholeWordBtn.setBackgroundResource(android.R.drawable.btn_default);
-    wholeWordBtn.setBackgroundColor(Color.parseColor("#E0E0E0"));
-    wholeWordBtn.setTextColor(Color.parseColor("#333333"));
-
-    // 匹配模式说明
-    final TextView modeDesc = new TextView(getTopActivity());
-    modeDesc.setText("🔍 模糊匹配 - 关键词包含在消息中即可触发");
-    modeDesc.setTextSize(12);
-    modeDesc.setTextColor(Color.parseColor("#888888"));
-    modeDesc.setPadding(0, 0, 0, 16);
-
     // 选中模式: 0=模糊匹配, 1=全字匹配
     final int[] selectedMode = {0};
-
-    // 更新按钮样式的函数
-    Runnable updateButtonStyle = new Runnable() {
-        public void run() {
-            if (selectedMode[0] == 0) {
-                // 模糊匹配选中
-                fuzzyBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
-                fuzzyBtn.setTextColor(Color.WHITE);
-                wholeWordBtn.setBackgroundColor(Color.parseColor("#E0E0E0"));
-                wholeWordBtn.setTextColor(Color.parseColor("#333333"));
-                modeDesc.setText("🔍 模糊匹配 - 关键词包含在消息中即可触发");
-            } else {
-                // 全字匹配选中
-                fuzzyBtn.setBackgroundColor(Color.parseColor("#E0E0E0"));
-                fuzzyBtn.setTextColor(Color.parseColor("#333333"));
-                wholeWordBtn.setBackgroundColor(Color.parseColor("#2196F3"));
-                wholeWordBtn.setTextColor(Color.WHITE);
-                modeDesc.setText("📝 全字匹配 - 只有完整单词匹配才触发");
-            }
-        }
-    };
-
-    // 模糊匹配按钮点击
-    fuzzyBtn.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            selectedMode[0] = 0;
-            updateButtonStyle.run();
-        }
-    });
-
-    // 全字匹配按钮点击
-    wholeWordBtn.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            selectedMode[0] = 1;
-            updateButtonStyle.run();
-        }
-    });
-
-    buttonContainer.addView(fuzzyBtn);
-    buttonContainer.addView(wholeWordBtn);
-    root.addView(buttonContainer);
-    root.addView(modeDesc);
+    addKeywordModeSelector(root, selectedMode, 0);
 
     AlertDialog dialog = new AlertDialog.Builder(getTopActivity())
         .setTitle("➕ 添加关键词")
@@ -1542,6 +1852,82 @@ private void showKeywordListDialog() {
     dialog.show();
 }
 
+private void addKeywordModeSelector(LinearLayout root, final int[] selectedMode, int initialMode) {
+    selectedMode[0] = initialMode == 1 ? 1 : 0;
+
+    TextView modeLabel = new TextView(getTopActivity());
+    modeLabel.setText("匹配模式:");
+    modeLabel.setTextSize(14);
+    modeLabel.setTextColor(Color.parseColor("#666666"));
+    modeLabel.setPadding(0, 24, 0, 12);
+    root.addView(modeLabel);
+
+    LinearLayout buttonContainer = new LinearLayout(getTopActivity());
+    buttonContainer.setOrientation(LinearLayout.HORIZONTAL);
+    buttonContainer.setWeightSum(2);
+    buttonContainer.setPadding(0, 0, 0, 16);
+
+    final TextView fuzzyBtn = new TextView(getTopActivity());
+    fuzzyBtn.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+    fuzzyBtn.setText("🔍 模糊匹配");
+    fuzzyBtn.setTextSize(14);
+    fuzzyBtn.setGravity(Gravity.CENTER);
+    fuzzyBtn.setPadding(16, 20, 16, 20);
+    fuzzyBtn.setBackgroundResource(android.R.drawable.btn_default);
+
+    final TextView wholeWordBtn = new TextView(getTopActivity());
+    wholeWordBtn.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+    wholeWordBtn.setText("📝 全字匹配");
+    wholeWordBtn.setTextSize(14);
+    wholeWordBtn.setGravity(Gravity.CENTER);
+    wholeWordBtn.setPadding(16, 20, 16, 20);
+    wholeWordBtn.setBackgroundResource(android.R.drawable.btn_default);
+
+    final TextView modeDesc = new TextView(getTopActivity());
+    modeDesc.setTextSize(12);
+    modeDesc.setTextColor(Color.parseColor("#888888"));
+    modeDesc.setPadding(0, 0, 0, 16);
+
+    final Runnable updateButtonStyle = new Runnable() {
+        public void run() {
+            if (selectedMode[0] == 0) {
+                fuzzyBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
+                fuzzyBtn.setTextColor(Color.WHITE);
+                wholeWordBtn.setBackgroundColor(Color.parseColor("#E0E0E0"));
+                wholeWordBtn.setTextColor(Color.parseColor("#333333"));
+                modeDesc.setText("🔍 模糊匹配 - 关键词包含在消息中即可触发");
+            } else {
+                fuzzyBtn.setBackgroundColor(Color.parseColor("#E0E0E0"));
+                fuzzyBtn.setTextColor(Color.parseColor("#333333"));
+                wholeWordBtn.setBackgroundColor(Color.parseColor("#2196F3"));
+                wholeWordBtn.setTextColor(Color.WHITE);
+                modeDesc.setText("📝 全字匹配 - 只有完整单词匹配才触发");
+            }
+        }
+    };
+
+    updateButtonStyle.run();
+
+    fuzzyBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            selectedMode[0] = 0;
+            updateButtonStyle.run();
+        }
+    });
+
+    wholeWordBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            selectedMode[0] = 1;
+            updateButtonStyle.run();
+        }
+    });
+
+    buttonContainer.addView(fuzzyBtn);
+    buttonContainer.addView(wholeWordBtn);
+    root.addView(buttonContainer);
+    root.addView(modeDesc);
+}
+
 /**
  * 编辑关键词对话框
  */
@@ -1562,94 +1948,9 @@ private void showEditKeywordDialog(final String oldKeyword, final ArrayAdapter<S
     Boolean isWholeWord = keywordMap.get(oldKeyword);
     final boolean currentWholeWord = (isWholeWord != null && isWholeWord);
 
-    // 匹配模式选择 - 使用按钮点击切换
-    TextView modeLabel = new TextView(getTopActivity());
-    modeLabel.setText("匹配模式:");
-    modeLabel.setTextSize(14);
-    modeLabel.setTextColor(Color.parseColor("#666666"));
-    modeLabel.setPadding(0, 24, 0, 12);
-    root.addView(modeLabel);
-
-    // 匹配模式按钮容器
-    LinearLayout buttonContainer = new LinearLayout(getTopActivity());
-    buttonContainer.setOrientation(LinearLayout.HORIZONTAL);
-    buttonContainer.setWeightSum(2);
-    buttonContainer.setPadding(0, 0, 0, 16);
-
-    // 模糊匹配按钮
-    final TextView fuzzyBtn = new TextView(getTopActivity());
-    fuzzyBtn.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-    fuzzyBtn.setText("🔍 模糊匹配");
-    fuzzyBtn.setTextSize(14);
-    fuzzyBtn.setGravity(Gravity.CENTER);
-    fuzzyBtn.setPadding(16, 20, 16, 20);
-    fuzzyBtn.setBackgroundResource(android.R.drawable.btn_default);
-    fuzzyBtn.setTextColor(Color.WHITE);
-
-    // 全字匹配按钮
-    final TextView wholeWordBtn = new TextView(getTopActivity());
-    wholeWordBtn.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-    wholeWordBtn.setText("📝 全字匹配");
-    wholeWordBtn.setTextSize(14);
-    wholeWordBtn.setGravity(Gravity.CENTER);
-    wholeWordBtn.setPadding(16, 20, 16, 20);
-    wholeWordBtn.setBackgroundResource(android.R.drawable.btn_default);
-    wholeWordBtn.setTextColor(Color.parseColor("#333333"));
-
-    // 匹配模式说明
-    final TextView modeDesc = new TextView(getTopActivity());
-    modeDesc.setText(currentWholeWord ? "📝 全字匹配 - 只有完整单词匹配才触发" : "🔍 模糊匹配 - 关键词包含在消息中即可触发");
-    modeDesc.setTextSize(12);
-    modeDesc.setTextColor(Color.parseColor("#888888"));
-    modeDesc.setPadding(0, 0, 0, 16);
-
     // 选中模式: 初始值为当前保存的模式
     final int[] selectedMode = {currentWholeWord ? 1 : 0};
-
-    // 更新按钮样式的函数
-    Runnable updateButtonStyle = new Runnable() {
-        public void run() {
-            if (selectedMode[0] == 0) {
-                // 模糊匹配选中
-                fuzzyBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
-                fuzzyBtn.setTextColor(Color.WHITE);
-                wholeWordBtn.setBackgroundColor(Color.parseColor("#E0E0E0"));
-                wholeWordBtn.setTextColor(Color.parseColor("#333333"));
-                modeDesc.setText("🔍 模糊匹配 - 关键词包含在消息中即可触发");
-            } else {
-                // 全字匹配选中
-                fuzzyBtn.setBackgroundColor(Color.parseColor("#E0E0E0"));
-                fuzzyBtn.setTextColor(Color.parseColor("#333333"));
-                wholeWordBtn.setBackgroundColor(Color.parseColor("#2196F3"));
-                wholeWordBtn.setTextColor(Color.WHITE);
-                modeDesc.setText("📝 全字匹配 - 只有完整单词匹配才触发");
-            }
-        }
-    };
-
-    // 初始化按钮样式
-    updateButtonStyle.run();
-
-    // 模糊匹配按钮点击
-    fuzzyBtn.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            selectedMode[0] = 0;
-            updateButtonStyle.run();
-        }
-    });
-
-    // 全字匹配按钮点击
-    wholeWordBtn.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            selectedMode[0] = 1;
-            updateButtonStyle.run();
-        }
-    });
-
-    buttonContainer.addView(fuzzyBtn);
-    buttonContainer.addView(wholeWordBtn);
-    root.addView(buttonContainer);
-    root.addView(modeDesc);
+    addKeywordModeSelector(root, selectedMode, selectedMode[0]);
 
     AlertDialog dialog = new AlertDialog.Builder(getTopActivity())
         .setTitle("✏️ 编辑关键词")
@@ -1759,53 +2060,10 @@ private void showClearKeywordsConfirmDialog() {
  * 选择好友添加到排除列表 (改进版:支持搜索、全选)
  */
 private void selectFriendToExclude() {
-    showLoadingDialog("加载好友列表", "正在获取好友...", new Runnable() {
+    selectContactsWithDialog("👤 选择要排除的好友 (支持搜索)", "加载好友列表", "正在获取好友...", false, excludeContactSet, new Runnable() {
         public void run() {
-            try {
-                if (sCachedFriendList == null) sCachedFriendList = getFriendList();
-
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    public void run() {
-                        List<String> names = new ArrayList<>();
-                        List<String> ids = new ArrayList<>();
-
-                        if (sCachedFriendList != null) {
-                            for (int i = 0; i < sCachedFriendList.size(); i++) {
-                                FriendInfo f = (FriendInfo) sCachedFriendList.get(i);
-
-                                String nickname = TextUtils.isEmpty(f.getNickname()) ? "未知昵称" : f.getNickname();
-                                String remark = f.getRemark();
-                                String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
-                                String wxid = f.getWxid();
-
-                                // 过滤掉群聊ID和文件助手
-                                if (!TextUtils.isEmpty(wxid) && !wxid.endsWith("@chatroom") && !wxid.equals("filehelper")) {
-                                    // 显示格式：👤 昵称 (备注) - wxid
-                                    names.add("👤 " + displayName + " - " + wxid);
-                                    ids.add(wxid);
-                                }
-                            }
-                        }
-
-                        // 使用多选对话框，支持搜索和全选
-                        showMultiSelectDialog("👤 选择要排除的好友 (支持搜索)", names, ids, excludeContactSet, "搜索昵称/备注/wxid...", new Runnable() {
-                            public void run() {
-                                saveConfig();
-                                refreshExcludeDisplay();
-                                int addedCount = excludeContactSet.size();
-                                toast("✅ 已更新排除列表，当前排除 " + addedCount + " 个联系人");
-                            }
-                        }, null);
-                    }
-                });
-            } catch (Exception e) {
-                log("选择好友失败: " + e.getMessage());
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    public void run() {
-                        toast("无法获取好友列表");
-                    }
-                });
-            }
+            refreshExcludeDisplay();
+            toast("✅ 已更新排除列表，当前排除 " + excludeContactSet.size() + " 个联系人");
         }
     });
 }
@@ -1814,49 +2072,10 @@ private void selectFriendToExclude() {
  * 选择群聊添加到排除列表 (改进版:支持搜索、全选)
  */
 private void selectGroupToExclude() {
-    showLoadingDialog("加载群聊列表", "正在获取群聊...", new Runnable() {
+    selectContactsWithDialog("💬 选择要排除的群聊 (支持搜索)", "加载群聊列表", "正在获取群聊...", true, excludeContactSet, new Runnable() {
         public void run() {
-            try {
-                if (sCachedGroupList == null) sCachedGroupList = getGroupList();
-
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    public void run() {
-                        List<String> names = new ArrayList<>();
-                        List<String> ids = new ArrayList<>();
-
-                        if (sCachedGroupList != null) {
-                            for (int i = 0; i < sCachedGroupList.size(); i++) {
-                                GroupInfo g = (GroupInfo) sCachedGroupList.get(i);
-                                String name = !TextUtils.isEmpty(g.getName()) ? g.getName() : "未命名群聊";
-                                String roomId = g.getRoomId();
-
-                                if (!TextUtils.isEmpty(roomId)) {
-                                    // 显示格式：🏠 群名称 - roomid
-                                    names.add("🏠 " + name + " - " + roomId);
-                                    ids.add(roomId);
-                                }
-                            }
-                        }
-
-                        // 使用多选对话框，支持搜索和全选
-                        showMultiSelectDialog("💬 选择要排除的群聊 (支持搜索)", names, ids, excludeContactSet, "搜索群名/wxid...", new Runnable() {
-                            public void run() {
-                                saveConfig();
-                                refreshExcludeDisplay();
-                                int addedCount = excludeContactSet.size();
-                                toast("✅ 已更新排除列表，当前排除 " + addedCount + " 个联系人");
-                            }
-                        }, null);
-                    }
-                });
-            } catch (Exception e) {
-                log("选择群聊失败: " + e.getMessage());
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    public void run() {
-                        toast("无法获取群聊列表");
-                    }
-                });
-            }
+            refreshExcludeDisplay();
+            toast("✅ 已更新排除列表，当前排除 " + excludeContactSet.size() + " 个联系人");
         }
     });
 }
@@ -1918,50 +2137,10 @@ private void showManualAddExcludeDialog() {
  * 选择好友添加到仅生效列表
  */
 private void selectFriendToInclude() {
-    showLoadingDialog("加载好友列表", "正在获取好友...", new Runnable() {
+    selectContactsWithDialog("👤 选择仅生效的好友 (支持搜索)", "加载好友列表", "正在获取好友...", false, includeContactSet, new Runnable() {
         public void run() {
-            try {
-                if (sCachedFriendList == null) sCachedFriendList = getFriendList();
-
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    public void run() {
-                        List<String> names = new ArrayList<>();
-                        List<String> ids = new ArrayList<>();
-
-                        if (sCachedFriendList != null) {
-                            for (int i = 0; i < sCachedFriendList.size(); i++) {
-                                FriendInfo f = (FriendInfo) sCachedFriendList.get(i);
-
-                                String nickname = TextUtils.isEmpty(f.getNickname()) ? "未知昵称" : f.getNickname();
-                                String remark = f.getRemark();
-                                String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
-                                String wxid = f.getWxid();
-
-                                if (!TextUtils.isEmpty(wxid) && !wxid.endsWith("@chatroom") && !wxid.equals("filehelper")) {
-                                    names.add("👤 " + displayName + " - " + wxid);
-                                    ids.add(wxid);
-                                }
-                            }
-                        }
-
-                        showMultiSelectDialog("👤 选择仅生效的好友 (支持搜索)", names, ids, includeContactSet, "搜索昵称/备注/wxid...", new Runnable() {
-                            public void run() {
-                                saveConfig();
-                                refreshIncludeDisplay();
-                                int addedCount = includeContactSet.size();
-                                toast("✅ 已更新仅生效列表，当前 " + addedCount + " 个联系人");
-                            }
-                        }, null);
-                    }
-                });
-            } catch (Exception e) {
-                log("选择好友失败: " + e.getMessage());
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    public void run() {
-                        toast("无法获取好友列表");
-                    }
-                });
-            }
+            refreshIncludeDisplay();
+            toast("✅ 已更新仅生效列表，当前 " + includeContactSet.size() + " 个联系人");
         }
     });
 }
@@ -1970,47 +2149,10 @@ private void selectFriendToInclude() {
  * 选择群聊添加到仅生效列表
  */
 private void selectGroupToInclude() {
-    showLoadingDialog("加载群聊列表", "正在获取群聊...", new Runnable() {
+    selectContactsWithDialog("💬 选择仅生效的群聊 (支持搜索)", "加载群聊列表", "正在获取群聊...", true, includeContactSet, new Runnable() {
         public void run() {
-            try {
-                if (sCachedGroupList == null) sCachedGroupList = getGroupList();
-
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    public void run() {
-                        List<String> names = new ArrayList<>();
-                        List<String> ids = new ArrayList<>();
-
-                        if (sCachedGroupList != null) {
-                            for (int i = 0; i < sCachedGroupList.size(); i++) {
-                                GroupInfo g = (GroupInfo) sCachedGroupList.get(i);
-                                String name = !TextUtils.isEmpty(g.getName()) ? g.getName() : "未命名群聊";
-                                String roomId = g.getRoomId();
-
-                                if (!TextUtils.isEmpty(roomId)) {
-                                    names.add("🏠 " + name + " - " + roomId);
-                                    ids.add(roomId);
-                                }
-                            }
-                        }
-
-                        showMultiSelectDialog("💬 选择仅生效的群聊 (支持搜索)", names, ids, includeContactSet, "搜索群名/wxid...", new Runnable() {
-                            public void run() {
-                                saveConfig();
-                                refreshIncludeDisplay();
-                                int addedCount = includeContactSet.size();
-                                toast("✅ 已更新仅生效列表，当前 " + addedCount + " 个联系人");
-                            }
-                        }, null);
-                    }
-                });
-            } catch (Exception e) {
-                log("选择群聊失败: " + e.getMessage());
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    public void run() {
-                        toast("无法获取群聊列表");
-                    }
-                });
-            }
+            refreshIncludeDisplay();
+            toast("✅ 已更新仅生效列表，当前 " + includeContactSet.size() + " 个联系人");
         }
     });
 }
@@ -2067,26 +2209,21 @@ private void showManualAddIncludeDialog() {
     dialog.show();
 }
 
-/**
- * 移除仅生效联系人确认对话框
- */
-private void showRemoveIncludeContactDialog(final String contactId, final String displayName, final Runnable onRemoved) {
+private void showRemoveContactDialog(final Set<String> targetSet, final String sceneLabel, final String contactId, final String displayName, final String removeToast, final String removeEffectMsg, final Runnable onRemoved) {
     String type = contactId.endsWith("@chatroom") ? "群聊" : "好友";
-
     AlertDialog dialog = new AlertDialog.Builder(getTopActivity())
-        .setTitle("移除仅生效")
-        .setMessage("确定要移除仅生效" + type + " [" + displayName + "] 吗?\n移除后，来自该" + type + "的消息将不再触发通知。")
+        .setTitle("移除" + sceneLabel)
+        .setMessage("确定要移除" + sceneLabel + type + " [" + displayName + "] 吗？\n移除后，来自该" + type + "的消息" + removeEffectMsg)
         .setPositiveButton("移除", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
-                includeContactSet.remove(contactId);
+                targetSet.remove(contactId);
                 saveConfig();
                 onRemoved.run();
-                toast("✅ 已移除仅生效");
+                toast(removeToast);
             }
         })
         .setNegativeButton("取消", null)
         .create();
-
     dialog.setOnShowListener(new DialogInterface.OnShowListener() {
         public void onShow(DialogInterface d) {
             setupUnifiedDialog((AlertDialog)d);
@@ -2095,125 +2232,125 @@ private void showRemoveIncludeContactDialog(final String contactId, final String
     dialog.show();
 }
 
-/**
- * 清空所有仅生效联系人确认对话框
- */
-private void showClearIncludeContactsConfirmDialog() {
+private void showClearContactsConfirmDialog(final Set<String> targetSet, String title, String message, final Runnable refreshRunnable, final String successToast) {
     AlertDialog dialog = new AlertDialog.Builder(getTopActivity())
-        .setTitle("🗑️ 清空仅生效列表")
-        .setMessage("确定要清空所有仅生效联系人吗?")
+        .setTitle(title)
+        .setMessage(message)
         .setPositiveButton("清空", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
-                includeContactSet.clear();
+                targetSet.clear();
                 saveConfig();
-                refreshIncludeDisplay();
-                toast("✅ 已清空仅生效列表");
+                refreshRunnable.run();
+                toast(successToast);
             }
         })
         .setNegativeButton("取消", null)
         .create();
-
     dialog.setOnShowListener(new DialogInterface.OnShowListener() {
         public void onShow(DialogInterface d) {
             setupUnifiedDialog((AlertDialog)d);
         }
     });
     dialog.show();
+}
+
+private void selectContactsWithDialog(final String dialogTitle, final String loadingTitle, final String loadingMsg, final boolean isGroup, final Set<String> targetSet, final Runnable onSaved) {
+    showLoadingDialog(loadingTitle, loadingMsg, new Runnable() {
+        public void run() {
+            try {
+                if (isGroup) {
+                    if (sCachedGroupList == null) sCachedGroupList = getGroupList();
+                } else {
+                    if (sCachedFriendList == null) sCachedFriendList = getFriendList();
+                }
+
+                new Handler(Looper.getMainLooper()).post(new Runnable() {
+                    public void run() {
+                        List<String> names = new ArrayList<>();
+                        List<String> ids = new ArrayList<>();
+
+                        List list = isGroup ? sCachedGroupList : sCachedFriendList;
+                        if (list != null) {
+                            for (int i = 0; i < list.size(); i++) {
+                                if (isGroup) {
+                                    GroupInfo g = (GroupInfo) list.get(i);
+                                    String name = !TextUtils.isEmpty(g.getName()) ? g.getName() : "未命名群聊";
+                                    String roomId = g.getRoomId();
+                                    if (!TextUtils.isEmpty(roomId)) {
+                                        names.add("🏠 " + name + " - " + roomId);
+                                        ids.add(roomId);
+                                    }
+                                } else {
+                                    FriendInfo f = (FriendInfo) list.get(i);
+                                    String nickname = TextUtils.isEmpty(f.getNickname()) ? "未知昵称" : f.getNickname();
+                                    String remark = f.getRemark();
+                                    String displayName = !TextUtils.isEmpty(remark) ? nickname + " (" + remark + ")" : nickname;
+                                    String wxid = f.getWxid();
+                                    if (!TextUtils.isEmpty(wxid) && !wxid.endsWith("@chatroom") && !wxid.equals("filehelper")) {
+                                        names.add("👤 " + displayName + " - " + wxid);
+                                        ids.add(wxid);
+                                    }
+                                }
+                            }
+                        }
+
+                        showMultiSelectDialog(dialogTitle, names, ids, targetSet, isGroup ? "搜索群名/wxid..." : "搜索昵称/备注/wxid...", new Runnable() {
+                            public void run() {
+                                saveConfig();
+                                onSaved.run();
+                            }
+                        }, null);
+                    }
+                });
+            } catch (Exception e) {
+                log("加载联系人列表失败: " + e.getMessage());
+                new Handler(Looper.getMainLooper()).post(new Runnable() {
+                    public void run() {
+                        toast("无法获取列表");
+                    }
+                });
+            }
+        }
+    });
+}
+
+private void refreshContactDisplay(Set<String> contactSet, TextView countTv, String countPrefix, ListView listView, ArrayAdapter<String> adapter, List<String> contactList, List<String> displayList, Button clearBtn, String logLabel) {
+    try {
+        if (countTv != null) {
+            countTv.setText(countPrefix + contactSet.size() + " 个联系人");
+        }
+        if (listView != null && adapter != null && contactList != null && displayList != null) {
+            contactList.clear();
+            contactList.addAll(contactSet);
+            displayList.clear();
+            for (String contactId : contactList) {
+                displayList.add(buildContactDisplayName(contactId));
+            }
+            adapter.notifyDataSetChanged();
+
+            int itemHeight = dpToPx(48);
+            int listHeight = Math.max(Math.min(contactList.size() * itemHeight, dpToPx(200)), dpToPx(48));
+            LinearLayout.LayoutParams listParams = (LinearLayout.LayoutParams) listView.getLayoutParams();
+            if (listParams != null) {
+                listParams.height = listHeight;
+                listView.setLayoutParams(listParams);
+            }
+        }
+        if (clearBtn != null) {
+            clearBtn.setVisibility(contactSet.size() > 1 ? View.VISIBLE : View.GONE);
+        }
+    } catch (Exception e) {
+        log("刷新" + logLabel + "显示失败: " + e.getMessage());
+    }
 }
 
 /**
  * 刷新仅生效列表显示
  */
 private void refreshIncludeDisplay() {
-    try {
-        if (includeCountTv != null) {
-            includeCountTv.setText("已添加 " + includeContactSet.size() + " 个联系人");
-        }
-        if (includeListView != null && includeAdapter != null && includeContactList != null && includeDisplayList != null) {
-            includeContactList.clear();
-            includeContactList.addAll(includeContactSet);
-            includeDisplayList.clear();
-            for (String contactId : includeContactList) {
-                String displayName = contactId;
-                if (contactId.endsWith("@chatroom")) {
-                    displayName = "💬 群聊: " + getGroupName(contactId);
-                } else {
-                    displayName = "👤 " + getFriendDisplayName(contactId);
-                }
-                includeDisplayList.add(displayName);
-            }
-            includeAdapter.notifyDataSetChanged();
-
-            int itemHeight = dpToPx(48);
-            int listHeight = Math.max(Math.min(includeContactList.size() * itemHeight, dpToPx(200)), dpToPx(48));
-            LinearLayout.LayoutParams listParams = (LinearLayout.LayoutParams) includeListView.getLayoutParams();
-            if (listParams != null) {
-                listParams.height = listHeight;
-                includeListView.setLayoutParams(listParams);
-            }
-        }
-        if (includeClearBtn != null) {
-            includeClearBtn.setVisibility(includeContactSet.size() > 1 ? View.VISIBLE : View.GONE);
-        }
-    } catch (Exception e) {
-        log("刷新仅生效列表显示失败: " + e.getMessage());
-    }
+    refreshContactDisplay(includeContactSet, includeCountTv, "已添加 ", includeListView, includeAdapter, includeContactList, includeDisplayList, includeClearBtn, "仅生效列表");
 }
 
-
-/**
- * 移除排除联系人确认对话框
- */
-private void showRemoveExcludeContactDialog(final String contactId, final String displayName, final Runnable onRemoved) {
-    String type = contactId.endsWith("@chatroom") ? "群聊" : "好友";
-
-    AlertDialog dialog = new AlertDialog.Builder(getTopActivity())
-        .setTitle("移除排除")
-        .setMessage("确定要移除排除" + type + " [" + displayName + "] 吗？\n移除后，来自该" + type + "的消息将正常检查关键词。")
-        .setPositiveButton("移除", new DialogInterface.OnClickListener() {
-            public void onClick(DialogInterface dialog, int which) {
-                excludeContactSet.remove(contactId);
-                saveConfig();
-                onRemoved.run();
-                toast("✅ 已移除排除");
-            }
-        })
-        .setNegativeButton("取消", null)
-        .create();
-
-    dialog.setOnShowListener(new DialogInterface.OnShowListener() {
-        public void onShow(DialogInterface d) {
-            setupUnifiedDialog((AlertDialog)d);
-        }
-    });
-    dialog.show();
-}
-
-/**
- * 清空所有排除联系人确认对话框
- */
-private void showClearExcludeContactsConfirmDialog() {
-    AlertDialog dialog = new AlertDialog.Builder(getTopActivity())
-        .setTitle("🗑️ 清空排除列表")
-        .setMessage("确定要清空所有排除联系人吗？")
-        .setPositiveButton("清空", new DialogInterface.OnClickListener() {
-            public void onClick(DialogInterface dialog, int which) {
-                excludeContactSet.clear();
-                saveConfig();
-                refreshExcludeDisplay();
-                toast("✅ 已清空排除列表");
-            }
-        })
-        .setNegativeButton("取消", null)
-        .create();
-
-    dialog.setOnShowListener(new DialogInterface.OnShowListener() {
-        public void onShow(DialogInterface d) {
-            setupUnifiedDialog((AlertDialog)d);
-        }
-    });
-    dialog.show();
-}
 
 /**
  * 刷新关键词数量显示
@@ -2284,112 +2421,34 @@ private void showCustomTextDialog() {
     root.setPadding(32, 32, 32, 32);
     scrollView.addView(root);
 
-    // 提示信息
     TextView tip = new TextView(getTopActivity());
-    tip.setText("支持变量替换：%keyword% (关键词), %sender% (发送者), %wxid% (发送者ID), %content% (内容), %type% (好友/群消息)\n留空则使用默认文字");
+    tip.setText("支持变量替换：关键词、发送者、发送者ID、内容、消息类型（点击下方中文按钮插入）\n留空则使用默认文字");
     tip.setTextSize(12);
     tip.setTextColor(Color.parseColor("#666666"));
     tip.setPadding(0, 0, 0, 16);
     root.addView(tip);
 
-    // ========== 关键词部分 ==========
     root.addView(createSectionTitle("🔑 关键词自定义"));
+    final EditText keywordTitleInput = addCustomTextField(root, "通知标题模板:", "例如: 监控提醒", customKeywordNotifyTitle);
+    final EditText keywordContentInput = addCustomTextField(root, "通知内容模板:", "例如: [%sender%] %content%", customKeywordNotifyContent);
+    final EditText keywordToastInput = addCustomTextField(root, "Toast文字模板:", "例如: 命中关键词: %keyword%", customKeywordToastText);
 
-    // 通知标题
-    root.addView(createTextView(getTopActivity(), "通知标题模板:", 14, 8));
-    final EditText keywordTitleInput = createStyledEditText("例如: 监控提醒", customKeywordNotifyTitle);
-    root.addView(keywordTitleInput);
-    LinearLayout keywordTitleVarRow = createVariableButtons(new String[]{
-        "%keyword%", "%sender%", "%wxid%", "%content%", "%type%"
-    }, keywordTitleInput);
-    root.addView(keywordTitleVarRow);
-
-    // 通知内容
-    root.addView(createTextView(getTopActivity(), "通知内容模板:", 14, 8));
-    final EditText keywordContentInput = createStyledEditText("例如: [%sender%] %content%", customKeywordNotifyContent);
-    root.addView(keywordContentInput);
-    LinearLayout keywordContentVarRow = createVariableButtons(new String[]{
-        "%keyword%", "%sender%", "%wxid%", "%content%", "%type%"
-    }, keywordContentInput);
-    root.addView(keywordContentVarRow);
-
-    // Toast文字
-    root.addView(createTextView(getTopActivity(), "Toast文字模板:", 14, 8));
-    final EditText keywordToastInput = createStyledEditText("例如: 命中关键词: %keyword%", customKeywordToastText);
-    root.addView(keywordToastInput);
-    LinearLayout keywordToastVarRow = createVariableButtons(new String[]{
-        "%keyword%", "%sender%", "%wxid%", "%content%", "%type%"
-    }, keywordToastInput);
-    root.addView(keywordToastVarRow);
-
-    // ========== @我部分 ==========
     root.addView(createSectionTitle("@我自定义"));
+    final EditText atMeTitleInput = addCustomTextField(root, "通知标题模板:", "例如: @我提醒", customAtMeNotifyTitle);
+    final EditText atMeContentInput = addCustomTextField(root, "通知内容模板:", "例如: [%sender%] %content%", customAtMeNotifyContent);
+    final EditText atMeToastInput = addCustomTextField(root, "Toast文字模板:", "例如: @我通知: %keyword%", customAtMeToastText);
 
-    // 通知标题
-    root.addView(createTextView(getTopActivity(), "通知标题模板:", 14, 8));
-    final EditText atMeTitleInput = createStyledEditText("例如: @我提醒", customAtMeNotifyTitle);
-    root.addView(atMeTitleInput);
-    LinearLayout atMeTitleVarRow = createVariableButtons(new String[]{
-        "%keyword%", "%sender%", "%wxid%", "%content%", "%type%"
-    }, atMeTitleInput);
-    root.addView(atMeTitleVarRow);
-
-    // 通知内容
-    root.addView(createTextView(getTopActivity(), "通知内容模板:", 14, 8));
-    final EditText atMeContentInput = createStyledEditText("例如: [%sender%] %content%", customAtMeNotifyContent);
-    root.addView(atMeContentInput);
-    LinearLayout atMeContentVarRow = createVariableButtons(new String[]{
-        "%keyword%", "%sender%", "%wxid%", "%content%", "%type%"
-    }, atMeContentInput);
-    root.addView(atMeContentVarRow);
-
-    // Toast文字
-    root.addView(createTextView(getTopActivity(), "Toast文字模板:", 14, 8));
-    final EditText atMeToastInput = createStyledEditText("例如: @我通知: %keyword%", customAtMeToastText);
-    root.addView(atMeToastInput);
-    LinearLayout atMeToastVarRow = createVariableButtons(new String[]{
-        "%keyword%", "%sender%", "%wxid%", "%content%", "%type%"
-    }, atMeToastInput);
-    root.addView(atMeToastVarRow);
-
-    // ========== @所有人部分 ==========
     root.addView(createSectionTitle("@所有人/群公告自定义"));
+    final EditText atAllTitleInput = addCustomTextField(root, "通知标题模板:", "例如: @所有人提醒", customAtAllNotifyTitle);
+    final EditText atAllContentInput = addCustomTextField(root, "通知内容模板:", "例如: [%sender%] %content%", customAtAllNotifyContent);
+    final EditText atAllToastInput = addCustomTextField(root, "Toast文字模板:", "例如: @所有人通知: %keyword%", customAtAllToastText);
 
-    // 通知标题
-    root.addView(createTextView(getTopActivity(), "通知标题模板:", 14, 8));
-    final EditText atAllTitleInput = createStyledEditText("例如: @所有人提醒", customAtAllNotifyTitle);
-    root.addView(atAllTitleInput);
-    LinearLayout atAllTitleVarRow = createVariableButtons(new String[]{
-        "%keyword%", "%sender%", "%wxid%", "%content%", "%type%"
-    }, atAllTitleInput);
-    root.addView(atAllTitleVarRow);
-
-    // 通知内容
-    root.addView(createTextView(getTopActivity(), "通知内容模板:", 14, 8));
-    final EditText atAllContentInput = createStyledEditText("例如: [%sender%] %content%", customAtAllNotifyContent);
-    root.addView(atAllContentInput);
-    LinearLayout atAllContentVarRow = createVariableButtons(new String[]{
-        "%keyword%", "%sender%", "%wxid%", "%content%", "%type%"
-    }, atAllContentInput);
-    root.addView(atAllContentVarRow);
-
-    // Toast文字
-    root.addView(createTextView(getTopActivity(), "Toast文字模板:", 14, 8));
-    final EditText atAllToastInput = createStyledEditText("例如: @所有人通知: %keyword%", customAtAllToastText);
-    root.addView(atAllToastInput);
-    LinearLayout atAllToastVarRow = createVariableButtons(new String[]{
-        "%keyword%", "%sender%", "%wxid%", "%content%", "%type%"
-    }, atAllToastInput);
-    root.addView(atAllToastVarRow);
-
-    // 按钮区域
     LinearLayout btnRow = new LinearLayout(getTopActivity());
     btnRow.setOrientation(LinearLayout.HORIZONTAL);
     btnRow.setGravity(Gravity.CENTER);
 
-    // 恢复默认按钮
     Button resetBtn = new Button(getTopActivity());
-    resetBtn.setText("恢复默认");
+    resetBtn.setText("清空全部");
     styleUtilityButton(resetBtn);
     LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
         0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
@@ -2398,40 +2457,15 @@ private void showCustomTextDialog() {
     resetBtn.setLayoutParams(btnParams);
     resetBtn.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
-            keywordTitleInput.setText("");
-            keywordContentInput.setText("");
-            keywordToastInput.setText("");
-            atMeTitleInput.setText("");
-            atMeContentInput.setText("");
-            atMeToastInput.setText("");
-            atAllTitleInput.setText("");
-            atAllContentInput.setText("");
-            atAllToastInput.setText("");
+            clearCustomTextFields(
+                keywordTitleInput, keywordContentInput, keywordToastInput,
+                atMeTitleInput, atMeContentInput, atMeToastInput,
+                atAllTitleInput, atAllContentInput, atAllToastInput
+            );
             toast("已清空自定义文字");
         }
     });
     btnRow.addView(resetBtn);
-
-    // 清除模板按钮
-    Button clearBtn = new Button(getTopActivity());
-    clearBtn.setText("清除模板");
-    styleUtilityButton(clearBtn);
-    clearBtn.setLayoutParams(btnParams);
-    clearBtn.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            keywordTitleInput.setText("");
-            keywordContentInput.setText("");
-            keywordToastInput.setText("");
-            atMeTitleInput.setText("");
-            atMeContentInput.setText("");
-            atMeToastInput.setText("");
-            atAllTitleInput.setText("");
-            atAllContentInput.setText("");
-            atAllToastInput.setText("");
-            toast("已清除所有输入");
-        }
-    });
-    btnRow.addView(clearBtn);
 
     root.addView(btnRow);
 
@@ -2464,6 +2498,21 @@ private void showCustomTextDialog() {
     dialog.show();
 }
 
+private EditText addCustomTextField(LinearLayout root, String label, String hint, String initialText) {
+    root.addView(createTextView(getTopActivity(), label, 14, 8));
+    final EditText input = createStyledEditText(hint, initialText);
+    root.addView(input);
+    root.addView(createVariableButtons(new String[]{"%keyword%", "%sender%", "%wxid%", "%content%", "%type%"}, input));
+    return input;
+}
+
+private void clearCustomTextFields(EditText... fields) {
+    if (fields == null) return;
+    for (int i = 0; i < fields.length; i++) {
+        if (fields[i] != null) fields[i].setText("");
+    }
+}
+
 /**
  * 创建变量标签按钮行
  */
@@ -2473,7 +2522,7 @@ private LinearLayout createVariableButtons(String[] variables, final EditText ta
     row.setWeightSum(variables.length);
 
     for (int i = 0; i < variables.length; i++) {
-        Button btn = createVarButton(variables[i], targetEditText);
+        Button btn = createVarButton(variables[i], getVariableCnName(variables[i]), targetEditText);
         row.addView(btn);
     }
 
@@ -2483,9 +2532,9 @@ private LinearLayout createVariableButtons(String[] variables, final EditText ta
 /**
  * 创建单个变量按钮（每个按钮有独立作用域）
  */
-private Button createVarButton(final String variable, final EditText targetEditText) {
+private Button createVarButton(final String variable, String variableCnName, final EditText targetEditText) {
     Button btn = new Button(getTopActivity());
-    btn.setText(variable);
+    btn.setText(variableCnName);
     btn.setTextSize(11);
     btn.setAllCaps(false);
 
@@ -2514,6 +2563,15 @@ private Button createVarButton(final String variable, final EditText targetEditT
     });
 
     return btn;
+}
+
+private String getVariableCnName(String variable) {
+    if ("%keyword%".equals(variable)) return "关键词";
+    if ("%sender%".equals(variable)) return "发送者";
+    if ("%wxid%".equals(variable)) return "发送者ID";
+    if ("%content%".equals(variable)) return "内容";
+    if ("%type%".equals(variable)) return "消息类型";
+    return variable;
 }
 
 interface HourPickerCallback {
@@ -2581,46 +2639,19 @@ private String getGroupName(String groupWxid) {
     return "未知群聊";
 }
 
+private String buildContactDisplayName(String contactId) {
+    if (TextUtils.isEmpty(contactId)) return "";
+    if (contactId.endsWith("@chatroom")) {
+        return "💬 群聊: " + getGroupName(contactId);
+    }
+    return "👤 " + getFriendDisplayName(contactId);
+}
+
 /**
  * 刷新排除列表显示（供添加排除后调用）
  */
 private void refreshExcludeDisplay() {
-    try {
-        if (excludeCountTv != null) {
-            excludeCountTv.setText("已排除 " + excludeContactSet.size() + " 个联系人");
-        }
-        if (excludeListView != null && excludeAdapter != null && excludeContactList != null && excludeDisplayList != null) {
-            // 更新数据
-            excludeContactList.clear();
-            excludeContactList.addAll(excludeContactSet);
-            excludeDisplayList.clear();
-            for (String contactId : excludeContactList) {
-                String displayName = contactId;
-                if (contactId.endsWith("@chatroom")) {
-                    displayName = "💬 群聊: " + getGroupName(contactId);
-                } else {
-                    displayName = "👤 " + getFriendDisplayName(contactId);
-                }
-                excludeDisplayList.add(displayName);
-            }
-            excludeAdapter.notifyDataSetChanged();
-
-            // 动态调整列表高度
-            int itemHeight = dpToPx(48);
-            int listHeight = Math.max(Math.min(excludeContactList.size() * itemHeight, dpToPx(200)), dpToPx(48));
-            LinearLayout.LayoutParams listParams = (LinearLayout.LayoutParams) excludeListView.getLayoutParams();
-            if (listParams != null) {
-                listParams.height = listHeight;
-                excludeListView.setLayoutParams(listParams);
-            }
-        }
-        // 更新清空按钮可见性
-        if (excludeClearBtn != null) {
-            excludeClearBtn.setVisibility(excludeContactSet.size() > 1 ? View.VISIBLE : View.GONE);
-        }
-    } catch (Exception e) {
-        log("刷新排除列表显示失败: " + e.getMessage());
-    }
+    refreshContactDisplay(excludeContactSet, excludeCountTv, "已排除 ", excludeListView, excludeAdapter, excludeContactList, excludeDisplayList, excludeClearBtn, "排除列表");
 }
 
 // ==========================================
@@ -2865,23 +2896,23 @@ private String formatTimeWithSeconds(long ts) {
 private void putString(String setName, String itemName, String value) {
     String existingData = getString(setName, "{}");
     try {
-        JSONObject json = JSON.parseObject(existingData);
+        JSONObject json = new JSONObject(existingData);
         json.put(itemName, value);
         putString(setName, json.toString());
     } catch (Exception e) {
-        JSONObject json = new JSONObject();
-        json.put(itemName, value);
-        putString(setName, json.toString());
+        try {
+            JSONObject json = new JSONObject();
+            json.put(itemName, value);
+            putString(setName, json.toString());
+        } catch (Exception ignored) {}
     }
 }
 
 private String getString(String setName, String itemName, String defaultValue) {
     String data = getString(setName, "{}");
     try {
-        JSONObject json = JSON.parseObject(data);
-        if (json != null && json.containsKey(itemName)) {
-            return json.getString(itemName);
-        }
+        JSONObject json = new JSONObject(data);
+        if (json.has(itemName)) return json.optString(itemName, defaultValue);
     } catch (Exception e) {
         // ignore
     }
@@ -3035,6 +3066,50 @@ private void showMultiSelectDialog(String title, List allItems, List idList, Set
         toast("弹窗失败: " + e.getMessage());
         e.printStackTrace();
     }
+}
+
+/**
+ * 使用安卓原生 Toast，避免运行环境封装 Toast 显示插件名
+ */
+private void toast(final String msg) {
+    if (msg == null || msg.length() == 0) return;
+    new Handler(Looper.getMainLooper()).post(new Runnable() {
+        public void run() {
+            try {
+                Object ctxObj = getToastContext();
+                if (ctxObj == null) return;
+                Toast.makeText((Context) ctxObj, msg, Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                log("原生Toast显示失败: " + e.getMessage());
+            }
+        }
+    });
+}
+
+/**
+ * 获取可用于Toast的Context
+ * 前台优先使用Activity，后台回退到Application
+ */
+private Context getToastContext() {
+    try {
+        Object activity = getTopActivity();
+        if (activity != null) {
+            return ((Context) activity).getApplicationContext();
+        }
+    } catch (Exception e) {
+    }
+
+    try {
+        Class activityThreadClass = Class.forName("android.app.ActivityThread");
+        Method currentApplication = activityThreadClass.getDeclaredMethod("currentApplication", new Class[0]);
+        Object application = currentApplication.invoke(null, new Object[0]);
+        if (application != null) {
+            return ((Context) application).getApplicationContext();
+        }
+    } catch (Exception e) {
+    }
+
+    return null;
 }
 
 /**

@@ -1,7 +1,15 @@
 {
   "generatedAt": "2026-05-20",
-  "totalPlugins": 58,
+  "totalPlugins": 60,
   "plugins": [
+    {
+      "name": "随机表情",
+      "author": "晚药",
+      "version": "1.0.0",
+      "updateTime": 202604030,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/晚药/随机表情",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E9%9A%8F%E6%9C%BA%E8%A1%A8%E6%83%85&filename=%E9%9A%8F%E6%9C%BA%E8%A1%A8%E6%83%85_1.0.0"
+    },
     {
       "name": "朋友圈自动点赞",
       "author": "。。 & 周杰伦",
@@ -465,6 +473,14 @@
       "updateTime": 20250520,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/CkBcDD/TXT-to-IMG",
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2FCkBcDD%2FTXT-to-IMG&filename=%E6%96%87%E7%94%9F%E5%9B%BE_1.0.0"
+    },
+    {
+      "name": "油价实时查询",
+      "author": "晚药",
+      "version": "1.0.0",
+      "updateTime": 2026520,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/晚药/油价查询",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E6%B2%B9%E4%BB%B7%E6%9F%A5%E8%AF%A2&filename=%E6%B2%B9%E4%BB%B7%E5%AE%9E%E6%97%B6%E6%9F%A5%E8%AF%A2_1.0.0"
     }
   ]
 }

@@ -14,6 +14,7 @@ import me.hd.wauxv.data.bean.info.FriendInfo;
 
 boolean DEF_AUTO_LIKE_ENABLE = true;
 int DEF_REFRESH_INTERVAL = 300000;
+int MIN_REFRESH_INTERVAL_MS = 1000;
 int DEF_MIN_LIKE_DELAY_MS = 60000;
 int DEF_MAX_LIKE_DELAY_MS = 3600000;
 int DEF_MAX_POST_AGE_HOURS = 24;
@@ -112,6 +113,9 @@ String SNS_NOTIFY_TITLE_TPL = "";
 String SNS_NOTIFY_BODY_TPL = "";
 String SNS_NOTIFY_TOAST_TPL = "";
 HashSet snsNotifySet = new HashSet();
+boolean allowSaveEmptyWhiteList = false;
+boolean allowSaveEmptyBlackList = false;
+boolean allowSaveEmptySnsNotifyList = false;
 int MAX_PROCESSED_SAVE = DEF_MAX_PROCESSED_SAVE;
 
 HashSet processedIds = new HashSet();
@@ -122,6 +126,7 @@ java.util.HashMap recentTriggerTs = new java.util.HashMap();
 Object dedupLock = new Object();
 long lastDiagLogTs = 0L;
 long lastDispatcherLogTs = 0L;
+long lastBackgroundRefreshMs = 0L;
 long refreshCollectStartMs = 0L;
 long refreshCollectEndMs = 0L;
 int refreshCollectCount = 0;
@@ -149,7 +154,8 @@ List sCachedFriendIds = null;
 
 int clampInt(int v, int min, int max, int def) {
     try {
-        if (v < min || v > max) return def;
+        if (v < min) return min;
+        if (v > max) return max;
         return v;
     } catch (Throwable ignored) {}
     return def;
@@ -197,27 +203,6 @@ String joinSet(HashSet set) {
     return "";
 }
 
-String decodeBytesSafe(byte[] b, String charset) {
-    try {
-        if (b == null || b.length == 0) return "";
-        return new String(b, charset);
-    } catch (Throwable ignored) {}
-    return "";
-}
-String extractXmlLikeTag(String src, String tag) {
-    try {
-        if (src == null || tag == null) return "";
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile("(?is)<" + java.util.regex.Pattern.quote(tag) + "[^>]*>(?:<!\\[CDATA\\[(.*?)\\]\\]>|(.*?))</" + java.util.regex.Pattern.quote(tag) + ">");
-        java.util.regex.Matcher m = p.matcher(src);
-        if (m.find()) {
-            String v = m.group(1);
-            if (v == null) v = m.group(2);
-            return v == null ? "" : v;
-        }
-    } catch (Throwable ignored) {}
-    return "";
-}
-
 String sanitizeReadableText(String s) {
     try {
         if (s == null) return "";
@@ -231,7 +216,7 @@ String sanitizeReadableText(String s) {
         s = s.replace('\uFFFD', ' ');
         s = s.replaceAll("[\\p{Cntrl}]", " ");
         s = s.replaceAll("\\s+", " ").trim();
-        // 去掉 protobuf/二进制残留导致的末尾孤立数字/字段尾巴，例如正文后面的 type=2 或 2&
+        // 轻度清理末尾孤立数字和多余标点，避免通知正文显得脏。
         s = s.replaceAll("[\\s　]*[0-9]{1,3}\\s*&\\s*$", "");
         s = s.replaceAll("[\\s　]+[0-9]{1,3}$", "");
         s = s.replaceAll("([。！？!?…，,；;：:\\)）】》'\"\\s])[0-9]{1,3}$", "$1");
@@ -254,151 +239,36 @@ int cjkCount(String s) {
     } catch (Throwable ignored) {}
     return n;
 }
-String cleanupLeadingNoiseForCaption(String s) {
+String extractPostTextBySnsInfo(ContentValues cv) {
     try {
-        if (s == null) return "";
-        String x = s.trim();
-        // 循环剥离 protobuf 残留的段首噪声：单个英文字母、1~3位字段数字、结构符号。
-        // 保护常见正文开头：多位数字(如520/2026)、连续英文单词/缩写。
-        for (int k = 0; k < 8; k++) {
-            String old = x;
-            x = x.replaceAll("^[\\s　]+", "");
-            x = x.replaceAll("^[\\*\\+\\-_=#@&%$!?,，。．:：;；·•|/\\\\\\)\\(\\]\\[\\{\\}<>《》【】、~～^`'\"“”‘’]+", "");
-            // 去单个英文字母噪声：G 文案、H🍤文案；不动 Hi/ABC 这类连续英文开头
-            x = x.replaceAll("^[A-Za-z](?=(?:[\\s　]+|[^A-Za-z0-9]))", "");
-            x = x.replaceAll("^[\\s　]+", "");
-            x = x.replaceAll("^[\\*\\+\\-_=#@&%$!?,，。．:：;；·•|/\\\\\\)\\(\\]\\[\\{\\}<>《》【】、~～^`'\"“”‘’]+", "");
-            // 去短字段数字：2正文、8🥐正文、12|正文；不动 520今天、2026年 这类多位数字正文
-            x = x.replaceAll("^[0-9]{1,2}(?=(?:[\\s　]*[^0-9A-Za-z]))", "");
-            x = x.trim();
-            if (x.equals(old)) break;
-        }
-        return x.trim();
-    } catch (Throwable ignored) {}
-    return s == null ? "" : s;
-}
-
-String cleanCaptionText(String s) {
-    try {
-        if (s == null) return "";
-        String x = s.trim();
-        // 去掉 protobuf 段首结构符号，例如 *)正文、)正文、+正文；更复杂的段首噪声交给 cleanupLeadingNoiseForCaption
-        x = cleanupLeadingNoiseForCaption(x);
-        // 去掉段首字段数字，例如 5🥐正文、8没有照片；只处理单个数字，避免误删“520...”这类正文
-        x = x.replaceAll("^[0-9](?=[^\\u4e00-\\u9fa5A-Za-z0-9])", "");
-        x = x.replaceAll("^[0-9](?=[\\u4e00-\\u9fa5\\u3400-\\u4dbf])", "");
-        x = cleanupLeadingNoiseForCaption(x);
-        // 去掉段尾字段残留，例如 正文。2& / 正文。2 / 正文9 ·◇
-        x = x.replaceAll("[\\s　]*[0-9]{1,3}\\s*&\\s*$", "");
-        x = x.replaceAll("[\\s　]*[0-9]{1,3}[\\s　]*(?:[·•◇◆✧✦⟡˚₊+\\-~～。．\\.]\\s*)+$", "");
-        x = x.replaceAll("[\\s　]*[0-9]{1,3}\\s*$", "");
-        return x.trim();
-    } catch (Throwable ignored) {}
-    return s == null ? "" : s;
-}
-
-String extractCaptionAfterWxidBeforeType(String raw) {
-    try {
-        if (raw == null || raw.length() == 0) return "";
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile("wxid_[A-Za-z0-9_\\-]+\\s+(.{1,180}?)[0-9]{1,3}\\s*&", java.util.regex.Pattern.DOTALL);
-        java.util.regex.Matcher m = p.matcher(raw);
-        if (m.find()) {
-            String v = m.group(1);
-            if (v != null) {
-                v = cleanCaptionText(v);
-                if (cjkCount(v) >= 1 && v.length() <= 120) return v;
-            }
-        }
-    } catch (Throwable ignored) {}
-    return "";
-}
-
-String extractLikelyCaptionFromRaw(String raw) {
-    try {
-        if (raw == null || raw.length() == 0) return "";
-        String direct = extractCaptionAfterWxidBeforeType(raw);
-        if (direct.length() > 0) return direct;
-        // 不先做强清洗，保留 emoji；仅做轻度切分和噪声剔除
-        String x = raw.replace('\u0000', ' ').replace('\uFFFD', ' ');
-        x = x.replaceAll("wxid_[A-Za-z0-9_\\-]+", " ")
-             .replaceAll("https?://\\S+", " ")
-             .replaceAll("[A-Fa-f0-9]{24,}", " ")
-             .replaceAll("\\d{12,}", " ");
-
-        // 按明显分隔符切段，挑中文密度高且长度适中的段
-        String[] parts = x.split("[\\r\\n]+|\\s{2,}|[\\\"'`|]+|\\*+|@+");
-        String best = "";
-        int bestScore = -999999;
-        for (int i = 0; i < parts.length; i++) {
-            String p = parts[i];
-            if (p == null) continue;
-            p = p.replaceAll("\\s+", " ").trim();
-            p = cleanCaptionText(p);
-            if (p.length() < 4 || p.length() > 120) continue;
-
-            int cn = cjkCount(p);
-            if (cn < 2) continue;
-
-            // 惩罚明显元数据片段
-            int penalty = 0;
-            if (p.matches(".*[A-Za-z0-9_\\-]{10,}.*")) penalty += 20;
-            if (p.matches(".*\\d{6,}.*")) penalty += 20;
-            if (p.indexOf("网抑云") >= 0) penalty += 10;
-
-            int score = cn * 12 - Math.abs(p.length() - cn) - penalty;
-            if (score > bestScore) {
-                bestScore = score;
-                best = p;
-            }
-        }
-        if (best.length() > 0) return cleanCaptionText(best);
-    } catch (Throwable ignored) {}
-    return "";
-}
-
-String pickReadableSnsText(String raw) {
-    try {
-        raw = sanitizeReadableText(raw);
-        if (raw.length() == 0) return "";
-
-        // 优先：从原始文本中提取最像正文的片段（保留 emoji）
-        String likely = extractLikelyCaptionFromRaw(raw);
-        if (likely.length() > 0) {
-            return likely;
-        }
-
-        String[] tags = {"contentDesc", "content", "description", "desc", "title"};
-        for (int i = 0; i < tags.length; i++) {
-            String tag = tags[i];
-            String v0 = extractXmlLikeTag(raw, tag);
-            String v = sanitizeReadableText(v0);
-            if (cjkCount(v) >= 2 && v.length() <= 300) {
-                return v;
-            }
-        }
-
-        // protobuf/二进制混杂内容兜底：按不可读字符、wxid、长数字等切段，挑中文最多且不像ID的一段
-        String cut = raw.replaceAll("wxid_[A-Za-z0-9_\\-]+", " ")
-                        .replaceAll("[A-Za-z0-9_\\-]{12,}", " ")
-                        .replaceAll("\\d{10,}", " ")
-                        .replaceAll("[^\\u4e00-\\u9fa5\\u3400-\\u4dbfA-Za-z0-9，。！？、；：,.!?;:'\"（）()《》【】\\[\\]\\s]+", " ");
-        String[] parts = cut.split("\\s{2,}|[\\r\\n]+");
-        String best = "";
-        int bestScore = 0;
-        for (int i = 0; i < parts.length; i++) {
-            String p = sanitizeReadableText(parts[i]);
-            if (p.length() == 0 || p.length() > 200) continue;
-            int cn = cjkCount(p);
-            if (cn < 2) continue;
-            int score = cn * 10 - Math.abs(p.length() - cn);
-            if (score > bestScore) { bestScore = score; best = p; }
-if (best.length() > 0) {
-            return sanitizeReadableText(best);
-        }
-
-        if (cjkCount(raw) >= 2 && raw.length() <= 160) {
-            return sanitizeReadableText(raw);
-        }
+        if (cv == null) return "";
+        ClassLoader cl = hostContext.getClassLoader();
+        Class clsSnsInfo = Class.forName("com.tencent.mm.plugin.sns.storage.SnsInfo", false, cl);
+        Object info = clsSnsInfo.newInstance();
+        java.lang.reflect.Method convert = clsSnsInfo.getDeclaredMethod("convertFrom", new Class[]{ContentValues.class});
+        convert.setAccessible(true);
+        convert.invoke(info, cv);
+        java.lang.reflect.Method getTimeLine = clsSnsInfo.getDeclaredMethod("getTimeLine", new Class[0]);
+        getTimeLine.setAccessible(true);
+        Object tl = getTimeLine.invoke(info, new Object[0]);
+        if (tl == null) return "";
+        String[] names = {"ContentDesc", "contentDesc", "desc", "description"};
+        for (int i = 0; i < names.length; i++) {
+            try {
+                java.lang.reflect.Field f = tl.getClass().getField(names[i]);
+                Object v = f.get(tl);
+                if (v == null) continue;
+                String s = sanitizeReadableText(String.valueOf(v));
+                if (s.length() > 0) return s;
+            } catch (Throwable ignored) {}
+            try {
+                java.lang.reflect.Field f = tl.getClass().getDeclaredField(names[i]);
+                f.setAccessible(true);
+                Object v = f.get(tl);
+                if (v == null) continue;
+                String s = sanitizeReadableText(String.valueOf(v));
+                if (s.length() > 0) return s;
+            } catch (Throwable ignored) {}
         }
     } catch (Throwable ignored) {}
     return "";
@@ -407,9 +277,7 @@ if (best.length() > 0) {
 String extractPostText(ContentValues cv) {
     try {
         if (cv == null) return "";
-        Object obj = cv.get("content");
-        if (obj instanceof byte[]) return pickReadableSnsText(decodeBytesSafe((byte[]) obj, "UTF-8"));
-        if (obj != null) return pickReadableSnsText(String.valueOf(obj));
+        return extractPostTextBySnsInfo(cv);
     } catch (Throwable ignored) {}
     return "";
 }
@@ -441,11 +309,26 @@ boolean isPostKeywordAllowed(ContentValues cv, int postType) {
 boolean hasValidAutoLikeTargetConfig() {
     try {
         if (LIST_MODE == 1) {
-            // 黑名单模式风险较高：黑名单为空时绝不运行，避免等价于全员点赞
-            return blackListSet != null && !blackListSet.isEmpty();
+            // 黑名单模式允许名单为空，表示点赞所有捕捉到的好友。
+            return true;
         }
         // 白名单模式：必须明确选择至少一个白名单好友，否则不运行
         return whiteListSet != null && !whiteListSet.isEmpty();
+    } catch (Throwable ignored) {}
+    return false;
+}
+
+boolean hasValidSnsNotifyTargetConfig() {
+    try {
+        return (SNS_NOTIFY_ENABLE || SNS_NOTIFY_TOAST) && snsNotifySet != null && !snsNotifySet.isEmpty();
+    } catch (Throwable ignored) {}
+    return false;
+}
+
+boolean shouldRunBackgroundRefresh() {
+    try {
+        if (!REFRESH_ENABLE || !isScheduleAllowed() || !shouldRunFixedRefreshNow()) return false;
+        return true;
     } catch (Throwable ignored) {}
     return false;
 }
@@ -454,8 +337,7 @@ boolean shouldAutoLikeUser(String userName) {
     try {
         if (userName == null || userName.length() == 0) return false;
         if (LIST_MODE == 1) {
-            // 安全保护：黑名单为空时不默认点赞所有人，避免新装/误配置后批量点赞
-            if (blackListSet == null || blackListSet.isEmpty()) return false;
+            if (blackListSet == null || blackListSet.isEmpty()) return true;
             return !blackListSet.contains(userName);
         }
         return whiteListSet != null && whiteListSet.contains(userName); // 白名单模式：只点白名单
@@ -539,6 +421,10 @@ boolean shouldRunFixedRefreshNow() {
         return isNowInWindow(REFRESH_START, REFRESH_END);
     } catch (Throwable ignored) {}
     return false;
+}
+
+int effectiveRefreshIntervalMs() {
+    return clampInt(REFRESH_INTERVAL, MIN_REFRESH_INTERVAL_MS, 3600000, DEF_REFRESH_INTERVAL);
 }
 
 int nextLikeDelayMs() {
@@ -813,8 +699,10 @@ String defaultSnsNotifyBody(String name, String content, int postType) {
 void sendSnsPostNotification(String userName, long snsId, String content, int postType) {
     try {
         NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (nm == null) return;
-        String channelId = "sns_post_notify_v1";
+        if (nm == null) {
+            return;
+        }
+        String channelId = "sns_post_notify_v2";
         ensureSnsNotifyChannel(nm, channelId);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(hostContext, channelId) : new Notification.Builder(hostContext);
         String name = getFriendDisplayNameSafe(userName);
@@ -823,6 +711,7 @@ void sendSnsPostNotification(String userName, long snsId, String content, int po
         String body = applySnsNotifyTemplate(SNS_NOTIFY_BODY_TPL, name, userName, snsId, content, postType);
         if (body.length() == 0) body = defaultSnsNotifyBody(name, content, postType);
         b.setContentTitle(title).setContentText(body).setSmallIcon(android.R.drawable.stat_notify_chat).setAutoCancel(true).setOnlyAlertOnce(false);
+        try { b.setDefaults(Notification.DEFAULT_ALL); } catch (Throwable ignored) {}
         try { b.setCategory(Notification.CATEGORY_MESSAGE); } catch (Throwable ignored) {}
         try { b.setPriority(Notification.PRIORITY_HIGH); } catch (Throwable ignored) {}
         try { b.setVisibility(Notification.VISIBILITY_PRIVATE); } catch (Throwable ignored) {}
@@ -830,25 +719,44 @@ void sendSnsPostNotification(String userName, long snsId, String content, int po
         try { b.setStyle(new Notification.BigTextStyle().bigText(body).setBigContentTitle(title).setSummaryText("朋友圈通知")); } catch (Throwable ignored) {}
         Intent[] opens = buildSnsOpenIntents();
         if (opens != null && opens.length > 0) b.setContentIntent(PendingIntent.getActivities(hostContext, ("sns_" + snsId).hashCode(), opens, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
-        nm.notify(("sns_post_notify_v1_" + snsId).hashCode(), b.build());
-    } catch (Throwable e) { logMsg("[朋友圈通知] 系统通知失败: " + e); }
+        int notifyId = ("sns_post_notify_v2_" + snsId).hashCode();
+        nm.notify(notifyId, b.build());
+    } catch (Throwable e) {}
 }
 
 void notifySnsPostIfNeeded(String userName, long snsId, ContentValues cv) {
     try {
-        if (!SNS_NOTIFY_ENABLE && !SNS_NOTIFY_TOAST) return;
-        if (userName == null || userName.length() == 0 || snsId == 0) return;
-        if (snsNotifySet == null || snsNotifySet.isEmpty() || !snsNotifySet.contains(userName)) return;
+        if (!SNS_NOTIFY_ENABLE && !SNS_NOTIFY_TOAST) {
+            logMsg("[朋友圈通知] 跳过：通知和Toast都关闭 snsId=" + snsId);
+            return;
+        }
+        if ((userName == null || userName.length() == 0) && cv != null) {
+            try { userName = cv.getAsString("field_userName"); } catch (Throwable ignored) {}
+        }
+        if (userName == null || userName.length() == 0 || snsId == 0) {
+            logMsg("[朋友圈通知] 跳过：userName或snsId为空 user=" + String.valueOf(userName) + " snsId=" + snsId);
+            return;
+        }
+        if (snsNotifySet == null || snsNotifySet.isEmpty()) {
+            logMsg("[朋友圈通知] 跳过：通知好友名单为空 user=" + userName + " snsId=" + snsId);
+            return;
+        }
+        if (!snsNotifySet.contains(userName)) {
+            logMsg("[朋友圈通知] 跳过：不在通知名单 user=" + userName + " snsId=" + snsId);
+            return;
+        }
         long createSec = extractPostCreateTimeSec(cv);
         if (snsNotifyStartSec > 0 && createSec > 0 && createSec < snsNotifyStartSec - 30) {
+            logMsg("[朋友圈通知] 跳过：旧朋友圈 user=" + userName + " snsId=" + snsId + " create=" + createSec + " start=" + snsNotifyStartSec);
             return;
         }
-        if (createSec <= 0) {
-            return;
-        }
+        if (createSec <= 0) logMsg("[朋友圈通知] 时间未知，仍尝试提醒 user=" + userName + " snsId=" + snsId);
         Long id = Long.valueOf(snsId);
         synchronized (dedupLock) {
-            if (notifiedSnsIds.contains(id)) return;
+            if (notifiedSnsIds.contains(id)) {
+                logMsg("[朋友圈通知] 跳过：已提醒过 snsId=" + snsId);
+                return;
+            }
             notifiedSnsIds.add(id);
             if (notifiedSnsIds.size() > 1000) notifiedSnsIds.clear();
         }
@@ -857,7 +765,10 @@ void notifySnsPostIfNeeded(String userName, long snsId, ContentValues cv) {
         String name = getFriendDisplayNameSafe(userName);
         String toastMsg = applySnsNotifyTemplate(SNS_NOTIFY_TOAST_TPL, name, userName, snsId, text, postType);
         if (toastMsg.length() == 0) toastMsg = "📣 " + name + " 发布了" + postTypeName(postType) + "朋友圈";
-        if (SNS_NOTIFY_TOAST) nativeToast(toastMsg);
+        if (SNS_NOTIFY_TOAST) {
+            nativeToast(toastMsg);
+            logMsg("[朋友圈通知] 已提交Toast user=" + userName + " snsId=" + snsId);
+        }
         if (SNS_NOTIFY_ENABLE) sendSnsPostNotification(userName, snsId, text, postType);
     } catch (Throwable e) { logMsg("[朋友圈通知异常] " + e); }
 }
@@ -865,7 +776,7 @@ void notifySnsPostIfNeeded(String userName, long snsId, ContentValues cv) {
 void loadRuntimeConfig() {
     try {
         AUTO_LIKE_ENABLE = getBoolean(CFG_ENABLE, DEF_AUTO_LIKE_ENABLE);
-        REFRESH_INTERVAL = clampInt(getInt(CFG_REFRESH_INTERVAL, DEF_REFRESH_INTERVAL), 1000, 3600000, DEF_REFRESH_INTERVAL);
+        REFRESH_INTERVAL = clampInt(getInt(CFG_REFRESH_INTERVAL, DEF_REFRESH_INTERVAL), MIN_REFRESH_INTERVAL_MS, 3600000, DEF_REFRESH_INTERVAL);
         int oldDelay = DEF_MIN_LIKE_DELAY_MS;
         MIN_LIKE_DELAY_MS = clampInt(getInt(CFG_MIN_LIKE_DELAY_MS, oldDelay), 0, 7200000, DEF_MIN_LIKE_DELAY_MS);
         MAX_LIKE_DELAY_MS = clampInt(getInt(CFG_MAX_LIKE_DELAY_MS, DEF_MAX_LIKE_DELAY_MS), 0, 7200000, DEF_MAX_LIKE_DELAY_MS);
@@ -904,8 +815,8 @@ void loadRuntimeConfig() {
         SNS_NOTIFY_BODY_TPL = getString(CFG_SNS_NOTIFY_BODY_TPL, "");
         SNS_NOTIFY_TOAST_TPL = getString(CFG_SNS_NOTIFY_TOAST_TPL, "");
         snsNotifySet = parseWxidSet(SNS_NOTIFY_LIST_RAW);
-        MAX_PROCESSED_SAVE = clampInt(getInt(CFG_MAX_PROCESSED_SAVE, DEF_MAX_PROCESSED_SAVE), 20, 5000, DEF_MAX_PROCESSED_SAVE);
-        DUP_SUPPRESS_MS = clampInt(getInt(CFG_DUP_SUPPRESS_MS, DEF_DUP_SUPPRESS_MS), 1000, 600000, DEF_DUP_SUPPRESS_MS);
+        MAX_PROCESSED_SAVE = clampInt(getInt(CFG_MAX_PROCESSED_SAVE, DEF_MAX_PROCESSED_SAVE), 20, 50000, DEF_MAX_PROCESSED_SAVE);
+        DUP_SUPPRESS_MS = clampInt(getInt(CFG_DUP_SUPPRESS_MS, DEF_DUP_SUPPRESS_MS), 1000, 86400000, DEF_DUP_SUPPRESS_MS);
     } catch (Throwable e) {
         logMsg("[配置] 加载失败: " + e);
     }
@@ -913,6 +824,11 @@ void loadRuntimeConfig() {
 
 void saveAdvancedConfig() {
     try {
+        String snsListToSave = SNS_NOTIFY_LIST_RAW == null ? "" : SNS_NOTIFY_LIST_RAW.trim();
+        if (snsListToSave.length() == 0 && !allowSaveEmptySnsNotifyList) {
+            String old = getString(CFG_SNS_NOTIFY_LIST, "");
+            if (old != null && old.trim().length() > 0) snsListToSave = old.trim();
+        }
         putInt(CFG_DELAY_MODE, DELAY_MODE);
         putInt(CFG_FIXED_LIKE_DELAY_MS, FIXED_LIKE_DELAY_MS);
         putBoolean(CFG_REFRESH_ENABLE, REFRESH_ENABLE);
@@ -935,26 +851,37 @@ void saveAdvancedConfig() {
         putInt(CFG_LOG_MAX, LOG_MAX);
         putBoolean(CFG_SNS_NOTIFY_ENABLE, SNS_NOTIFY_ENABLE);
         putBoolean(CFG_SNS_NOTIFY_TOAST, SNS_NOTIFY_TOAST);
-        putString(CFG_SNS_NOTIFY_LIST, SNS_NOTIFY_LIST_RAW == null ? "" : SNS_NOTIFY_LIST_RAW.trim());
+        putString(CFG_SNS_NOTIFY_LIST, snsListToSave);
         putString(CFG_SNS_NOTIFY_TITLE_TPL, SNS_NOTIFY_TITLE_TPL == null ? "" : SNS_NOTIFY_TITLE_TPL.trim());
         putString(CFG_SNS_NOTIFY_BODY_TPL, SNS_NOTIFY_BODY_TPL == null ? "" : SNS_NOTIFY_BODY_TPL.trim());
         putString(CFG_SNS_NOTIFY_TOAST_TPL, SNS_NOTIFY_TOAST_TPL == null ? "" : SNS_NOTIFY_TOAST_TPL.trim());
+        allowSaveEmptySnsNotifyList = false;
     } catch (Throwable e) { logMsg("[配置] 保存高级配置失败: " + e); }
 }
 
 void saveRuntimeConfig(boolean enable, int mode, String whiteRaw, String blackRaw, int refreshMs, int minDelayMs, int maxDelayMs, int maxAgeHours, int maxSave, int dupMs) {
     try {
-        refreshMs = clampInt(refreshMs, 1000, 3600000, DEF_REFRESH_INTERVAL);
+        refreshMs = clampInt(refreshMs, MIN_REFRESH_INTERVAL_MS, 3600000, DEF_REFRESH_INTERVAL);
         minDelayMs = clampInt(minDelayMs, 0, 7200000, DEF_MIN_LIKE_DELAY_MS);
         maxDelayMs = clampInt(maxDelayMs, 0, 7200000, DEF_MAX_LIKE_DELAY_MS);
         if (maxDelayMs < minDelayMs) maxDelayMs = minDelayMs;
         maxAgeHours = clampInt(maxAgeHours, 1, 168, DEF_MAX_POST_AGE_HOURS);
-        maxSave = clampInt(maxSave, 20, 5000, DEF_MAX_PROCESSED_SAVE);
-        dupMs = clampInt(dupMs, 1000, 600000, DEF_DUP_SUPPRESS_MS);
+        maxSave = clampInt(maxSave, 20, 50000, DEF_MAX_PROCESSED_SAVE);
+        dupMs = clampInt(dupMs, 1000, 86400000, DEF_DUP_SUPPRESS_MS);
+        String whiteToSave = whiteRaw == null ? "" : whiteRaw.trim();
+        String blackToSave = blackRaw == null ? "" : blackRaw.trim();
+        if (whiteToSave.length() == 0 && !allowSaveEmptyWhiteList) {
+            String old = getString(CFG_WHITE_LIST, "");
+            if (old != null && old.trim().length() > 0) whiteToSave = old.trim();
+        }
+        if (blackToSave.length() == 0 && !allowSaveEmptyBlackList) {
+            String old = getString(CFG_BLACK_LIST, "");
+            if (old != null && old.trim().length() > 0) blackToSave = old.trim();
+        }
         putBoolean(CFG_ENABLE, enable);
         putInt(CFG_LIST_MODE, mode == 1 ? 1 : 0);
-        putString(CFG_WHITE_LIST, whiteRaw == null ? "" : whiteRaw.trim());
-        putString(CFG_BLACK_LIST, blackRaw == null ? "" : blackRaw.trim());
+        putString(CFG_WHITE_LIST, whiteToSave);
+        putString(CFG_BLACK_LIST, blackToSave);
         putInt(CFG_REFRESH_INTERVAL, refreshMs);
         putInt(CFG_MIN_LIKE_DELAY_MS, minDelayMs);
         putInt(CFG_MAX_LIKE_DELAY_MS, maxDelayMs);
@@ -962,6 +889,8 @@ void saveRuntimeConfig(boolean enable, int mode, String whiteRaw, String blackRa
         putInt(CFG_MAX_PROCESSED_SAVE, maxSave);
         putInt(CFG_DUP_SUPPRESS_MS, dupMs);
         saveAdvancedConfig();
+        allowSaveEmptyWhiteList = false;
+        allowSaveEmptyBlackList = false;
         loadRuntimeConfig();
     } catch (Throwable e) {
         logMsg("[配置] 保存失败: " + e);
@@ -1795,19 +1724,20 @@ boolean trySendRefreshScene(Class cls) {
 
 void triggerBackgroundRefresh() {
     try {
-        if (!AUTO_LIKE_ENABLE || !REFRESH_ENABLE || !isScheduleAllowed() || !shouldRunFixedRefreshNow()) return;
-        if (!hasValidAutoLikeTargetConfig()) return;
-        beginRefreshLogWindow();
-        long now = System.currentTimeMillis();
-        if (LOG_ENABLE && now - lastDiagLogTs > 15000L) {
-            lastDiagLogTs = now;
-            logMsg("[诊断] 刷新循环运行中 wxMinor=" + wxMinor + " mode=" + (LIST_MODE == 1 ? "黑名单" : "白名单") + " age=" + MAX_POST_AGE_HOURS + "h");
+        if (!shouldRunBackgroundRefresh()) {
+            return;
         }
+        long refreshNow = System.currentTimeMillis();
+        int effectiveInterval = effectiveRefreshIntervalMs();
+        if (lastBackgroundRefreshMs > 0 && refreshNow - lastBackgroundRefreshMs < effectiveInterval - 1000L) return;
+        lastBackgroundRefreshMs = refreshNow;
+        beginRefreshLogWindow();
         
         ArrayList refreshScenes = resolveRefreshSceneClassesByDexKit();
         if (refreshScenes != null) {
             for (int i = 0; i < refreshScenes.size(); i++) {
                 Class c = (Class) refreshScenes.get(i);
+                if (c == null || !"com.tencent.mm.plugin.sns.model.h3".equals(c.getName())) continue;
                 trySendRefreshScene(c);
             }
         }
@@ -2008,6 +1938,7 @@ XC_MethodHook dbWriteHook = new XC_MethodHook() {
             recordRefreshObservedPost(cv);
             String userName = null;
             try { userName = cv.getAsString("userName"); } catch (Throwable ignored) {}
+            if (userName == null || userName.length() == 0) try { userName = cv.getAsString("field_userName"); } catch (Throwable ignored) {}
             long now = System.currentTimeMillis();
             if (LOG_ENABLE && now - lastDiagLogTs > 15000L) {
                 lastDiagLogTs = now;
@@ -2225,7 +2156,7 @@ void showAutoLikeHomeUI() {
                 LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(-2, -2); btnLp.leftMargin = dp(ctx, 10);
                 actions.addView(btnReset); actions.addView(btnClose, btnLp); card.addView(actions, actionsLp);
                 btnClose.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ try { putBoolean(CFG_ENABLE, swEnable.isChecked()); AUTO_LIKE_ENABLE = swEnable.isChecked(); } catch(Throwable e) { AUTO_LIKE_ENABLE = swEnable.isChecked(); } dialog.dismiss(); }});
-                btnReset.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ DELAY_MODE=DEF_DELAY_MODE; FIXED_LIKE_DELAY_MS=DEF_FIXED_LIKE_DELAY_MS; REFRESH_ENABLE=DEF_REFRESH_ENABLE; REFRESH_MODE=DEF_REFRESH_MODE; REFRESH_START=DEF_REFRESH_START; REFRESH_END=DEF_REFRESH_END; SCHEDULE_ENABLE=DEF_SCHEDULE_ENABLE; SCHEDULE_START=DEF_SCHEDULE_START; SCHEDULE_END=DEF_SCHEDULE_END; SKIP_TEXT=false; SKIP_IMAGE=false; SKIP_VIDEO=false; SKIP_KEYWORDS_RAW=""; KEYWORD_FILTER_TEXT=true; KEYWORD_FILTER_IMAGE=true; KEYWORD_FILTER_VIDEO=true; UNKNOWN_TIME_POLICY=DEF_UNKNOWN_TIME_POLICY; UNKNOWN_TYPE_POLICY=DEF_UNKNOWN_TYPE_POLICY; LOG_ENABLE=false; LOG_MAX=DEF_LOG_MAX; saveRuntimeConfig(DEF_AUTO_LIKE_ENABLE, 0, "", "", DEF_REFRESH_INTERVAL, DEF_MIN_LIKE_DELAY_MS, DEF_MAX_LIKE_DELAY_MS, DEF_MAX_POST_AGE_HOURS, DEF_MAX_PROCESSED_SAVE, DEF_DUP_SUPPRESS_MS); toast("已恢复默认，自动点赞默认关闭"); dialog.dismiss(); showAutoLikeHomeUI(); }});
+                btnReset.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ DELAY_MODE=DEF_DELAY_MODE; FIXED_LIKE_DELAY_MS=DEF_FIXED_LIKE_DELAY_MS; REFRESH_ENABLE=DEF_REFRESH_ENABLE; REFRESH_MODE=DEF_REFRESH_MODE; REFRESH_START=DEF_REFRESH_START; REFRESH_END=DEF_REFRESH_END; SCHEDULE_ENABLE=DEF_SCHEDULE_ENABLE; SCHEDULE_START=DEF_SCHEDULE_START; SCHEDULE_END=DEF_SCHEDULE_END; SKIP_TEXT=false; SKIP_IMAGE=false; SKIP_VIDEO=false; SKIP_KEYWORDS_RAW=""; KEYWORD_FILTER_TEXT=true; KEYWORD_FILTER_IMAGE=true; KEYWORD_FILTER_VIDEO=true; UNKNOWN_TIME_POLICY=DEF_UNKNOWN_TIME_POLICY; UNKNOWN_TYPE_POLICY=DEF_UNKNOWN_TYPE_POLICY; LOG_ENABLE=false; LOG_MAX=DEF_LOG_MAX; allowSaveEmptyWhiteList=true; allowSaveEmptyBlackList=true; saveRuntimeConfig(DEF_AUTO_LIKE_ENABLE, 0, "", "", DEF_REFRESH_INTERVAL, DEF_MIN_LIKE_DELAY_MS, DEF_MAX_LIKE_DELAY_MS, DEF_MAX_POST_AGE_HOURS, DEF_MAX_PROCESSED_SAVE, DEF_DUP_SUPPRESS_MS); toast("已恢复默认，自动点赞默认关闭"); dialog.dismiss(); showAutoLikeHomeUI(); }});
                 finishDialogLayout(dialog, root, card);
                 showDialogAnimated(dialog, card, ctx, 20, 180);
             } catch (Throwable e) { toast("打开设置失败: " + e); }
@@ -2259,7 +2190,7 @@ void showObjectRuleUI(final Activity ctx, final Runnable onDone) {
         LinearLayout actions = new LinearLayout(ctx); actions.setGravity(Gravity.END); LinearLayout.LayoutParams al = new LinearLayout.LayoutParams(-1, -2); al.topMargin = dp(ctx, 14);
         TextView clear = makeBtn(ctx, "清空", false); TextView cancel = makeBtn(ctx, "取消", false); TextView save = makeBtn(ctx, "保存", true); LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-2, -2); blp.leftMargin = dp(ctx, 10);
         actions.addView(clear); actions.addView(cancel, blp); actions.addView(save, blp); card.addView(actions, al);
-        clear.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ if (rg.getCheckedRadioButtonId() == 2) BLACK_LIST_RAW = ""; else WHITE_LIST_RAW = ""; tvList[0].setText(rg.getCheckedRadioButtonId() == 2 ? "未排除 >" : "未选择 >"); }});
+        clear.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ if (rg.getCheckedRadioButtonId() == 2) { BLACK_LIST_RAW = ""; allowSaveEmptyBlackList = true; } else { WHITE_LIST_RAW = ""; allowSaveEmptyWhiteList = true; } tvList[0].setText(rg.getCheckedRadioButtonId() == 2 ? "未排除 >" : "未选择 >"); }});
         cancel.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ dialog.dismiss(); }});
         save.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ final int mode = rg.getCheckedRadioButtonId() == 2 ? 1 : 0; if (mode == 1 && parseWxidSet(BLACK_LIST_RAW).isEmpty()) { showBlackModeEmptyConfirmUI(ctx, new Runnable(){ public void run(){ saveRuntimeConfig(AUTO_LIKE_ENABLE, mode, WHITE_LIST_RAW, BLACK_LIST_RAW, REFRESH_INTERVAL, MIN_LIKE_DELAY_MS, MAX_LIKE_DELAY_MS, MAX_POST_AGE_HOURS, MAX_PROCESSED_SAVE, DUP_SUPPRESS_MS); toast("对象规则已保存"); dialog.dismiss(); if (onDone != null) onDone.run(); }}); return; } saveRuntimeConfig(AUTO_LIKE_ENABLE, mode, WHITE_LIST_RAW, BLACK_LIST_RAW, REFRESH_INTERVAL, MIN_LIKE_DELAY_MS, MAX_LIKE_DELAY_MS, MAX_POST_AGE_HOURS, MAX_PROCESSED_SAVE, DUP_SUPPRESS_MS); toast("对象规则已保存"); dialog.dismiss(); if (onDone != null) onDone.run(); }});
         finishDialogLayout(dialog, mask, card);
@@ -2334,7 +2265,7 @@ void showRefreshRuleUI(final Activity ctx, final Runnable onDone) {
         LinearLayout card = new LinearLayout(ctx); card.setOrientation(LinearLayout.VERTICAL); FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2); lp.leftMargin = dp(ctx, 18); lp.rightMargin = dp(ctx, 18); lp.gravity = Gravity.CENTER; card.setLayoutParams(lp); card.setPadding(dp(ctx, 16), dp(ctx, 16), dp(ctx, 16), dp(ctx, 12));
         card.setBackground(makeCardGradientBg(ctx, 20, "#DDE6F2"));
         TextView title = new TextView(ctx); title.setText("后台刷新策略"); title.setTextSize(19f); title.setTypeface(null, Typeface.BOLD); title.setTextColor(Color.parseColor("#0F172A")); card.addView(title);
-        TextView sub = new TextView(ctx); sub.setText("控制多久主动刷新一次朋友圈，用于捕捉新内容"); sub.setTextSize(13f); sub.setTextColor(Color.parseColor("#64748B")); LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2); subLp.topMargin = dp(ctx, 6); card.addView(sub, subLp);
+        TextView sub = new TextView(ctx); sub.setText("控制多久主动刷新一次朋友圈，用于捕捉新内容。实际最低 1 秒"); sub.setTextSize(13f); sub.setTextColor(Color.parseColor("#64748B")); LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2); subLp.topMargin = dp(ctx, 6); card.addView(sub, subLp);
         LinearLayout body = new LinearLayout(ctx); body.setOrientation(LinearLayout.VERTICAL); GradientDrawable bodyBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 14)); bodyBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0")); body.setBackground(bodyBg); LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(-1, -2); bodyLp.topMargin = dp(ctx, 14);
         LinearLayout enableRow = new LinearLayout(ctx); enableRow.setOrientation(LinearLayout.HORIZONTAL); enableRow.setGravity(Gravity.CENTER_VERTICAL); enableRow.setPadding(dp(ctx,14),dp(ctx,14),dp(ctx,14),dp(ctx,14)); TextView enableTv = new TextView(ctx); enableTv.setText("启用后台刷新"); enableTv.setTextSize(16f); enableTv.setTextColor(Color.parseColor("#0F172A")); enableRow.addView(enableTv, new LinearLayout.LayoutParams(0,-2,1)); final Switch swRefresh = new Switch(ctx); swRefresh.setChecked(REFRESH_ENABLE); enableRow.addView(swRefresh); body.addView(enableRow); addDivider(ctx, body);
         final RadioGroup rg = new RadioGroup(ctx); rg.setOrientation(RadioGroup.VERTICAL); rg.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
@@ -2344,7 +2275,7 @@ void showRefreshRuleUI(final Activity ctx, final Runnable onDone) {
         final LinearLayout loopBox = new LinearLayout(ctx); loopBox.setOrientation(LinearLayout.VERTICAL);
         final LinearLayout fixedBox = new LinearLayout(ctx); fixedBox.setOrientation(LinearLayout.VERTICAL);
         addSectionTitle(ctx, loopBox, "刷新间隔 · 控制后台主动检查朋友圈的频率");
-        final EditText etInterval = addInputRow(ctx, loopBox, "刷新间隔秒数", "例如 4 = 每 4 秒刷新一次", String.valueOf(Math.max(1, REFRESH_INTERVAL / 1000)), android.text.InputType.TYPE_CLASS_NUMBER);
+        final EditText etInterval = addInputRow(ctx, loopBox, "刷新间隔秒数", "例如 1 = 每 1 秒刷新一次", String.valueOf(Math.max(MIN_REFRESH_INTERVAL_MS / 1000, REFRESH_INTERVAL / 1000)), android.text.InputType.TYPE_CLASS_NUMBER);
         TextView loopDesc = new TextView(ctx); loopDesc.setText("间隔越短越及时，但也更耗电。建议 300 秒左右，想更及时可适当调低。 "); loopDesc.setTextSize(12f); loopDesc.setTextColor(Color.parseColor("#64748B")); loopDesc.setPadding(dp(ctx,24),0,dp(ctx,24),dp(ctx,10)); loopBox.addView(loopDesc);
         addSectionTitle(ctx, fixedBox, "刷新时间段 · 只在下面时间段内按间隔刷新");
         final String[] refreshWindow = new String[]{REFRESH_START, REFRESH_END};
@@ -2363,7 +2294,7 @@ void showRefreshRuleUI(final Activity ctx, final Runnable onDone) {
         card.addView(body, bodyLp);
         LinearLayout actions = new LinearLayout(ctx); actions.setGravity(Gravity.END); LinearLayout.LayoutParams al = new LinearLayout.LayoutParams(-1, -2); al.topMargin = dp(ctx, 14); TextView cancel = makeBtn(ctx, "取消", false); TextView save = makeBtn(ctx, "保存", true); LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-2, -2); blp.leftMargin = dp(ctx, 10); actions.addView(cancel); actions.addView(save, blp); card.addView(actions, al);
         cancel.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ dialog.dismiss(); }});
-        save.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ REFRESH_ENABLE = swRefresh.isChecked(); REFRESH_MODE = rg.getCheckedRadioButtonId() == 2 ? 1 : 0; REFRESH_START = normalizeTime(refreshWindow[0], DEF_REFRESH_START); REFRESH_END = normalizeTime(refreshWindow[1], DEF_REFRESH_END); int refresh = Math.max(1, parseIntSafe(etInterval.getText().toString(), DEF_REFRESH_INTERVAL / 1000)) * 1000; saveRuntimeConfig(AUTO_LIKE_ENABLE, LIST_MODE, WHITE_LIST_RAW, BLACK_LIST_RAW, refresh, MIN_LIKE_DELAY_MS, MAX_LIKE_DELAY_MS, MAX_POST_AGE_HOURS, MAX_PROCESSED_SAVE, DUP_SUPPRESS_MS); toast(REFRESH_ENABLE ? "刷新策略已保存" : "后台刷新已关闭"); dialog.dismiss(); if (onDone != null) onDone.run(); }});
+        save.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ REFRESH_ENABLE = swRefresh.isChecked(); REFRESH_MODE = rg.getCheckedRadioButtonId() == 2 ? 1 : 0; REFRESH_START = normalizeTime(refreshWindow[0], DEF_REFRESH_START); REFRESH_END = normalizeTime(refreshWindow[1], DEF_REFRESH_END); int refresh = Math.max(MIN_REFRESH_INTERVAL_MS / 1000, parseIntSafe(etInterval.getText().toString(), DEF_REFRESH_INTERVAL / 1000)) * 1000; saveRuntimeConfig(AUTO_LIKE_ENABLE, LIST_MODE, WHITE_LIST_RAW, BLACK_LIST_RAW, refresh, MIN_LIKE_DELAY_MS, MAX_LIKE_DELAY_MS, MAX_POST_AGE_HOURS, MAX_PROCESSED_SAVE, DUP_SUPPRESS_MS); toast(REFRESH_ENABLE ? "刷新策略已保存" : "后台刷新已关闭"); dialog.dismiss(); if (onDone != null) onDone.run(); }});
         finishDialogLayout(dialog, mask, card);
         dialog.show();
     } catch (Throwable e) { toast("打开刷新策略失败: " + e); }
@@ -2401,9 +2332,9 @@ void showSafetyRuleUI(final Activity ctx, final Runnable onDone) {
         advToggle.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ boolean show = advBox.getVisibility() != View.VISIBLE; advBox.setVisibility(show ? View.VISIBLE : View.GONE); advToggle.setText(show ? "高级防重复设置 · 点击收起 ∧" : "高级防重复设置 · 默认即可，点击展开 >"); try { if (safetyScrollRef[0] != null) { ViewGroup.LayoutParams lp2 = safetyScrollRef[0].getLayoutParams(); lp2.height = show ? dp(ctx, 520) : -2; safetyScrollRef[0].setLayoutParams(lp2); } } catch(Throwable ignored){} }});
         TextView sec3 = addSectionTitle(ctx, advBox, "防重复 · 避免同一条朋友圈被反复处理");
         final EditText etDup = addInputRow(ctx, advBox, "同一条朋友圈的重复忽略时间", "例如 20", String.valueOf(Math.max(1, DUP_SUPPRESS_MS / 1000)), android.text.InputType.TYPE_CLASS_NUMBER);
-        TextView dupTip = new TextView(ctx); dupTip.setText("单位：秒。比如填 20，表示 20 秒内重复捕捉到同一条朋友圈会忽略。"); dupTip.setTextSize(12f); dupTip.setTextColor(Color.parseColor("#64748B")); dupTip.setPadding(dp(ctx, 24), dp(ctx, 0), dp(ctx, 24), dp(ctx, 10)); advBox.addView(dupTip); addDivider(ctx, advBox);
+        TextView dupTip = new TextView(ctx); dupTip.setText("单位：秒。可填很大的值，最多支持 86400 秒。"); dupTip.setTextSize(12f); dupTip.setTextColor(Color.parseColor("#64748B")); dupTip.setPadding(dp(ctx, 24), dp(ctx, 0), dp(ctx, 24), dp(ctx, 10)); advBox.addView(dupTip); addDivider(ctx, advBox);
         final EditText etSave = addInputRow(ctx, advBox, "记住已处理记录数量", "例如 300", String.valueOf(MAX_PROCESSED_SAVE), android.text.InputType.TYPE_CLASS_NUMBER);
-        TextView saveTip = new TextView(ctx); saveTip.setText("用于记录已经处理过的朋友圈，避免重复点赞。一般保持默认 300 即可。"); saveTip.setTextSize(12f); saveTip.setTextColor(Color.parseColor("#64748B")); saveTip.setPadding(dp(ctx, 24), dp(ctx, 0), dp(ctx, 24), dp(ctx, 10)); advBox.addView(saveTip);
+        TextView saveTip = new TextView(ctx); saveTip.setText("用于记录已经处理过的朋友圈，避免重复点赞。最大支持 50000 条。"); saveTip.setTextSize(12f); saveTip.setTextColor(Color.parseColor("#64748B")); saveTip.setPadding(dp(ctx, 24), dp(ctx, 0), dp(ctx, 24), dp(ctx, 10)); advBox.addView(saveTip);
         body.addView(advBox);
         final Runnable syncVisible = new Runnable(){ public void run(){ boolean on = swSch.isChecked(); tvWorkStart.setTextColor(on ? Color.parseColor("#475569") : Color.parseColor("#94A3B8")); tvWorkEnd.setTextColor(on ? Color.parseColor("#475569") : Color.parseColor("#94A3B8")); }};
         swSch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener(){ public void onCheckedChanged(CompoundButton buttonView, boolean isChecked){ syncVisible.run(); }});
@@ -2860,7 +2791,7 @@ void buildFriendMultiPickerUI(final Activity ctx, final String rawSelected, fina
         addLabel.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ showContactLabelPickerUI(ctx, selected, onLabelChanged); }});
         selectAll.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ for (int i=0;i<showIds.size();i++) selected.add(String.valueOf(showIds.get(i))); update.run(); }});
         invert.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ for (int i=0;i<showIds.size();i++){ String wxid=String.valueOf(showIds.get(i)); if (selected.contains(wxid)) selected.remove(wxid); else selected.add(wxid); } update.run(); }});
-        clear.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ selected.clear(); update.run(); }}); cancel.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ dialog.dismiss(); }}); ok.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ String raw = joinSet(selected); boolean snsList = false; try { snsList = tvValue != null && "sns_notify_list".equals(String.valueOf(tvValue.getTag())); } catch (Throwable ignored) {} if (snsList) { SNS_NOTIFY_LIST_RAW = raw; snsNotifySet = parseWxidSet(raw); } else if (blackMode) BLACK_LIST_RAW = raw; else WHITE_LIST_RAW = raw; if (tvValue != null) tvValue.setText(countSummary(raw, blackMode ? "未排除 >" : "未选择 >")); dialog.dismiss(); }});
+        clear.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ selected.clear(); update.run(); }}); cancel.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ dialog.dismiss(); }}); ok.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ String raw = joinSet(selected); boolean snsList = false; try { snsList = tvValue != null && "sns_notify_list".equals(String.valueOf(tvValue.getTag())); } catch (Throwable ignored) {} if (raw.length() == 0) { if (snsList) allowSaveEmptySnsNotifyList = true; else if (blackMode) allowSaveEmptyBlackList = true; else allowSaveEmptyWhiteList = true; } if (snsList) { SNS_NOTIFY_LIST_RAW = raw; snsNotifySet = parseWxidSet(raw); } else if (blackMode) BLACK_LIST_RAW = raw; else WHITE_LIST_RAW = raw; if (tvValue != null) tvValue.setText(countSummary(raw, blackMode ? "未排除 >" : "未选择 >")); dialog.dismiss(); }});
         finishDialogLayoutWithSoftInput(dialog, mask, root);
         dialog.show(); update.run();
     } catch (Throwable e) { toast("打开好友多选失败: " + e); }
@@ -2885,7 +2816,7 @@ void onLoad() {
         ghostHandler.postDelayed(new Runnable() {
             public void run() {
                 try { triggerBackgroundRefresh(); } catch (Throwable ignored) {}
-                if (ghostHandler != null) ghostHandler.postDelayed(this, REFRESH_INTERVAL);
+                if (ghostHandler != null) ghostHandler.postDelayed(this, effectiveRefreshIntervalMs());
             }
         }, 10000);
 

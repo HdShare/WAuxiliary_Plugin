@@ -6,6 +6,11 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: 朋友圈自动点赞(1.3.0)
+    details: 作者 。。 & 周杰伦
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E&filename=%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E_1.3.0
+    linkText: 更新于 20260520
+
   - title: 僵尸粉检测(1.0.0)
     details: 作者 。。 & 周杰伦
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%83%B5%E5%B0%B8%E7%B2%89%E6%A3%80%E6%B5%8B&filename=%E5%83%B5%E5%B0%B8%E7%B2%89%E6%A3%80%E6%B5%8B_1.0.0
@@ -39,11 +44,6 @@ features:
   - title: 分组管理(1.2.0)
     details: 作者 。。
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%88%86%E7%BB%84%E7%AE%A1%E7%90%86&filename=%E5%88%86%E7%BB%84%E7%AE%A1%E7%90%86_1.2.0
-    linkText: 更新于 20260514
-
-  - title: 朋友圈自动点赞(1.1.0)
-    details: 作者 。。 & 周杰伦
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E&filename=%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E_1.1.0
     linkText: 更新于 20260514
 
   - title: 元启Ai回复(2.1)

@@ -32,6 +32,7 @@ boolean atAllEnabled = true; // @所有人或群公告通知开关
 boolean quietHoursEnabled = false; // 免打扰模式
 int quietStartHour = 22; // 免打扰开始时间
 int quietEndHour = 8; // 免打扰结束时间
+int keywordNotifySeq = 0; // 关键词通知递增ID，避免新通知覆盖旧通知
 long lastMatchTime = 0; // 上次匹配时间
 String lastMatchedKeyword = ""; // 上次匹配的关键词
 String customKeywordNotifyTitle = ""; // 关键词自定义通知标题
@@ -1022,16 +1023,31 @@ private void sendKeywordNotification(String talker, CharSequence title, CharSequ
         }
 
         Bundle extras = new Bundle();
+        // 给其它通知接管类插件识别，避免被当成微信原生通知二次拦截
         extras.putBoolean("is_keyword_notify", true);
+        extras.putBoolean("keyword_notify_ignore_custom", true);
         extras.putString("talker", talker);
+        extras.putString("keyword_talker", talker);
         extras.putBoolean("is_group_chat", isGroupChat);
         builder.setExtras(extras);
 
-        int notifyId = ("kw_notify_v1_" + talker).hashCode();
+        int notifyId = nextKeywordNotifyId(talker);
         nm.notify(notifyId, builder.build());
     } catch (Throwable e) {
         log("发送系统通知失败: " + e.getMessage());
     }
+}
+
+private int nextKeywordNotifyId(String talker) {
+    try {
+        keywordNotifySeq++;
+        if (keywordNotifySeq > 999999) keywordNotifySeq = 1;
+        long seq = (long) (keywordNotifySeq & 0x000FFFFF);
+        long base = talker == null ? 0L : (long) talker.hashCode();
+        long raw = 0x51000000L | ((base & 0x000000FFL) << 20) | seq;
+        return (int) (raw & 0x7FFFFFFFL);
+    } catch (Throwable ignored) {}
+    return (int) (System.currentTimeMillis() & 0x7fffffffL);
 }
 
 private CharSequence highlightKeywordText(String text, String keyword) {

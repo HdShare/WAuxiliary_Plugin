@@ -945,11 +945,14 @@ int nextCustomNotifyId(String talker, boolean enableQuickReply) {
     try {
         sCustomNotifySeq++;
         if (sCustomNotifySeq > 999999) sCustomNotifySeq = 1;
-        int seq = sCustomNotifySeq & 0x000FFFFF;
-        int base = talker == null ? 0 : talker.hashCode();
-        return 0x4A000000 | ((base & 0x00000FFF) << 20) | seq;
+        long seq = (long) (sCustomNotifySeq & 0x000FFFFF);
+        long base = talker == null ? 0L : (long) talker.hashCode();
+        // BeanShell 对 int 溢出不宽容，通知ID必须控制在 0..Integer.MAX_VALUE。
+        // 只取 base 低10位，和 0x4A000000L 组合后最大不超过 0x7FFFFFFF。
+        long raw = 0x4A000000L | ((base & 0x000003FFL) << 20) | seq;
+        return (int) (raw & 0x7FFFFFFFL);
     } catch (Throwable ignored) {}
-    return (int) (System.currentTimeMillis() & 0x7fffffff);
+    return (int) (System.currentTimeMillis() & 0x7fffffffL);
 }
 
 // ================= 核心 1：原生通知强力拦截器 =================
@@ -980,7 +983,14 @@ void hookSystemNotification() {
                         if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) {
                             return;
                         }
+                        // 兼容其它通知类插件：关键词通知自己发出的通知不能被本插件当成微信原生通知拦截。
+                        if (n.extras != null && n.extras.getBoolean("is_keyword_notify", false)) {
+                            return;
+                        }
                         if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("jay_chn_v9_")) {
+                            return;
+                        }
+                        if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("keyword_notify_")) {
                             return;
                         }
                         String talker = extractTalkerFromNotification(n);

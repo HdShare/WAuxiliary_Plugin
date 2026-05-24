@@ -4028,7 +4028,8 @@ private void processAutoReply(final Object msgInfoBean) {
                     case MATCH_TYPE_ANY:
                         isMatch = true;
                         debugLog("[调试-关键词匹配] 匹配类型=ANY");
-case MATCH_TYPE_EXACT:
+                        break;
+                    case MATCH_TYPE_EXACT:
                         isMatch = matchAnyKeywordExact(content, keyword);
                         debugLog("[调试-关键词匹配] 匹配类型=EXACT, isMatch=" + isMatch);
                         break;
@@ -4042,7 +4043,7 @@ case MATCH_TYPE_EXACT:
                         isMatch = matchAnyKeywordFuzzy(content, keyword);
                         debugLog("[调试-关键词匹配] 匹配类型=FUZZY, isMatch=" + isMatch);
                         break;
-                        break;
+
                 }
             }
 
@@ -9060,6 +9061,10 @@ private void showFriendSelectWithTagOption(final String title, final List names,
                 listView.setItemChecked(j, tempSelected.contains(currentFilteredIds.get(j)));
             }
             adjustListViewHeight(listView, currentFilteredIds.size());
+            final AlertDialog currentDialog = (AlertDialog) searchEditText.getTag();
+            if (currentDialog != null) {
+                updateSelectAllButton(currentDialog, currentFilteredIds, tempSelected);
+            }
         }
     };
 
@@ -9068,6 +9073,10 @@ private void showFriendSelectWithTagOption(final String title, final List names,
             String selected = (String) currentFilteredIds.get(pos);
             if (listView.isItemChecked(pos)) tempSelected.add(selected);
             else tempSelected.remove(selected);
+            final AlertDialog currentDialog = (AlertDialog) searchEditText.getTag();
+            if (currentDialog != null) {
+                updateSelectAllButton(currentDialog, currentFilteredIds, tempSelected);
+            }
         }
     });
 
@@ -9184,6 +9193,21 @@ private void showFriendSelectWithTagOption(final String title, final List names,
         }
     });
 
+    final DialogInterface.OnClickListener fullSelectListener = new DialogInterface.OnClickListener() {
+        public void onClick(DialogInterface dialog, int which) {
+            boolean selectAll = shouldSelectAll(currentFilteredIds, tempSelected);
+            for (int i = 0; i < currentFilteredIds.size(); i++) {
+                String id = (String) currentFilteredIds.get(i);
+                if (selectAll) tempSelected.add(id);
+                else tempSelected.remove(id);
+                listView.setItemChecked(i, selectAll);
+            }
+            if (listView.getAdapter() != null) listView.getAdapter().notifyDataSetChanged();
+            listView.requestLayout();
+            updateSelectAllButton((AlertDialog) dialog, currentFilteredIds, tempSelected);
+        }
+    };
+
     final AlertDialog dialog = buildCommonAlertDialog(act, title, new ScrollView(act) {{ addView(root); }},
         "✅ 确定", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
@@ -9196,11 +9220,20 @@ private void showFriendSelectWithTagOption(final String title, final List names,
             public void onClick(DialogInterface dialog, int which) {
                 dialog.dismiss();
             }
-        }, null, null);
+        }, "全选", fullSelectListener);
+    searchEditText.setTag(dialog);
 
     dialog.setOnShowListener(new DialogInterface.OnShowListener() {
         public void onShow(DialogInterface dialogInterface) {
             setupUnifiedDialog((AlertDialog) dialogInterface);
+            Button neutralBtn = ((AlertDialog) dialogInterface).getButton(AlertDialog.BUTTON_NEUTRAL);
+            if (neutralBtn != null) {
+                neutralBtn.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) {
+                        fullSelectListener.onClick(dialog, AlertDialog.BUTTON_NEUTRAL);
+                    }
+                });
+            }
         }
     });
     dialog.show();

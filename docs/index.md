@@ -11,6 +11,26 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E9%9A%8F%E6%9C%BA%E8%A1%A8%E6%83%85&filename=%E9%9A%8F%E6%9C%BA%E8%A1%A8%E6%83%85_1.0.0
     linkText: 更新于 202604030
 
+  - title: 关键词通知(2.0.1)
+    details: 作者 。。
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%85%B3%E9%94%AE%E8%AF%8D%E9%80%9A%E7%9F%A5&filename=%E5%85%B3%E9%94%AE%E8%AF%8D%E9%80%9A%E7%9F%A5_2.0.1
+    linkText: 更新于 20260525
+
+  - title: 群发助手(1.3.4)
+    details: 作者 。。
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B&filename=%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B_1.3.4
+    linkText: 更新于 20260525
+
+  - title: 自动回复配置版(2.3.4)
+    details: 作者 。。
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D%E9%85%8D%E7%BD%AE%E7%89%88_2.3.4
+    linkText: 更新于 20260525
+
+  - title: 自定义通知配置版(1.3.4)
+    details: 作者 。。 & 周杰伦
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.4
+    linkText: 更新于 20260525
+
   - title: 朋友圈自动点赞(1.3.0)
     details: 作者 。。 & 周杰伦
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E&filename=%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E_1.3.0
@@ -21,25 +41,10 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%83%B5%E5%B0%B8%E7%B2%89%E6%A3%80%E6%B5%8B&filename=%E5%83%B5%E5%B0%B8%E7%B2%89%E6%A3%80%E6%B5%8B_1.0.0
     linkText: 更新于 20260518
 
-  - title: 群发助手(1.3.3)
-    details: 作者 。。
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B&filename=%E7%BE%A4%E5%8F%91%E5%8A%A9%E6%89%8B_1.3.3
-    linkText: 更新于 20260518
-
-  - title: 自定义通知配置版(1.3.3)
-    details: 作者 。。 & 周杰伦
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.3
-    linkText: 更新于 20260518
-
   - title: 音频转换(1.3.0)
     details: 作者 。。
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E9%9F%B3%E9%A2%91%E8%BD%AC%E6%8D%A2&filename=%E9%9F%B3%E9%A2%91%E8%BD%AC%E6%8D%A2_1.3.0
     linkText: 更新于 20260518
-
-  - title: 自动回复配置版(2.3.3)
-    details: 作者 。。
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D%E9%85%8D%E7%BD%AE%E7%89%88_2.3.3
-    linkText: 更新于 20260516
 
   - title: 微信(桀翕)(1.0.3)
     details: 作者 桀翕
@@ -65,11 +70,6 @@ features:
     details: 作者 Hd
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FHookDemo&filename=Hook%E7%A4%BA%E4%BE%8B%E6%8F%92%E4%BB%B6_1.0.3
     linkText: 更新于 20260505
-
-  - title: 关键词通知(2.0.0)
-    details: 作者 。。
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%85%B3%E9%94%AE%E8%AF%8D%E9%80%9A%E7%9F%A5&filename=%E5%85%B3%E9%94%AE%E8%AF%8D%E9%80%9A%E7%9F%A5_2.0.0
-    linkText: 更新于 20260504
 
   - title: TIAX文转音（DC）(3.6)
     details: 作者 Datamaniac Chaser

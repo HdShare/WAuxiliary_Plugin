@@ -52,6 +52,7 @@ String JAY_MARK = "is_jay_custom_mark_v7";
 
 String ACTION_QUICK_REPLY = "jay_action_quick_reply_v7";
 String EXTRA_TALKER = "jay_extra_talker_v7";
+String EXTRA_NOTIFY_ID = "jay_extra_notify_id_v7";
 int REQ_PICK_RINGTONE_SYSTEM = 10086;
 int REQ_PICK_RINGTONE_FILE = 10087;
 
@@ -98,6 +99,7 @@ boolean sActivityResultHookInstalled = false;
 String sBootNonce = "";
 long sLastAutoReloadAt = 0L;
 Dialog sLoadingDialogRef = null;
+int sCustomNotifySeq = 0;
 
 // ================= 生命周期 =================
 void warmupTalkerChannelsOnce() {
@@ -277,6 +279,7 @@ void registerQuickReplyReceiver() {
                     if (intent == null) return;
                     if (!ACTION_QUICK_REPLY.equals(intent.getAction())) return;
                     final String talker = intent.getStringExtra(EXTRA_TALKER);
+                    final int notifyId = intent.getIntExtra(EXTRA_NOTIFY_ID, talker == null ? 0 : talker.hashCode());
                     if (TextUtils.isEmpty(talker)) return;
                     Bundle results = RemoteInput.getResultsFromIntent(intent);
                     CharSequence cs = null;
@@ -294,7 +297,7 @@ void registerQuickReplyReceiver() {
                             try { sendText(talker, reply); } catch (Throwable ignored) {}
                             try {
                                 NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
-                                if (nm != null) nm.cancel(talker.hashCode());
+                                if (nm != null) nm.cancel(notifyId);
                             } catch (Throwable ignored) {}
                         }
                     });
@@ -928,6 +931,30 @@ boolean shouldBlockNativeByCfg(Map cfg) {
     return true;
 }
 
+boolean isCurrentChatTalker(String talker) {
+    if (TextUtils.isEmpty(talker)) return false;
+    try {
+        String cur = getTargetTalker();
+        if (TextUtils.isEmpty(cur)) return false;
+        return talker.equals(cur);
+    } catch (Throwable ignored) {}
+    return false;
+}
+
+int nextCustomNotifyId(String talker, boolean enableQuickReply) {
+    try {
+        sCustomNotifySeq++;
+        if (sCustomNotifySeq > 999999) sCustomNotifySeq = 1;
+        long seq = (long) (sCustomNotifySeq & 0x000FFFFF);
+        long base = talker == null ? 0L : (long) talker.hashCode();
+        // BeanShell 对 int 溢出不宽容，通知ID必须控制在 0..Integer.MAX_VALUE。
+        // 只取 base 低10位，和 0x4A000000L 组合后最大不超过 0x7FFFFFFF。
+        long raw = 0x4A000000L | ((base & 0x000003FFL) << 20) | seq;
+        return (int) (raw & 0x7FFFFFFFL);
+    } catch (Throwable ignored) {}
+    return (int) (System.currentTimeMillis() & 0x7fffffffL);
+}
+
 // ================= 核心 1：原生通知强力拦截器 =================
 void hookSystemNotification() {
     try {
@@ -956,7 +983,14 @@ void hookSystemNotification() {
                         if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) {
                             return;
                         }
+                        // 兼容其它通知类插件：关键词通知自己发出的通知不能被本插件当成微信原生通知拦截。
+                        if (n.extras != null && n.extras.getBoolean("is_keyword_notify", false)) {
+                            return;
+                        }
                         if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("jay_chn_v9_")) {
+                            return;
+                        }
+                        if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("keyword_notify_")) {
                             return;
                         }
                         String talker = extractTalkerFromNotification(n);
@@ -1022,6 +1056,9 @@ void onHandleMsg(Object msg) {
 
         // 【逻辑优化】使用 Set 的精确匹配
         if (!cacheTargetSet.contains(talker)) {
+            return;
+        }
+        if (isCurrentChatTalker(talker)) {
             return;
         }
 
@@ -1333,9 +1370,10 @@ void sendCustomNotification(String talker, String title, String text, boolean us
             try { builder.setPriority(Notification.PRIORITY_HIGH); } catch (Throwable ignored) {}
         }
 
+        int notifyId = nextCustomNotifyId(talker, enableQuickReply);
         Intent[] intents = buildChatOpenIntents(talker);
         if (intents != null && intents.length > 0) {
-            builder.setContentIntent(PendingIntent.getActivities(hostContext, talker.hashCode(), intents, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+            builder.setContentIntent(PendingIntent.getActivities(hostContext, notifyId, intents, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         }
 
         if (enableQuickReply) {
@@ -1346,11 +1384,12 @@ void sendCustomNotification(String talker, String title, String text, boolean us
                 Intent replyIntent = new Intent(ACTION_QUICK_REPLY);
                 replyIntent.setPackage(hostContext.getPackageName());
                 replyIntent.putExtra(EXTRA_TALKER, talker);
+                replyIntent.putExtra(EXTRA_NOTIFY_ID, notifyId);
                 int flags = PendingIntent.FLAG_UPDATE_CURRENT;
                 // RemoteInput requires mutable PendingIntent on Android 12+.
                 // On old versions, keep default mutability (do not force IMMUTABLE).
                 if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
-                PendingIntent replyPi = PendingIntent.getBroadcast(hostContext, talker.hashCode(), replyIntent, flags);
+                PendingIntent replyPi = PendingIntent.getBroadcast(hostContext, notifyId, replyIntent, flags);
                 Notification.Action action = new Notification.Action.Builder(
                         android.R.drawable.ic_menu_send,
                         "快捷回复",
@@ -1360,8 +1399,7 @@ void sendCustomNotification(String talker, String title, String text, boolean us
             } catch (Throwable ignored) {}
         }
 
-        int notifyId = talker.hashCode();
-        nm.notify(notifyId, builder.build()); // 直接覆盖发送即可，系统会完美处理过渡
+        nm.notify(notifyId, builder.build());
 
         // 8+ 声音统一手动播放（含默认通知声/自定义铃声）
         if (Build.VERSION.SDK_INT >= 26) {

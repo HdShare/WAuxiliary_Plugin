@@ -872,18 +872,49 @@ private boolean loadDefaultSendOnTimeout() {
 private void saveDefaultSendOnTimeout(boolean enabled) {
     putString(CONFIG_KEY, KEY_DEFAULT_SEND_ON_TIMEOUT, enabled ? "1" : "0");
 }
-
 // 入口函数
 public boolean onClickSendBtn(String text) {
-    massSendTargetWxids.clear();
-    massSendTextContent = "";
-    massSendMediaPaths.clear();
-    if ("群发助手".equals(text) || "定时发送".equals(text)) {
+    String cmd = text == null ? "" : text.trim();
+
+    // 在当前聊天发送指令，直接把当前会话 wxid/chatroomId 加入发送队列
+    if ("加入群发".equals(cmd) || "添加群发".equals(cmd) || "群发添加".equals(cmd) || "加入发送队列".equals(cmd)) {
+        addCurrentTalkerToMassSendQueue(true);
+        return true;
+    }
+
+    if ("群发助手".equals(cmd) || "定时发送".equals(cmd)) {
+        massSendTargetWxids.clear();
+        massSendTextContent = "";
+        massSendMediaPaths.clear();
+        addCurrentTalkerToMassSendQueue(false);
         showMainDialog();
         return true;
     }
     return false;
 }
+
+private boolean addCurrentTalkerToMassSendQueue(boolean showToast) {
+    try {
+        String talker = getTargetTalker();
+        if (TextUtils.isEmpty(talker)) {
+            if (showToast) toast("未获取到当前聊天 wxid");
+            return false;
+        }
+        if (talker.endsWith("@chatroom") || talker.startsWith("wxid_") || talker.indexOf("@") < 0) {
+            boolean added = massSendTargetWxids.add(talker);
+            if (showToast) {
+                toast((added ? "已添加到发送队列: " : "发送队列已存在: ") + getContactName(talker));
+            }
+            return added;
+        }
+        if (showToast) toast("当前会话不支持加入发送队列: " + talker);
+    } catch (Exception e) {
+        if (showToast) toast("添加当前聊天失败: " + e.getMessage());
+        try { log("添加当前聊天到群发队列失败: " + e.getMessage()); } catch (Exception ignore) {}
+    }
+    return false;
+}
+
 
 // ==========================================
 // ========== 📱 UI 界面逻辑 ==========

@@ -49,12 +49,33 @@ String CFG_BLOCK_AT_ALL = "jay_cfg_block_at_all_v7";
 String CFG_BLOCK_AT_ME = "jay_cfg_block_at_me_v7";
 String CFG_TALKER_CFG_PREFIX = "jay_talker_cfg_v9_";
 String JAY_MARK = "is_jay_custom_mark_v7"; 
+String JAY_WECHAT_TALKER = "jay_wechat_talker_v1";
+String KEYWORD_NOTIFY_MARK = "is_keyword_notify";
+String CUSTOM_CHANNEL_PREFIX = "jay_chn_v9_";
+String[] LEGACY_CHANNEL_PREFIXES = new String[]{"jay_chn_v7", "jay_chn_v8"};
+String KEYWORD_CHANNEL_PREFIX = "keyword_notify_";
 
 String ACTION_QUICK_REPLY = "jay_action_quick_reply_v7";
 String EXTRA_TALKER = "jay_extra_talker_v7";
 String EXTRA_NOTIFY_ID = "jay_extra_notify_id_v7";
 int REQ_PICK_RINGTONE_SYSTEM = 10086;
 int REQ_PICK_RINGTONE_FILE = 10087;
+
+String[] WECHAT_NOTIFICATION_ITEM_TALKER_FIELDS = new String[]{"h", "userName", "username", "talker", "talkerUserName"};
+String[] WECHAT_NOTIFICATION_ITEM_NOTIFICATION_FIELDS = new String[]{"f", "notification", "mNotification"};
+String[] MSG_CONTENT_METHODS = new String[]{"getContent", "getMsgContent", "getText", "getDigest"};
+String[] MSG_CONTENT_FIELDS = new String[]{"content", "msgContent", "message", "field_content"};
+String[] MSG_TALKER_METHODS = new String[]{"getTalker", "getUsername", "getUserName", "getConversationId", "getChatUser", "getSessionId"};
+String[] MSG_ORIGIN_TALKER_METHODS = new String[]{"getTalker", "getUsername", "getUserName", "getConversationId", "getChatUser", "getSessionId", "getFromUserName"};
+String[] MSG_TALKER_FIELDS = new String[]{"talker", "username", "userName", "conversationId", "chatUser", "sessionId", "fromUserName"};
+String[] MSG_ORIGIN_METHODS = new String[]{"getOriginMsg", "getOriginMessage", "getOrigin", "getOriginContent"};
+String[] MSG_ORIGIN_FIELDS = new String[]{"originMsg", "originMessage", "origin", "originContent"};
+String[] ORIGIN_TALKER_KEYS = new String[]{"talker", "fromusername", "fromUserName", "chatuser", "chatUser", "conversationId"};
+String[] ORIGIN_CONTENT_KEYS = new String[]{"content", "msg", "msgContent", "message"};
+String[] GROUP_SENDER_METHODS = new String[]{"getSendTalker", "getSenderUserName", "getSenderWxid", "getFromUser", "getFromUserName", "getRealChatUser", "getSenderId"};
+String[] MSG_GROUP_FLAG_METHODS = new String[]{"isGroupChat", "isChatRoom", "isChatroom", "isGroup"};
+String[] MSG_AT_ALL_METHODS = new String[]{"isNotifyAll", "isAnnounceAll", "isAtAll", "isAtEveryone", "hasAtAll"};
+String[] MSG_AT_ME_METHODS = new String[]{"isAtMe", "isAtMeFromGroup", "isMentioned", "hasAtMe", "needNotifyMe"};
 
 // ================= 内存缓存 =================
 boolean cacheVibrate = true;
@@ -68,7 +89,6 @@ boolean cacheBlockAtAll = false;
 boolean cacheBlockAtMe = false;
 Map cacheTalkerCfgMap = Collections.synchronizedMap(new HashMap());
 
-// 【安全优化1】使用 Set 确保精确匹配 O(1) 查询，杜绝 contains 导致的相似字符误杀
 Set cacheTargetSet = new HashSet();
 
 List notifyUnhooks = Collections.synchronizedList(new ArrayList());
@@ -80,11 +100,6 @@ boolean quickReplyReceiverRegistered = false;
 
 Map sNoArgMethodCache = new ConcurrentHashMap();
 Set sNoArgMethodMissCache = Collections.synchronizedSet(new HashSet());
-Map sTitleNormCache = Collections.synchronizedMap(new HashMap());
-int sTitleNormCacheMax = 256;
-Map sGroupTitleTalkerCache = Collections.synchronizedMap(new HashMap());
-long sGroupTitleTalkerCacheTtlMs = 45000L;
-int sGroupTitleTalkerCacheMax = 128;
 final Handler sMainHandler = new Handler(Looper.getMainLooper());
 ExecutorService sQuickReplyExecutor = Executors.newSingleThreadExecutor();
 
@@ -93,10 +108,9 @@ List sCachedFriendNames = null;
 List sCachedFriendIds = null;
 List sCachedGroupNames = null;
 List sCachedGroupIds = null;
-long sLastWarmupAt = 0L;
 boolean sNotifyHookInstalled = false;
 boolean sActivityResultHookInstalled = false;
-String sBootNonce = "";
+boolean sWechatNotificationItemHookInstalled = false;
 long sLastAutoReloadAt = 0L;
 Dialog sLoadingDialogRef = null;
 int sCustomNotifySeq = 0;
@@ -121,22 +135,28 @@ void warmupTalkerChannelsOnce() {
             boolean talkerVibrate = cfgGetBool(cfg, "vibrate", cacheVibrate);
             boolean talkerSound = cfgGetBool(cfg, "sound", cacheSound);
             String talkerRing = cfgGet(cfg, "ringtone", "");
-            talkerRing = TextUtils.isEmpty(talkerRing) ? "" : talkerRing;
+            String talkerChannelId = buildTalkerChannelId(talkerSound, talkerVibrate, talkerRing);
 
-            boolean useManualCustomSound = talkerSound && !TextUtils.isEmpty(talkerRing);
-            String sTag = talkerSound ? (useManualCustomSound ? "M" : "S") : "N";
-            String vTag = talkerVibrate ? "V" : "N";
-            String talkerChannelId = "jay_chn_v9_" + sTag + "_" + vTag + "_" + talkerRing.hashCode();
-
-            ensureNotifyChannel(nm, talkerChannelId, talkerVibrate, useManualCustomSound ? false : talkerSound, talkerRing);
+            ensureNotifyChannel(nm, talkerChannelId, talkerVibrate, false, talkerRing);
         }
     } catch (Throwable ignored) {}
 }
 
+String normalizeRingtoneUri(String ringtoneUri) {
+    return TextUtils.isEmpty(ringtoneUri) ? "" : ringtoneUri;
+}
+
+String buildTalkerChannelId(boolean useSound, boolean useVibrate, String ringtoneUri) {
+    String ring = normalizeRingtoneUri(ringtoneUri);
+    String sTag = useSound ? "M" : "N";
+    String vTag = useVibrate ? "V" : "N";
+    return CUSTOM_CHANNEL_PREFIX + sTag + "_" + vTag + "_" + ring.hashCode();
+}
+
 void onLoad() {
-    try { sBootNonce = String.valueOf(System.currentTimeMillis()); } catch (Throwable ignored) { sBootNonce = "0"; }
     loadConfigToCache();
     hookSystemNotification();
+    hookWechatNotificationItemTalker();
     hookActivityResultForRingtone();
     registerQuickReplyReceiver();
 
@@ -171,43 +191,166 @@ void ensureConfigLoadedForRuntime() {
     } catch (Throwable ignored) {}
 }
 
+Class findWechatNotificationItemClass() {
+    String clsName = "com.tencent.mm.booter.notification.NotificationItem";
+    try {
+        ClassLoader cl = hostContext == null ? null : hostContext.getClassLoader();
+        if (cl != null) return Class.forName(clsName, false, cl);
+    } catch (Throwable ignored) {}
+    try {
+        ClassLoader cl2 = Thread.currentThread().getContextClassLoader();
+        if (cl2 != null) return Class.forName(clsName, false, cl2);
+    } catch (Throwable ignored) {}
+    try {
+        List keys = new ArrayList();
+        keys.add("id: ");
+        keys.add("userName: ");
+        keys.add("unreadCount:");
+        List clsList = findClassList(keys);
+        if (clsList != null && clsList.size() > 0) {
+            for (int i = 0; i < clsList.size(); i++) {
+                Object c = clsList.get(i);
+                if (c instanceof Class) {
+                    String n = ((Class) c).getName();
+                    if (clsName.equals(n)) return (Class) c;
+                    String low = n == null ? "" : n.toLowerCase();
+                    if (low.indexOf("com.tencent.mm.booter.notification") >= 0) return (Class) c;
+                    if (n != null && n.endsWith(".NotificationItem")) return (Class) c;
+                }
+            }
+        }
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+String findConfiguredTalkerExact(String raw) {
+    if (TextUtils.isEmpty(raw) || cacheTargetSet == null || cacheTargetSet.isEmpty()) return "";
+    try {
+        String v = raw.trim();
+        return cacheTargetSet.contains(v) ? v : "";
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+Object firstFieldValueByType(Object obj, Class type) {
+    if (obj == null || type == null) return null;
+    try {
+        java.lang.reflect.Field[] fs = obj.getClass().getDeclaredFields();
+        if (fs == null) return null;
+        for (int i = 0; i < fs.length; i++) {
+            java.lang.reflect.Field f = fs[i];
+            if (f == null || !type.isAssignableFrom(f.getType())) continue;
+            f.setAccessible(true);
+            Object v = f.get(obj);
+            if (v != null) return v;
+        }
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+String getTalkerFromNotificationItem(Object item) {
+    if (item == null) return "";
+    try {
+        Object h = safeGetFieldAny(item, WECHAT_NOTIFICATION_ITEM_TALKER_FIELDS);
+        String hit = findConfiguredTalkerExact(h == null ? "" : String.valueOf(h));
+        if (!TextUtils.isEmpty(hit)) return hit;
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+Notification getNotificationFromItem(Object item) {
+    if (item == null) return null;
+    try {
+        Object n = safeGetFieldAny(item, WECHAT_NOTIFICATION_ITEM_NOTIFICATION_FIELDS);
+        if (n instanceof Notification) return (Notification) n;
+    } catch (Throwable ignored) {}
+    try {
+        Object n2 = firstFieldValueByType(item, Notification.class);
+        if (n2 instanceof Notification) return (Notification) n2;
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+void markWechatNotificationTalker(Object item) {
+    try {
+        ensureConfigLoadedForRuntime();
+        if (cacheTargetSet.isEmpty()) return;
+        String talker = getTalkerFromNotificationItem(item);
+        if (TextUtils.isEmpty(talker) || !cacheTargetSet.contains(talker)) return;
+        Notification n = getNotificationFromItem(item);
+        if (n == null) return;
+        if (n.extras == null) n.extras = new Bundle();
+        n.extras.putString(JAY_WECHAT_TALKER, talker);
+    } catch (Throwable ignored) {}
+}
+
+void hookWechatNotificationItemTalker() {
+    try {
+        if (sWechatNotificationItemHookInstalled) return;
+        Class cls = findWechatNotificationItemClass();
+        if (cls == null) return;
+        sWechatNotificationItemHookInstalled = true;
+
+        Set ctorUnhooks = XposedBridge.hookAllConstructors(cls, new XC_MethodHook() {
+            protected void afterHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
+                markWechatNotificationTalker(param.thisObject);
+            }
+        });
+        if (ctorUnhooks != null) notifyUnhooks.addAll(ctorUnhooks);
+
+        Method[] ms = cls.getDeclaredMethods();
+        for (int i = 0; i < ms.length; i++) {
+            try {
+                final Method m = ms[i];
+                Class[] ps = m.getParameterTypes();
+                if (ps == null || ps.length != 1 || ps[0] != Context.class) continue;
+                Object uh = XposedBridge.hookMethod(m, new XC_MethodHook() {
+                    protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
+                        markWechatNotificationTalker(param.thisObject);
+                    }
+                });
+                if (uh != null) notifyUnhooks.add(uh);
+            } catch (Throwable ignoredMethod) {}
+        }
+    } catch (Throwable ignored) {
+        sWechatNotificationItemHookInstalled = false;
+    }
+}
+
+void unhookAll(List hooks) {
+    if (hooks == null) return;
+    for (int i = 0; i < hooks.size(); i++) {
+        try {
+            Object uh = hooks.get(i);
+            Method um = uh.getClass().getMethod("unhook", new Class[]{});
+            um.invoke(uh, new Object[]{});
+        } catch (Throwable ignored) {}
+    }
+    hooks.clear();
+}
+
 void onUnload() {
-    for (int i = 0; i < notifyUnhooks.size(); i++) {
-        try {
-            Object uh = notifyUnhooks.get(i);
-            Method um = uh.getClass().getMethod("unhook", new Class[]{});
-            um.invoke(uh, new Object[]{});
-        } catch (Throwable ignored) {}
-    }
-    notifyUnhooks.clear();
-    for (int i = 0; i < resultUnhooks.size(); i++) {
-        try {
-            Object uh = resultUnhooks.get(i);
-            Method um = uh.getClass().getMethod("unhook", new Class[]{});
-            um.invoke(uh, new Object[]{});
-        } catch (Throwable ignored) {}
-    }
-    resultUnhooks.clear();
+    unhookAll(notifyUnhooks);
+    sNotifyHookInstalled = false;
+    sWechatNotificationItemHookInstalled = false;
+    unhookAll(resultUnhooks);
+    sActivityResultHookInstalled = false;
     
     sCachedFriendNames = null;
     sCachedFriendIds = null;
     sCachedGroupNames = null;
     sCachedGroupIds = null;
-    sLastGroupCacheLoadAt = 0L;
     cacheTargetSet.clear();
     cacheTalkerCfgMap.clear();
     sNoArgMethodCache.clear();
     try { sNoArgMethodMissCache.clear(); } catch (Throwable ignored) {}
-    try { sTitleNormCache.clear(); } catch (Throwable ignored) {}
-    try { sGroupTitleTalkerCache.clear(); } catch (Throwable ignored) {}
     try {
         if (sQuickReplyExecutor != null) {
             sQuickReplyExecutor.shutdownNow();
         }
     } catch (Throwable ignored) {}
     sQuickReplyExecutor = Executors.newSingleThreadExecutor();
-    globalRingtoneValueView = null;
-    globalRingtoneValueRef = null;
+    clearGlobalRingtonePickState();
     globalSettingActivity = null;
     unregisterQuickReplyReceiver();
 }
@@ -225,6 +368,42 @@ boolean onClickSendBtn(String text) {
     return false;
 }
 
+void loadTargetSetFromConfig(String rawTargets) {
+    cacheTargetSet.clear();
+    cacheTargetSet.addAll(parseTargetSet(rawTargets));
+}
+
+Set parseTargetSet(String rawTargets) {
+    Set out = new HashSet();
+    if (TextUtils.isEmpty(rawTargets)) return out;
+    try {
+        String[] parts = rawTargets.split(",");
+        for (int i = 0; i < parts.length; i++) {
+            String p = parts[i] == null ? "" : parts[i].trim();
+            if (!TextUtils.isEmpty(p)) out.add(p);
+        }
+    } catch (Throwable ignored) {}
+    return out;
+}
+
+Map loadAndMigrateTalkerCfg(String talkerId) {
+    Map one = new HashMap();
+    if (TextUtils.isEmpty(talkerId)) return one;
+    try {
+        String rawCfg = getString(CFG_TALKER_CFG_PREFIX + talkerId, "");
+        one = parseTalkerCfg(rawCfg);
+        String oldRing = cfgGet(one, "ringtone", "");
+        if (!TextUtils.isEmpty(oldRing)) {
+            String newRing = freezeRingtoneUri(oldRing);
+            if (!TextUtils.isEmpty(newRing) && !newRing.equals(oldRing)) {
+                one.put("ringtone", newRing);
+                putString(CFG_TALKER_CFG_PREFIX + talkerId, encodeTalkerCfg(one));
+            }
+        }
+    } catch (Throwable ignored) {}
+    return one;
+}
+
 void loadConfigToCache() {
     String cacheTargetsStr = getString(CFG_TARGETS, "");
     cacheVibrate = getBoolean(CFG_VIBRATE, true);
@@ -236,36 +415,15 @@ void loadConfigToCache() {
     cacheBlockAtAll = getBoolean(CFG_BLOCK_AT_ALL, false);
     cacheBlockAtMe = getBoolean(CFG_BLOCK_AT_ME, false);
     
-    cacheTargetSet.clear();
-    if (!TextUtils.isEmpty(cacheTargetsStr)) {
-        String[] parts = cacheTargetsStr.split(",");
-        for (int i = 0; i < parts.length; i++) {
-            String p = parts[i].trim();
-            if (!p.isEmpty()) cacheTargetSet.add(p);
-        }
-    }
+    loadTargetSetFromConfig(cacheTargetsStr);
     cacheTalkerCfgMap.clear();
     Object[] targetArr = cacheTargetSet.toArray();
     for (int i = 0; i < targetArr.length; i++) {
         String talkerId = String.valueOf(targetArr[i]);
-        String rawCfg = getString(CFG_TALKER_CFG_PREFIX + talkerId, "");
-        Map one = parseTalkerCfg(rawCfg);
-        try {
-            String oldRing = cfgGet(one, "ringtone", "");
-            if (!TextUtils.isEmpty(oldRing)) {
-                String newRing = freezeRingtoneUri(oldRing);
-                if (!TextUtils.isEmpty(newRing) && !newRing.equals(oldRing)) {
-                    one.put("ringtone", newRing);
-                    putString(CFG_TALKER_CFG_PREFIX + talkerId, encodeTalkerCfg(one));
-                }
-            }
-        } catch (Throwable ignored) {}
-        cacheTalkerCfgMap.put(talkerId, one);
+        cacheTalkerCfgMap.put(talkerId, loadAndMigrateTalkerCfg(talkerId));
     }
     
-    String sTag = cacheSound ? "S" : "N";
-    String vTag = cacheVibrate ? "V" : "N";
-    currentChannelId = "jay_chn_v9_" + sTag + "_" + vTag;
+    currentChannelId = CUSTOM_CHANNEL_PREFIX + (cacheSound ? "S" : "N") + "_" + (cacheVibrate ? "V" : "N");
     rebuildNotificationChannel();
     
 }
@@ -334,12 +492,28 @@ Map parseTalkerCfg(String raw) {
             if (TextUtils.isEmpty(one)) continue;
             int p = one.indexOf("=");
             if (p <= 0 || p >= one.length() - 1) continue;
-            String k = one.substring(0, p).trim();
-            String v = one.substring(p + 1).trim();
+            String k = cfgUnescape(one.substring(0, p).trim());
+            String v = cfgUnescape(one.substring(p + 1).trim());
             if (!TextUtils.isEmpty(k)) m.put(k, v);
         }
     } catch (Throwable ignored) {}
     return m;
+}
+
+String cfgEscape(String s) {
+    if (s == null) return "";
+    try {
+        return "~" + Uri.encode(String.valueOf(s));
+    } catch (Throwable ignored) {}
+    return String.valueOf(s);
+}
+
+String cfgUnescape(String s) {
+    if (s == null) return "";
+    try {
+        if (s.startsWith("~")) return Uri.decode(s.substring(1));
+    } catch (Throwable ignored) {}
+    return s;
 }
 
 String encodeTalkerCfg(Map m) {
@@ -351,7 +525,7 @@ String encodeTalkerCfg(Map m) {
         String v = String.valueOf(m.get(keys[i]));
         if (TextUtils.isEmpty(k) || TextUtils.isEmpty(v)) continue;
         if (sb.length() > 0) sb.append(";");
-        sb.append(k).append("=").append(v);
+        sb.append(cfgEscape(k)).append("=").append(cfgEscape(v));
     }
     return sb.toString();
 }
@@ -426,14 +600,6 @@ boolean isNowInMuteWindowByCfg(Map cfg) {
     return false;
 }
 
-int getInt(String key, int def) {
-    try {
-        String s = getString(key, "");
-        if (TextUtils.isEmpty(s)) return def;
-        return Integer.parseInt(s);
-    } catch (Throwable e) { return def; }
-}
-
 int parseTimeToMinute(String hhmm) {
     if (TextUtils.isEmpty(hhmm)) return -1;
     try {
@@ -456,17 +622,12 @@ String normalizeTime(String v, String def) {
     return formatHHmm(h, m);
 }
 
-String twoDigits(int n) {
-    if (n < 10) return "0" + n;
-    return String.valueOf(n);
-}
-
 String formatHHmm(int h, int m) {
     if (h < 0) h = 0;
     if (h > 23) h = 23;
     if (m < 0) m = 0;
     if (m > 59) m = 59;
-    return twoDigits(h) + ":" + twoDigits(m);
+    return (h < 10 ? "0" + h : String.valueOf(h)) + ":" + (m < 10 ? "0" + m : String.valueOf(m));
 }
 
 boolean asBool(Object v) {
@@ -511,16 +672,43 @@ Object safeGetFieldAny(Object obj, String[] fieldNames) {
     return null;
 }
 
-boolean hitAtAllByText(String content) {
-    if (TextUtils.isEmpty(content)) return false;
-    String s = content;
-    return s.contains("@所有人") || s.contains("＠所有人") || s.toLowerCase().contains("@all");
+String readStringByAccessors(Object obj, String[] methodNames, String[] fieldNames) {
+    if (obj == null) return "";
+    try {
+        Object v = safeInvokeAny(obj, methodNames);
+        if (v != null) {
+            String s = String.valueOf(v).trim();
+            if (!TextUtils.isEmpty(s)) return s;
+        }
+    } catch (Throwable ignored) {}
+    try {
+        Object vf = safeGetFieldAny(obj, fieldNames);
+        if (vf != null) {
+            String s2 = String.valueOf(vf).trim();
+            if (!TextUtils.isEmpty(s2)) return s2;
+        }
+    } catch (Throwable ignored) {}
+    return "";
 }
 
-boolean hitAtMeByText(String content) {
-    if (TextUtils.isEmpty(content)) return false;
-    String s = content;
-    return s.contains("@我") || s.contains("有人@我") || s.contains("提到了你") || s.contains("提及你");
+Object resolveOriginObject(Object msg) {
+    if (msg == null) return null;
+    try {
+        Object originObj = safeInvokeAny(msg, MSG_ORIGIN_METHODS);
+        if (originObj != null) return originObj;
+    } catch (Throwable ignored) {}
+    try {
+        return safeGetFieldAny(msg, MSG_ORIGIN_FIELDS);
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+boolean isGroupTalkerOrMsg(String talker, Object msg) {
+    try {
+        if (!TextUtils.isEmpty(talker) && talker.endsWith("@chatroom")) return true;
+        return asBool(safeInvokeAny(msg, MSG_GROUP_FLAG_METHODS));
+    } catch (Throwable ignored) {}
+    return false;
 }
 
 Set parseMemberRuleSet(String raw) {
@@ -561,7 +749,7 @@ String[] extractGroupSenderInfo(Object msg, String talker, String content) {
     String senderName = "";
     String pureContent = TextUtils.isEmpty(content) ? "" : content;
     try {
-        Object sid = safeInvokeAny(msg, new String[]{"getSendTalker", "getSenderUserName", "getSenderWxid", "getFromUser", "getFromUserName", "getRealChatUser", "getSenderId"});
+        Object sid = safeInvokeAny(msg, GROUP_SENDER_METHODS);
         if (sid != null) senderId = String.valueOf(sid).trim();
     } catch (Throwable ignored) {}
     try {
@@ -586,33 +774,76 @@ String[] extractGroupSenderInfo(Object msg, String talker, String content) {
     return new String[]{senderId, senderName, pureContent};
 }
 
+boolean isSelfSentMsg(Object msg, String talker, String content) {
+    try {
+        if (asBool(safeInvokeAny(msg, new String[]{"isSend", "isSelf", "isFromSelf", "isMe"}))) return true;
+    } catch (Throwable ignored) {}
+    try {
+        String self = getLoginWxid();
+        if (TextUtils.isEmpty(self)) return false;
+        String sender = readStringByAccessors(msg, GROUP_SENDER_METHODS, new String[]{"sendTalker", "senderUserName", "senderWxid", "fromUser", "fromUserName", "realChatUser", "senderId"});
+        if (TextUtils.isEmpty(sender) && isGroupTalkerOrMsg(talker, msg)) sender = extractGroupSenderInfo(msg, talker, content)[0];
+        return self.equals(sender);
+    } catch (Throwable ignored) {}
+    return false;
+}
+
+String extractLooseKeyValue(String raw, String key, boolean stopOnSpace) {
+    if (TextUtils.isEmpty(raw) || TextUtils.isEmpty(key)) return "";
+    try {
+        int p = raw.indexOf(key + "=");
+        if (p < 0) return "";
+        int st = p + key.length() + 1;
+        int ed = st;
+        while (ed < raw.length()) {
+            char c = raw.charAt(ed);
+            if (c == '&' || c == ';' || c == '\n' || c == '\r') break;
+            if (stopOnSpace && (c == ',' || c == '\t' || c == ' ' || c == '\"')) break;
+            ed++;
+        }
+        if (ed > st) {
+            String v = raw.substring(st, ed).trim();
+            if (!TextUtils.isEmpty(v)) return v;
+        }
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+String extractQuotedJsonValue(String raw, String key) {
+    if (TextUtils.isEmpty(raw) || TextUtils.isEmpty(key)) return "";
+    try {
+        int p = raw.indexOf("\"" + key + "\"");
+        if (p < 0) return "";
+        int c1 = raw.indexOf(":", p);
+        if (c1 > 0) {
+            int q1 = raw.indexOf("\"", c1 + 1);
+            int q2 = q1 >= 0 ? raw.indexOf("\"", q1 + 1) : -1;
+            if (q1 >= 0 && q2 > q1) {
+                String v = raw.substring(q1 + 1, q2).trim();
+                if (!TextUtils.isEmpty(v)) return v;
+            }
+        }
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+String extractValueFromLooseText(String raw, String[] keys, boolean stopOnSpace) {
+    if (TextUtils.isEmpty(raw) || keys == null) return "";
+    for (int i = 0; i < keys.length; i++) {
+        String k = keys[i];
+        String v = extractLooseKeyValue(raw, k, stopOnSpace);
+        if (!TextUtils.isEmpty(v)) return v;
+        v = extractQuotedJsonValue(raw, k);
+        if (!TextUtils.isEmpty(v)) return v;
+    }
+    return "";
+}
+
 String extractTalkerFromOriginContent(String origin) {
     if (TextUtils.isEmpty(origin)) return "";
     try {
-        String[] keys = new String[]{"talker", "fromusername", "fromUserName", "chatuser", "chatUser", "conversationId"};
-        for (int i = 0; i < keys.length; i++) {
-            String k = keys[i];
-            int p = origin.indexOf(k + "=");
-            if (p >= 0) {
-                int st = p + k.length() + 1;
-                int ed = st;
-                while (ed < origin.length()) {
-                    char c = origin.charAt(ed);
-                    if (c == '&' || c == ';' || c == ',' || c == '\n' || c == '\r' || c == '\t' || c == ' ' || c == '\"') break;
-                    ed++;
-                }
-                if (ed > st) return origin.substring(st, ed).trim();
-            }
-            p = origin.indexOf("\"" + k + "\"");
-            if (p >= 0) {
-                int c1 = origin.indexOf(":", p);
-                if (c1 > 0) {
-                    int q1 = origin.indexOf("\"", c1 + 1);
-                    int q2 = q1 >= 0 ? origin.indexOf("\"", q1 + 1) : -1;
-                    if (q1 >= 0 && q2 > q1) return origin.substring(q1 + 1, q2).trim();
-                }
-            }
-        }
+        String v = extractValueFromLooseText(origin, ORIGIN_TALKER_KEYS, true);
+        if (!TextUtils.isEmpty(v)) return v;
     } catch (Throwable ignored) {}
     try {
         Matcher m = chatroomPattern.matcher(origin);
@@ -624,73 +855,21 @@ String extractTalkerFromOriginContent(String origin) {
 String extractContentFromOriginText(String origin) {
     if (TextUtils.isEmpty(origin)) return "";
     try {
-        String[] keys = new String[]{"content", "msg", "msgContent", "message"};
-        for (int i = 0; i < keys.length; i++) {
-            String k = keys[i];
-            int p = origin.indexOf(k + "=");
-            if (p >= 0) {
-                int st = p + k.length() + 1;
-                int ed = st;
-                while (ed < origin.length()) {
-                    char c = origin.charAt(ed);
-                    if (c == '&' || c == ';' || c == '\n' || c == '\r') break;
-                    ed++;
-                }
-                if (ed > st) {
-                    String v = origin.substring(st, ed).trim();
-                    if (!TextUtils.isEmpty(v)) return v;
-                }
-            }
-            p = origin.indexOf("\"" + k + "\"");
-            if (p >= 0) {
-                int c1 = origin.indexOf(":", p);
-                if (c1 > 0) {
-                    int q1 = origin.indexOf("\"", c1 + 1);
-                    int q2 = q1 >= 0 ? origin.indexOf("\"", q1 + 1) : -1;
-                    if (q1 >= 0 && q2 > q1) {
-                        String v2 = origin.substring(q1 + 1, q2).trim();
-                        if (!TextUtils.isEmpty(v2)) return v2;
-                    }
-                }
-            }
-        }
+        String v = extractValueFromLooseText(origin, ORIGIN_CONTENT_KEYS, false);
+        if (!TextUtils.isEmpty(v)) return v;
     } catch (Throwable ignored) {}
     return "";
 }
 
 String resolveMsgContentForNotify(Object msg, String content) {
     if (!TextUtils.isEmpty(content)) return content;
-    String c = "";
-    try {
-        Object v = safeInvokeAny(msg, new String[]{"getContent", "getMsgContent", "getText", "getDigest"});
-        if (v != null) c = String.valueOf(v).trim();
-    } catch (Throwable ignored) {}
-    if (!TextUtils.isEmpty(c)) return c;
-    try {
-        Object vf = safeGetFieldAny(msg, new String[]{"content", "msgContent", "message", "field_content"});
-        if (vf != null) c = String.valueOf(vf).trim();
-    } catch (Throwable ignored) {}
+    String c = readStringByAccessors(msg, MSG_CONTENT_METHODS, MSG_CONTENT_FIELDS);
     if (!TextUtils.isEmpty(c)) return c;
 
-    Object originObj = null;
-    try {
-        originObj = safeInvokeAny(msg, new String[]{"getOriginMsg", "getOriginMessage", "getOrigin", "getOriginContent"});
-    } catch (Throwable ignored) {}
-    if (originObj == null) {
-        try { originObj = safeGetFieldAny(msg, new String[]{"originMsg", "originMessage", "origin", "originContent"}); } catch (Throwable ignored) {}
-    }
+    Object originObj = resolveOriginObject(msg);
     if (originObj == null) return "";
 
-    try {
-        Object v2 = safeInvokeAny(originObj, new String[]{"getContent", "getMsgContent", "getText", "getDigest"});
-        if (v2 != null) c = String.valueOf(v2).trim();
-    } catch (Throwable ignored) {}
-    if (TextUtils.isEmpty(c)) {
-        try {
-            Object vf2 = safeGetFieldAny(originObj, new String[]{"content", "msgContent", "message", "field_content"});
-            if (vf2 != null) c = String.valueOf(vf2).trim();
-        } catch (Throwable ignored) {}
-    }
+    c = readStringByAccessors(originObj, MSG_CONTENT_METHODS, MSG_CONTENT_FIELDS);
     if (!TextUtils.isEmpty(c)) return c;
     try {
         return extractContentFromOriginText(String.valueOf(originObj));
@@ -699,44 +878,17 @@ String resolveMsgContentForNotify(Object msg, String content) {
 }
 
 String resolveTalkerForMsg(Object msg, String content) {
-    String talker = "";
-    try {
-        Object t = safeInvokeAny(msg, new String[]{"getTalker", "getUsername", "getUserName", "getConversationId", "getChatUser", "getSessionId"});
-        if (t != null) talker = String.valueOf(t).trim();
-    } catch (Throwable ignored) {}
-    if (TextUtils.isEmpty(talker)) {
-        try {
-            Object tf = safeGetFieldAny(msg, new String[]{"talker", "username", "userName", "conversationId", "chatUser", "sessionId", "fromUserName"});
-            if (tf != null) talker = String.valueOf(tf).trim();
-        } catch (Throwable ignored) {}
-    }
+    String talker = readStringByAccessors(msg, MSG_TALKER_METHODS, MSG_TALKER_FIELDS);
     if (!TextUtils.isEmpty(talker)) return talker;
 
-    Object originObj = null;
-    try {
-        originObj = safeInvokeAny(msg, new String[]{"getOriginMsg", "getOriginMessage", "getOrigin", "getOriginContent"});
-    } catch (Throwable ignored) {}
-    if (originObj == null) {
-        try {
-            originObj = safeGetFieldAny(msg, new String[]{"originMsg", "originMessage", "origin", "originContent"});
-        } catch (Throwable ignored) {}
-    }
+    Object originObj = resolveOriginObject(msg);
 
     if (originObj != null) {
         if (originObj instanceof CharSequence) {
             String fromText = extractTalkerFromOriginContent(String.valueOf(originObj));
             if (!TextUtils.isEmpty(fromText)) return fromText;
         } else {
-            try {
-                Object t2 = safeInvokeAny(originObj, new String[]{"getTalker", "getUsername", "getUserName", "getConversationId", "getChatUser", "getSessionId", "getFromUserName"});
-                if (t2 != null) talker = String.valueOf(t2).trim();
-            } catch (Throwable ignored) {}
-            if (TextUtils.isEmpty(talker)) {
-                try {
-                    Object tf2 = safeGetFieldAny(originObj, new String[]{"talker", "username", "userName", "conversationId", "chatUser", "sessionId", "fromUserName"});
-                    if (tf2 != null) talker = String.valueOf(tf2).trim();
-                } catch (Throwable ignored) {}
-            }
+            talker = readStringByAccessors(originObj, MSG_ORIGIN_TALKER_METHODS, MSG_TALKER_FIELDS);
             if (!TextUtils.isEmpty(talker)) return talker;
             try {
                 String fromObjText = extractTalkerFromOriginContent(String.valueOf(originObj));
@@ -770,11 +922,7 @@ boolean memberRuleMatched(String rawRule, String senderId, String senderName, St
 
 boolean shouldSuppressByRules(Object msg, String talker, String content, Map cfg) {
     try {
-        boolean isGroupChat = !TextUtils.isEmpty(talker) && talker.endsWith("@chatroom");
-        if (!isGroupChat) {
-            Object isGroupObj = safeInvokeAny(msg, new String[]{"isGroupChat", "isChatRoom", "isChatroom", "isGroup"});
-            isGroupChat = asBool(isGroupObj);
-        }
+        boolean isGroupChat = isGroupTalkerOrMsg(talker, msg);
 
         boolean blockAtAll = cfgGetBool(cfg, "blockAll", cacheBlockAtAll);
         boolean blockAtMe = cfgGetBool(cfg, "blockMe", cacheBlockAtMe);
@@ -791,13 +939,15 @@ boolean shouldSuppressByRules(Object msg, String talker, String content, Map cfg
         }
 
         if (isGroupChat && blockAtAll) {
-            Object atAllObj = safeInvokeAny(msg, new String[]{"isNotifyAll", "isAnnounceAll", "isAtAll", "isAtEveryone", "hasAtAll"});
-            if (asBool(atAllObj) || hitAtAllByText(content)) return true;
+            Object atAllObj = safeInvokeAny(msg, MSG_AT_ALL_METHODS);
+            String c = TextUtils.isEmpty(content) ? "" : content;
+            if (asBool(atAllObj) || c.contains("@所有人") || c.contains("＠所有人") || c.toLowerCase().contains("@all")) return true;
         }
 
         if (isGroupChat && blockAtMe) {
-            Object atMeObj = safeInvokeAny(msg, new String[]{"isAtMe", "isAtMeFromGroup", "isMentioned", "hasAtMe", "needNotifyMe"});
-            if (asBool(atMeObj) || hitAtMeByText(content)) return true;
+            Object atMeObj = safeInvokeAny(msg, MSG_AT_ME_METHODS);
+            String c2 = TextUtils.isEmpty(content) ? "" : content;
+            if (asBool(atMeObj) || c2.contains("@我") || c2.contains("有人@我") || c2.contains("提到了你") || c2.contains("提及你")) return true;
         }
     } catch (Throwable ignored) {}
     return false;
@@ -881,6 +1031,37 @@ String prettyAudioNameFromUri(Uri uri) {
     return "";
 }
 
+java.io.File getRingtoneStoreDir() {
+    try {
+        String pd = String.valueOf(pluginDir);
+        if (!TextUtils.isEmpty(pd) && !"null".equalsIgnoreCase(pd)) {
+            java.io.File dir = new java.io.File(pd, "ringtones");
+            if (!dir.exists()) dir.mkdirs();
+            if (dir.exists() && dir.canWrite()) return dir;
+        }
+    } catch (Throwable ignored) {}
+    try {
+        if (hostContext != null && Build.VERSION.SDK_INT >= 21) {
+            java.io.File[] dirs = hostContext.getExternalMediaDirs();
+            if (dirs != null) {
+                for (int i = 0; i < dirs.length; i++) {
+                    java.io.File base = dirs[i];
+                    if (base == null) continue;
+                    java.io.File dir = new java.io.File(base, "WAuxiliary/Plugin/ringtones");
+                    if (!dir.exists()) dir.mkdirs();
+                    if (dir.exists() && dir.canWrite()) return dir;
+                }
+            }
+        }
+    } catch (Throwable ignored) {}
+    try {
+        java.io.File dir = new java.io.File("/storage/emulated/0/Android/media/com.tencent.mm/WAuxiliary/Plugin/ringtones");
+        if (!dir.exists()) dir.mkdirs();
+        if (dir.exists() && dir.canWrite()) return dir;
+    } catch (Throwable ignored) {}
+    return null;
+}
+
 String freezeRingtoneUri(String rawUri) {
     if (TextUtils.isEmpty(rawUri)) return "";
     try {
@@ -898,8 +1079,8 @@ String freezeRingtoneUri(String rawUri) {
             in = hostContext.getContentResolver().openInputStream(src);
             if (in == null) return rawUri;
 
-            java.io.File dir = new java.io.File("/storage/emulated/0/Android/media/com.tencent.mm/WAuxiliary/Plugin/ringtones");
-            if (!dir.exists()) dir.mkdirs();
+            java.io.File dir = getRingtoneStoreDir();
+            if (dir == null) return rawUri;
 
             String base = prettyAudioNameFromUri(src);
             if (TextUtils.isEmpty(base)) base = "ringtone_" + System.currentTimeMillis();
@@ -927,13 +1108,71 @@ String freezeRingtoneUri(String rawUri) {
 
 boolean shouldBlockNativeByCfg(Map cfg) {
     // 已配置会话统一拦截微信原生通知，全部走插件通知链路。
-    // 免打扰/时段静默仍由 onHandleMsg() 控制为不弹通知。
+    // 免打扰/时段静默也必须拦截原生通知，否则会出现“不弹自定义通知但原生铃声还响”。
     return true;
+}
+
+boolean isWechatProcessVisibleNow() {
+    try {
+        if (hostContext == null) return false;
+        ActivityManager am = (ActivityManager) hostContext.getSystemService(Context.ACTIVITY_SERVICE);
+        if (am == null) return false;
+        List procs = am.getRunningAppProcesses();
+        if (procs == null) return false;
+
+        int myPid = android.os.Process.myPid();
+        String hostPkg = hostContext.getPackageName();
+        for (int i = 0; i < procs.size(); i++) {
+            ActivityManager.RunningAppProcessInfo p = (ActivityManager.RunningAppProcessInfo) procs.get(i);
+            if (p == null) continue;
+
+            boolean mine = p.pid == myPid;
+            if (!mine && p.pkgList != null && !TextUtils.isEmpty(hostPkg)) {
+                for (int j = 0; j < p.pkgList.length; j++) {
+                    if (hostPkg.equals(p.pkgList[j])) {
+                        mine = true;
+                        break;
+                    }
+                }
+            }
+            if (!mine) continue;
+
+            return p.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+                    || p.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE;
+        }
+    } catch (Throwable ignored) {}
+    return false;
+}
+
+boolean isChatActivityVisibleNow() {
+    try {
+        Activity top = getTopActivity();
+        if (top == null) return false;
+        try { if (top.isFinishing()) return false; } catch (Throwable ignored) {}
+        try { if (Build.VERSION.SDK_INT >= 17 && top.isDestroyed()) return false; } catch (Throwable ignored) {}
+        if (!isWechatProcessVisibleNow()) return false;
+
+        String cls = "";
+        try { cls = top.getClass().getName(); } catch (Throwable ignored) {}
+        boolean chatClass = !TextUtils.isEmpty(cls) && (cls.indexOf("ChattingUI") >= 0 || cls.indexOf(".ui.chatting.") >= 0);
+        boolean hasTargetTalker = false;
+        try { hasTargetTalker = !TextUtils.isEmpty(getTargetTalker()); } catch (Throwable ignored) {}
+        if (!chatClass && !hasTargetTalker) return false;
+
+        try {
+            if (top.hasWindowFocus()) return true;
+            Window w = top.getWindow();
+            View decor = w == null ? null : w.getDecorView();
+            if (decor != null && decor.getWindowVisibility() == View.VISIBLE && decor.isShown()) return true;
+        } catch (Throwable ignored) {}
+    } catch (Throwable ignored) {}
+    return false;
 }
 
 boolean isCurrentChatTalker(String talker) {
     if (TextUtils.isEmpty(talker)) return false;
     try {
+        if (!isChatActivityVisibleNow()) return false;
         String cur = getTargetTalker();
         if (TextUtils.isEmpty(cur)) return false;
         return talker.equals(cur);
@@ -955,6 +1194,77 @@ int nextCustomNotifyId(String talker, boolean enableQuickReply) {
     return (int) (System.currentTimeMillis() & 0x7fffffffL);
 }
 
+String resolveTargetTalkerFromNativeNotification(Notification n) {
+    if (n == null || cacheTargetSet == null || cacheTargetSet.isEmpty()) return "";
+    try {
+        String talker = extractTalkerFromNotification(n);
+        if (!TextUtils.isEmpty(talker) && cacheTargetSet.contains(talker)) return talker;
+    } catch (Throwable ignored) {}
+    return "";
+}
+
+boolean isPluginOwnedNotification(Notification n) {
+    if (n == null) return false;
+    try {
+        if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) return true;
+        if (n.extras != null && n.extras.getBoolean(KEYWORD_NOTIFY_MARK, false)) return true;
+    } catch (Throwable ignored) {}
+    try {
+        if (Build.VERSION.SDK_INT >= 26) {
+            String ch = n.getChannelId();
+            if (ch != null && (ch.startsWith(CUSTOM_CHANNEL_PREFIX) || ch.startsWith(KEYWORD_CHANNEL_PREFIX))) return true;
+        }
+    } catch (Throwable ignored) {}
+    return false;
+}
+
+boolean shouldBlockNativeWechatNotification(Notification n) {
+    if (n == null || isPluginOwnedNotification(n)) return false;
+    try {
+        String talker = resolveTargetTalkerFromNativeNotification(n);
+        if (TextUtils.isEmpty(talker) || !cacheTargetSet.contains(talker)) return false;
+        ensureTalkerCfgLoaded(talker);
+        return shouldBlockNativeByCfg(getTalkerCfg(talker));
+    } catch (Throwable ignored) {}
+    return false;
+}
+
+String resolveDisplayNameForTalker(String talker) {
+    if (TextUtils.isEmpty(talker)) return "";
+    try {
+        String name = resolveTalkerNameForMatch(talker);
+        if (TextUtils.isEmpty(name)) name = getFriendName(talker);
+        if (TextUtils.isEmpty(name)) name = talker;
+        return name;
+    } catch (Throwable ignored) {}
+    return talker;
+}
+
+String[] buildNotifyTitleAndText(Object msg, String talker, String content, int type, boolean showDetail) {
+    String title = resolveDisplayNameForTalker(talker);
+    String text = "[收到一条新消息]";
+    if (!showDetail) return new String[]{title, text};
+
+    try {
+        if (type != 1) return new String[]{title, "[图片/语音或非文本消息]"};
+        if (!isGroupTalkerOrMsg(talker, msg)) {
+            return new String[]{title, TextUtils.isEmpty(content) ? "[收到一条新消息]" : content};
+        }
+
+        String[] sender = extractGroupSenderInfo(msg, talker, content);
+        String sid = sender[0];
+        String sname = sender[1];
+        String pure = sender[2];
+        String senderLabel = !TextUtils.isEmpty(sname) ? sname : sid;
+        String groupName = resolveDisplayNameForTalker(talker);
+        if (!TextUtils.isEmpty(groupName)) title = groupName;
+        if (TextUtils.isEmpty(pure)) text = "[收到一条新消息]";
+        else if (TextUtils.isEmpty(senderLabel)) text = pure;
+        else text = senderLabel + ": " + pure;
+    } catch (Throwable ignored) {}
+    return new String[]{title, text};
+}
+
 // ================= 核心 1：原生通知强力拦截器 =================
 void hookSystemNotification() {
     try {
@@ -963,68 +1273,33 @@ void hookSystemNotification() {
 
         Method[] methods = NotificationManager.class.getDeclaredMethods();
         for (int i = 0; i < methods.length; i++) {
-            final Method m = methods[i];
-            if (!"notify".equals(m.getName())) continue;
+            try {
+                final Method m = methods[i];
+                if (!"notify".equals(m.getName())) continue;
 
-            Class[] ps = m.getParameterTypes();
-            if (ps == null || ps.length == 0 || ps[ps.length - 1] != Notification.class) continue;
+                Class[] ps = m.getParameterTypes();
+                if (ps == null || ps.length == 0 || ps[ps.length - 1] != Notification.class) continue;
 
-            Object unhook = XposedBridge.hookMethod(m, new XC_MethodHook() {
-                protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
-                    try {
-                        ensureConfigLoadedForRuntime();
-                        if (cacheTargetSet.isEmpty()) return;
+                Object unhook = XposedBridge.hookMethod(m, new XC_MethodHook() {
+                    protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
+                        try {
+                            ensureConfigLoadedForRuntime();
+                            if (cacheTargetSet.isEmpty()) return;
 
-                        Object[] args = param.args;
-                        if (args == null || args.length == 0) return;
-                        Notification n = (Notification) args[args.length - 1];
-                        if (n == null) return;
-
-                        if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) {
-                            return;
-                        }
-                        // 兼容其它通知类插件：关键词通知自己发出的通知不能被本插件当成微信原生通知拦截。
-                        if (n.extras != null && n.extras.getBoolean("is_keyword_notify", false)) {
-                            return;
-                        }
-                        if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("jay_chn_v9_")) {
-                            return;
-                        }
-                        if (Build.VERSION.SDK_INT >= 26 && n.getChannelId() != null && n.getChannelId().startsWith("keyword_notify_")) {
-                            return;
-                        }
-                        String talker = extractTalkerFromNotification(n);
-                        boolean shouldBlock = false;
-
-                        if (!TextUtils.isEmpty(talker) && cacheTargetSet.contains(talker)) {
-                            Map cfg0 = getTalkerCfg(talker);
-                            shouldBlock = shouldBlockNativeByCfg(cfg0);
-                        }
-                        if (!shouldBlock && TextUtils.isEmpty(talker) && n.extras != null) {
-                            String title = "";
-                            try {
-                                CharSequence cs = n.extras.getCharSequence(Notification.EXTRA_TITLE);
-                                if (cs != null) title = cs.toString().trim();
-                            } catch (Throwable ignored) {}
-                            String titleTalker = findTargetTalkerByTitle(title);
-                            if (TextUtils.isEmpty(titleTalker)) {
-                                try { titleTalker = findTalkerByGroupTitle(title); } catch (Throwable ignored) {}
+                            Object[] args = param.args;
+                            if (args == null || args.length == 0) return;
+                            Notification n = (Notification) args[args.length - 1];
+                            if (n == null) return;
+                            if (shouldBlockNativeWechatNotification(n)) {
+                                param.setResult(null);
                             }
-                            if (!TextUtils.isEmpty(titleTalker) && cacheTargetSet.contains(titleTalker)) {
-                                Map cfg0 = getTalkerCfg(titleTalker);
-                                shouldBlock = shouldBlockNativeByCfg(cfg0);
-                            }
-                        }
 
-                        if (shouldBlock) {
-                            param.setResult(null);
+                        } catch (Throwable ignoredHook) {
                         }
-
-                    } catch (Throwable e) {
                     }
-                }
-            });
-            if (unhook != null) notifyUnhooks.add(unhook);
+                });
+                if (unhook != null) notifyUnhooks.add(unhook);
+            } catch (Throwable ignoredMethod) {}
         }
     } catch (Throwable ignored) {
         sNotifyHookInstalled = false;
@@ -1039,22 +1314,18 @@ void onHandleMsg(Object msg) {
     }
 
     try {
-        boolean isSend = (boolean) safeInvoke(msg, "isSend");
-        if (isSend) {
+        String talker = resolveTalkerForMsg(msg, "");
+        String content = resolveMsgContentForNotify(msg, "");
+        if (TextUtils.isEmpty(talker)) talker = resolveTalkerForMsg(msg, content);
+        if (isSelfSentMsg(msg, talker, content)) {
             return;
         }
-
-        String talker = resolveTalkerForMsg(msg, "");
-        String content = (String) safeInvoke(msg, "getContent");
-        content = resolveMsgContentForNotify(msg, content);
-        if (TextUtils.isEmpty(talker)) talker = resolveTalkerForMsg(msg, content);
         Object typeObj = safeInvoke(msg, "getType");
         int type = (typeObj instanceof Number) ? ((Number) typeObj).intValue() : 1;
         if (isSystemMessageLike(msg, talker, content, type)) {
             return;
         }
 
-        // 【逻辑优化】使用 Set 的精确匹配
         if (!cacheTargetSet.contains(talker)) {
             return;
         }
@@ -1062,9 +1333,8 @@ void onHandleMsg(Object msg) {
             return;
         }
 
-        Map cfg = getTalkerCfg(talker);
         ensureTalkerCfgLoaded(talker);
-        cfg = getTalkerCfg(talker);
+        Map cfg = getTalkerCfg(talker);
         int talkerMode = cfgGetInt(cfg, "mode", 1);
         boolean inMuteWindow = isNowInMuteWindowByCfg(cfg);
         boolean showDetail = cfgGetBool(cfg, "showDetail", cacheShowDetail);
@@ -1072,15 +1342,11 @@ void onHandleMsg(Object msg) {
         boolean talkerSound = cfgGetBool(cfg, "sound", cacheSound);
         String talkerRingtone = cfgGet(cfg, "ringtone", "");
         boolean talkerQuickReply = cfgGetBool(cfg, "quickReply", false);
-        boolean blockNative = shouldBlockNativeByCfg(cfg);
 
         if (talkerMode == 0) {
             return;
         }
         if (inMuteWindow) {
-            return;
-        }
-        if (showDetail && !talkerQuickReply && !blockNative) {
             return;
         }
 
@@ -1089,89 +1355,69 @@ void onHandleMsg(Object msg) {
             return;
         }
 
-        boolean isGroupChat = !TextUtils.isEmpty(talker) && talker.endsWith("@chatroom");
-        if (!isGroupChat) {
-            Object g = safeInvokeAny(msg, new String[]{"isGroupChat", "isChatroom", "isChatRoom", "isGroup"});
-            isGroupChat = asBool(g);
-        }
-
-        String notifyTitle = resolveTalkerNameForMatch(talker);
-        if (TextUtils.isEmpty(notifyTitle)) notifyTitle = getFriendName(talker);
-        if (TextUtils.isEmpty(notifyTitle)) notifyTitle = talker;
-
-        String displayContent = "[收到一条新消息]";
-        if (showDetail) {
-            if (type == 1) {
-                if (isGroupChat) {
-                    String[] sender = extractGroupSenderInfo(msg, talker, content);
-                    String sid = sender[0];
-                    String sname = sender[1];
-                    String pure = sender[2];
-                    String senderLabel = !TextUtils.isEmpty(sname) ? sname : sid;
-                    String groupName = resolveTalkerNameForMatch(talker);
-                    if (TextUtils.isEmpty(groupName)) groupName = getFriendName(talker);
-                    if (TextUtils.isEmpty(groupName)) groupName = talker;
-                    notifyTitle = groupName;
-                    if (TextUtils.isEmpty(pure)) displayContent = "[收到一条新消息]";
-                    else if (TextUtils.isEmpty(senderLabel)) displayContent = pure;
-                    else displayContent = senderLabel + ": " + pure;
-                } else {
-                    displayContent = TextUtils.isEmpty(content) ? "[收到一条新消息]" : content;
-                }
-            } else {
-                displayContent = "[图片/语音或非文本消息]";
-            }
-        }
+        String[] notifyText = buildNotifyTitleAndText(msg, talker, content, type, showDetail);
+        String notifyTitle = notifyText[0];
+        String displayContent = notifyText[1];
 
         sendCustomNotification(talker, notifyTitle, displayContent, talkerVibrate, talkerSound, talkerRingtone, talkerQuickReply);
-    } catch (Throwable e) {
+    } catch (Throwable ignored) {
     }
+}
+
+List getNotificationChannelList(NotificationManager nm) {
+    if (nm == null || Build.VERSION.SDK_INT < 26) return null;
+    try {
+        return (List) nm.getClass().getMethod("getNotificationChannels").invoke(nm);
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+void deleteChannelsWithPrefixes(NotificationManager nm, List channels, String[] prefixes) {
+    if (nm == null || channels == null || prefixes == null) return;
+    try {
+        for (int i = 0; i < channels.size(); i++) {
+            NotificationChannel ch = (NotificationChannel) channels.get(i);
+            if (ch == null) continue;
+            String chId = ch.getId();
+            if (TextUtils.isEmpty(chId)) continue;
+            for (int j = 0; j < prefixes.length; j++) {
+                String prefix = prefixes[j];
+                if (!TextUtils.isEmpty(prefix) && chId.startsWith(prefix)) {
+                    nm.deleteNotificationChannel(chId);
+                    break;
+                }
+            }
+        }
+    } catch (Throwable ignored) {}
+}
+
+void trimCustomChannels(NotificationManager nm, List channels, int keepMax) {
+    if (nm == null || channels == null || keepMax <= 0) return;
+    try {
+        List ids = new ArrayList();
+        for (int i = 0; i < channels.size(); i++) {
+            NotificationChannel ch = (NotificationChannel) channels.get(i);
+            if (ch == null) continue;
+            String id = ch.getId();
+            if (id != null && id.startsWith(CUSTOM_CHANNEL_PREFIX)) ids.add(id);
+        }
+        int extra = ids.size() - keepMax;
+        if (extra <= 0) return;
+        for (int i = 0; i < extra; i++) {
+            try { nm.deleteNotificationChannel(String.valueOf(ids.get(i))); } catch (Throwable ignored) {}
+        }
+    } catch (Throwable ignored) {}
 }
 
 void rebuildNotificationChannel() {
-    if (Build.VERSION.SDK_INT >= 26) {
-        try {
-            NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
-            
-            // 【安全优化3】清道夫机制：清理之前遗留的过期通道，保持系统整洁，防堆积崩溃
-            try {
-                List channels = (List) nm.getClass().getMethod("getNotificationChannels").invoke(nm);
-                if (channels != null) {
-                    for (int i = 0; i < channels.size(); i++) {
-                        NotificationChannel ch = (NotificationChannel) channels.get(i);
-                        String chId = ch.getId();
-                        // 只清理 v7 和 v8 的历史遗留通道，不碰 v9 的现役通道
-if (chId != null && (chId.startsWith("jay_chn_v7") || chId.startsWith("jay_chn_v8"))) {
-    nm.deleteNotificationChannel(chId);
-}
-                    }
-                }
-            } catch (Throwable ignored) {}
-
-            // 额外清理：限制 v9 通道总量，避免长期堆积导致系统通知管理变慢
-            try {
-                List channels2 = (List) nm.getClass().getMethod("getNotificationChannels").invoke(nm);
-                if (channels2 != null && channels2.size() > 0) {
-                    List v9Ids = new ArrayList();
-                    for (int i = 0; i < channels2.size(); i++) {
-                        NotificationChannel ch2 = (NotificationChannel) channels2.get(i);
-                        if (ch2 == null) continue;
-                        String id2 = ch2.getId();
-                        if (id2 != null && id2.startsWith("jay_chn_v9_")) v9Ids.add(id2);
-                    }
-                    int keepMax = 100;
-                    int extra = v9Ids.size() - keepMax;
-                    if (extra > 0) {
-                        for (int i = 0; i < extra; i++) {
-                            try { nm.deleteNotificationChannel(String.valueOf(v9Ids.get(i))); } catch (Throwable ignored) {}
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {}
-
-            ensureNotifyChannel(nm, currentChannelId, cacheVibrate, cacheSound, "");
-        } catch (Throwable ignored) {}
-    }
+    if (Build.VERSION.SDK_INT < 26) return;
+    try {
+        NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        List channels = getNotificationChannelList(nm);
+        deleteChannelsWithPrefixes(nm, channels, LEGACY_CHANNEL_PREFIXES);
+        trimCustomChannels(nm, getNotificationChannelList(nm), 100);
+        ensureNotifyChannel(nm, currentChannelId, cacheVibrate, cacheSound, "");
+    } catch (Throwable ignored) {}
 }
 
 android.media.AudioAttributes buildNotifyAudioAttrs() {
@@ -1282,7 +1528,9 @@ boolean ensureUriReadable(String uriStr) {
 
         if (hostContext == null) return false;
         try {
-            if (hostContext.getContentResolver().openInputStream(u) == null) return false;
+            java.io.InputStream in = hostContext.getContentResolver().openInputStream(u);
+            if (in == null) return false;
+            try { in.close(); } catch (Throwable ignored4) {}
             return true;
         } catch (Throwable ignored3) {
             return false;
@@ -1322,17 +1570,92 @@ Intent[] buildChatOpenIntents(String talker) {
     return null;
 }
 
+void applyBasicNotificationOptions(Notification.Builder builder, String title, String text, boolean useVibrate, boolean useSound, String talkerRing, boolean useManualCustomSound) {
+    if (builder == null) return;
+    builder.setContentTitle(title)
+           .setContentText(text)
+           .setSmallIcon(android.R.drawable.stat_notify_chat)
+           .setAutoCancel(true)
+           .setOnlyAlertOnce(false);
+
+    try { builder.setCategory(Notification.CATEGORY_MESSAGE); } catch (Throwable ignored) {}
+    try { builder.setVisibility(Notification.VISIBILITY_PRIVATE); } catch (Throwable ignored) {}
+
+    long[] vibPattern = useVibrate ? new long[]{0, 250, 250, 250} : new long[]{0};
+    try { builder.setVibrate(vibPattern); } catch (Throwable ignored) {}
+
+    Uri soundUri = resolveNotifySoundUri(Build.VERSION.SDK_INT >= 26 ? false : (useManualCustomSound ? false : useSound), talkerRing);
+    try { builder.setSound(soundUri); } catch (Throwable ignored) {}
+}
+
+void applyLegacyAlertOptions(Notification.Builder builder, boolean useVibrate, boolean useSound, String talkerRing, boolean useManualCustomSound) {
+    if (builder == null || Build.VERSION.SDK_INT >= 26) return;
+    int defaults = 0;
+    if (useVibrate) defaults |= Notification.DEFAULT_VIBRATE;
+    if (useSound) {
+        if (TextUtils.isEmpty(talkerRing)) defaults |= Notification.DEFAULT_SOUND;
+        else if (!useManualCustomSound) {
+            try { builder.setSound(Uri.parse(talkerRing)); } catch (Throwable ignored) {}
+        }
+    }
+    builder.setDefaults(defaults);
+    try { builder.setPriority(Notification.PRIORITY_HIGH); } catch (Throwable ignored) {}
+}
+
+void attachChatOpenIntent(Notification.Builder builder, String talker, int notifyId) {
+    if (builder == null) return;
+    try {
+        Intent[] intents = buildChatOpenIntents(talker);
+        if (intents == null || intents.length == 0) return;
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+        builder.setContentIntent(PendingIntent.getActivities(hostContext, notifyId, intents, flags));
+    } catch (Throwable ignored) {}
+}
+
+void attachQuickReplyAction(Notification.Builder builder, String talker, int notifyId, boolean enableQuickReply) {
+    if (builder == null || !enableQuickReply) return;
+    try {
+        RemoteInput remoteInput = new RemoteInput.Builder("key_reply_content")
+                .setLabel("输入回复内容...")
+                .build();
+        Intent replyIntent = new Intent(ACTION_QUICK_REPLY);
+        replyIntent.setPackage(hostContext.getPackageName());
+        replyIntent.putExtra(EXTRA_TALKER, talker);
+        replyIntent.putExtra(EXTRA_NOTIFY_ID, notifyId);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
+        PendingIntent replyPi = PendingIntent.getBroadcast(hostContext, notifyId, replyIntent, flags);
+        Notification.Action action = new Notification.Action.Builder(
+                android.R.drawable.ic_menu_send,
+                "快捷回复",
+                replyPi
+        ).addRemoteInput(remoteInput).build();
+        builder.addAction(action);
+    } catch (Throwable ignored) {}
+}
+
+void playSoundAfterNotify(boolean useSound, String talkerRing, boolean useManualCustomSound) {
+    try {
+        if (Build.VERSION.SDK_INT >= 26) {
+            String playableRing = talkerRing;
+            if (!TextUtils.isEmpty(playableRing) && !ensureUriReadable(playableRing)) playableRing = "";
+            playNotifySoundByConfig(useSound, playableRing);
+        } else if (useManualCustomSound && ensureUriReadable(talkerRing)) {
+            playCustomRingtoneFallback(talkerRing);
+        }
+    } catch (Throwable ignored) {}
+}
+
 void sendCustomNotification(String talker, String title, String text, boolean useVibrate, boolean useSound, String ringtoneUri, boolean enableQuickReply) {
     try {
         NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
         Notification.Builder builder;
         String talkerChannelId = currentChannelId;
-        String talkerRing = TextUtils.isEmpty(ringtoneUri) ? "" : ringtoneUri;
-        boolean useManualCustomSound = Build.VERSION.SDK_INT >= 26 && useSound; // 8+ 一律手动播放，规避ROM回写通道声音
+        String talkerRing = normalizeRingtoneUri(ringtoneUri);
+        boolean useManualCustomSound = useSound && !TextUtils.isEmpty(talkerRing);
         if (Build.VERSION.SDK_INT >= 26) {
-            String sTag = useSound ? "M" : "N";
-            String vTag = useVibrate ? "V" : "N";
-            talkerChannelId = "jay_chn_v9_" + sTag + "_" + vTag + "_" + talkerRing.hashCode();
+            talkerChannelId = buildTalkerChannelId(useSound, useVibrate, talkerRing);
             // 8+ 通道保持静音，声音由插件手动播放，避免被系统/ROM改回默认声
             ensureNotifyChannel(nm, talkerChannelId, useVibrate, false, talkerRing);
             builder = new Notification.Builder(hostContext, talkerChannelId);
@@ -1340,114 +1663,142 @@ void sendCustomNotification(String talker, String title, String text, boolean us
             builder = new Notification.Builder(hostContext);
         }
 
-        builder.setContentTitle(title)
-               .setContentText(text)
-               .setSmallIcon(android.R.drawable.stat_notify_chat)
-               .setAutoCancel(true)
-               .setOnlyAlertOnce(false);
-
-        try { builder.setCategory(Notification.CATEGORY_MESSAGE); } catch (Throwable ignored) {}
-        try { builder.setVisibility(Notification.VISIBILITY_PRIVATE); } catch (Throwable ignored) {}
-
-        long[] vibPattern = useVibrate ? new long[]{0, 250, 250, 250} : new long[]{0};
-        try { builder.setVibrate(vibPattern); } catch (Throwable ignored) {}
-
-        Uri soundUri = resolveNotifySoundUri(Build.VERSION.SDK_INT >= 26 ? false : (useManualCustomSound ? false : useSound), talkerRing);
-        try { builder.setSound(soundUri); } catch (Throwable ignored) {}
+        applyBasicNotificationOptions(builder, title, text, useVibrate, useSound, talkerRing, useManualCustomSound);
 
         Bundle extras = new Bundle();
         extras.putBoolean(JAY_MARK, true);
         builder.setExtras(extras);
 
-        if (Build.VERSION.SDK_INT < 26) {
-            int defaults = 0;
-            if (useVibrate) defaults |= Notification.DEFAULT_VIBRATE;
-            if (useSound) {
-                if (TextUtils.isEmpty(talkerRing)) defaults |= Notification.DEFAULT_SOUND;
-                else builder.setSound(Uri.parse(talkerRing));
-            }
-            builder.setDefaults(defaults);
-            try { builder.setPriority(Notification.PRIORITY_HIGH); } catch (Throwable ignored) {}
-        }
+        applyLegacyAlertOptions(builder, useVibrate, useSound, talkerRing, useManualCustomSound);
 
         int notifyId = nextCustomNotifyId(talker, enableQuickReply);
-        Intent[] intents = buildChatOpenIntents(talker);
-        if (intents != null && intents.length > 0) {
-            builder.setContentIntent(PendingIntent.getActivities(hostContext, notifyId, intents, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
-        }
-
-        if (enableQuickReply) {
-            try {
-                RemoteInput remoteInput = new RemoteInput.Builder("key_reply_content")
-                        .setLabel("输入回复内容...")
-                        .build();
-                Intent replyIntent = new Intent(ACTION_QUICK_REPLY);
-                replyIntent.setPackage(hostContext.getPackageName());
-                replyIntent.putExtra(EXTRA_TALKER, talker);
-                replyIntent.putExtra(EXTRA_NOTIFY_ID, notifyId);
-                int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-                // RemoteInput requires mutable PendingIntent on Android 12+.
-                // On old versions, keep default mutability (do not force IMMUTABLE).
-                if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
-                PendingIntent replyPi = PendingIntent.getBroadcast(hostContext, notifyId, replyIntent, flags);
-                Notification.Action action = new Notification.Action.Builder(
-                        android.R.drawable.ic_menu_send,
-                        "快捷回复",
-                        replyPi
-                ).addRemoteInput(remoteInput).build();
-                builder.addAction(action);
-            } catch (Throwable ignored) {}
-        }
+        attachChatOpenIntent(builder, talker, notifyId);
+        attachQuickReplyAction(builder, talker, notifyId, enableQuickReply);
 
         nm.notify(notifyId, builder.build());
+        playSoundAfterNotify(useSound, talkerRing, useManualCustomSound);
+    } catch (Throwable ignored) {}
+}
 
-        // 8+ 声音统一手动播放（含默认通知声/自定义铃声）
-        if (Build.VERSION.SDK_INT >= 26) {
-            String playableRing = talkerRing;
-            if (!TextUtils.isEmpty(playableRing) && !ensureUriReadable(playableRing)) {
-                playableRing = "";
+Uri getUriExtraCompat(Intent data, String key) {
+    if (data == null || TextUtils.isEmpty(key)) return null;
+    try {
+        Object v = data.getParcelableExtra(key);
+        if (v instanceof Uri) return (Uri) v;
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+Uri firstUriInBundle(Bundle b) {
+    if (b == null) return null;
+    try {
+        Set keys = b.keySet();
+        if (keys == null) return null;
+        Object[] arr = keys.toArray();
+        for (int i = 0; i < arr.length; i++) {
+            String k = String.valueOf(arr[i]);
+            if (TextUtils.isEmpty(k)) continue;
+            Object v = null;
+            try { v = b.get(k); } catch (Throwable ignored) {}
+            if (v instanceof Uri) return (Uri) v;
+            if (v instanceof Intent) {
+                try {
+                    Uri u = ((Intent) v).getData();
+                    if (u != null) return u;
+                } catch (Throwable ignored) {}
+                try {
+                    Uri u2 = firstUriInBundle(((Intent) v).getExtras());
+                    if (u2 != null) return u2;
+                } catch (Throwable ignored) {}
             }
-            playNotifySoundByConfig(useSound, playableRing);
-        } else {
-            if (useManualCustomSound) playCustomRingtoneFallback(talkerRing);
+            if (v instanceof Bundle) {
+                Uri u3 = firstUriInBundle((Bundle) v);
+                if (u3 != null) return u3;
+            }
         }
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+Uri extractPickedRingtoneUri(Intent data, int requestCode) {
+    if (data == null) return null;
+    Uri uri = null;
+    if (requestCode == REQ_PICK_RINGTONE_SYSTEM) {
+        try { uri = (Uri) data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI); } catch (Throwable ignored) {}
+        if (uri != null) return uri;
+    }
+    try { uri = data.getData(); } catch (Throwable ignored) {}
+    if (uri != null) return uri;
+
+    String[] extraKeys = new String[]{Intent.EXTRA_STREAM, "android.intent.extra.STREAM", "selectedRingtoneUri"};
+    for (int i = 0; i < extraKeys.length; i++) {
+        uri = getUriExtraCompat(data, extraKeys[i]);
+        if (uri != null) return uri;
+    }
+    try {
+        uri = firstUriInBundle(data.getExtras());
+        if (uri != null) return uri;
+    } catch (Throwable ignored) {}
+
+    try {
+        ClipData cd = data.getClipData();
+        if (cd != null && cd.getItemCount() > 0 && cd.getItemAt(0) != null) {
+            uri = cd.getItemAt(0).getUri();
+            if (uri != null) return uri;
+            Intent itemIntent = cd.getItemAt(0).getIntent();
+            if (itemIntent != null) {
+                try { uri = itemIntent.getData(); } catch (Throwable ignored) {}
+                if (uri != null) return uri;
+            }
+        }
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+void takeReadPermissionIfPossible(Intent data, Uri uri) {
+    if (data == null || uri == null || hostContext == null) return;
+    try {
+        if (!"content".equalsIgnoreCase(uri.getScheme())) return;
+        int grantFlags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        if ((grantFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0) return;
+        int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+        hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
     } catch (Throwable ignored) {}
 }
 
 void hookActivityResultForRingtone() {
     try {
+        if (sActivityResultHookInstalled) return;
+        sActivityResultHookInstalled = true;
         XC_MethodHook resultHook = new XC_MethodHook() {
             protected void beforeHookedMethod(de.robv.android.xposed.XC_MethodHook.MethodHookParam param) throws Throwable {
                 int requestCode = (Integer) param.args[0];
                 if (requestCode == REQ_PICK_RINGTONE_SYSTEM || requestCode == REQ_PICK_RINGTONE_FILE) {
+                    int resultCode = (Integer) param.args[1];
+                    if (resultCode != Activity.RESULT_OK) return;
                     Intent data = (Intent) param.args[2];
-                    Uri uri = null;
-                    if (data != null && requestCode == REQ_PICK_RINGTONE_SYSTEM) {
-                        try { uri = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI); } catch (Throwable ignored) {}
-                        try {
-                            if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
-                                final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-                                hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
-                            }
-                        } catch (Throwable ignored) {}
+                    Uri uri = extractPickedRingtoneUri(data, requestCode);
+                    if (uri == null) {
+                        try { toast("没有获取到铃声文件"); } catch (Throwable ignored) {}
+                        return;
                     }
-                    if (data != null && uri == null && requestCode == REQ_PICK_RINGTONE_FILE) {
-                        try { uri = data.getData(); } catch (Throwable ignored) {}
-                        try {
-                            if (uri != null && "content".equalsIgnoreCase(uri.getScheme())) {
-                                final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-                                hostContext.getContentResolver().takePersistableUriPermission(uri, takeFlags);
-                            }
-                        } catch (Throwable ignored) {}
-                    }
+                    takeReadPermissionIfPossible(data, uri);
                     String ring = uri == null ? "" : uri.toString();
                     if (!TextUtils.isEmpty(ring)) {
                         ring = freezeRingtoneUri(ring);
                     }
+                    if (TextUtils.isEmpty(ring)) {
+                        try { toast("铃声保存失败"); } catch (Throwable ignored) {}
+                        return;
+                    }
                     if (globalRingtoneValueRef != null && globalRingtoneValueRef.length > 0) {
                         globalRingtoneValueRef[0] = ring;
                     }
-                    final Activity top = globalSettingActivity;
+                    Activity top0 = globalSettingActivity;
+                    if (top0 == null) {
+                        try { top0 = getTopActivity(); } catch (Throwable ignored) {}
+                    }
+                    final Activity top = top0;
                     if (top != null && globalRingtoneValueView != null) {
                         final String text = getRingtoneDisplayName(top, ring) + " >";
                         top.runOnUiThread(new Runnable() {
@@ -1461,174 +1812,12 @@ void hookActivityResultForRingtone() {
         };
         Object uh = XposedHelpers.findAndHookMethod(Activity.class, "onActivityResult", int.class, int.class, Intent.class, resultHook);
         resultUnhooks.add(uh);
-    } catch (Throwable ignored) {}
+    } catch (Throwable ignored) {
+        sActivityResultHookInstalled = false;
+    }
 }
 
 // ================= 通知提取辅助 =================
-String valToString(Object v) {
-    if (v == null) return null;
-    try { return String.valueOf(v); } catch (Throwable e) { return null; }
-}
-String findChatroomInString(String s) {
-    if (s == null) return null;
-    try {
-        Matcher m = chatroomPattern.matcher(s);
-        if (m.find()) return m.group(1);
-    } catch (Throwable ignored) {}
-    return null;
-}
-
-String normalizeTitleKey(String s) {
-    if (s == null) return "";
-    try {
-        String cacheKey = "k|" + s;
-        Object cached = sTitleNormCache.get(cacheKey);
-        if (cached != null) return String.valueOf(cached);
-
-        String t = s.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ').replace((char) 12288, ' ');
-        t = t.replaceAll("\\s+", "").trim().toLowerCase();
-
-        if (sTitleNormCache.size() >= sTitleNormCacheMax) sTitleNormCache.clear();
-        sTitleNormCache.put(cacheKey, t);
-        return t;
-    } catch (Throwable ignored) {}
-    return "";
-}
-
-String normalizeTitleLooseKey(String s) {
-    if (s == null) return "";
-    try {
-        String cacheKey = "l|" + s;
-        Object cached = sTitleNormCache.get(cacheKey);
-        if (cached != null) return String.valueOf(cached);
-
-        String t = normalizeTitleKey(s);
-        if (TextUtils.isEmpty(t)) return "";
-        // 去掉大部分符号/emoji，只保留中文、字母、数字，提升特殊昵称匹配稳定性
-        t = t.replaceAll("[^\\u4e00-\\u9fa5a-z0-9]+", "");
-
-        if (sTitleNormCache.size() >= sTitleNormCacheMax) sTitleNormCache.clear();
-        sTitleNormCache.put(cacheKey, t);
-        return t;
-    } catch (Throwable ignored) {}
-    return "";
-}
-
-String stripBracketTags(String s) {
-    if (s == null) return "";
-    try {
-        // 兼容“[表情][闪烁]”这类通知标题标签
-        return s.replaceAll("\\[[^\\]]*\\]", "");
-    } catch (Throwable ignored) {}
-    return s;
-}
-
-boolean titleMaybeMatchName(String title, String name) {
-    if (TextUtils.isEmpty(title) || TextUtils.isEmpty(name)) return false;
-    try {
-        String titleRaw = title;
-        String titleBase = stripWechatTitleSuffix(titleRaw);
-        String titleNoTag = stripBracketTags(titleBase);
-        if (titleRaw.contains(name) || name.contains(titleRaw)) return true;
-        if (!TextUtils.isEmpty(titleNoTag) && (titleNoTag.contains(name) || name.contains(titleNoTag))) return true;
-        String t1 = normalizeTitleKey(titleNoTag);
-        String n1 = normalizeTitleKey(name);
-        if (!TextUtils.isEmpty(t1) && !TextUtils.isEmpty(n1)) {
-            if (t1.contains(n1) || n1.contains(t1)) return true;
-        }
-        String t2 = normalizeTitleLooseKey(titleNoTag);
-        String n2 = normalizeTitleLooseKey(name);
-        if (TextUtils.isEmpty(t2) || TextUtils.isEmpty(n2)) return false;
-        return t2.contains(n2) || n2.contains(t2);
-    } catch (Throwable ignored) {}
-    return false;
-}
-
-String stripWechatTitleSuffix(String title) {
-    if (title == null) return "";
-    try {
-        String t = title.trim();
-        int p = t.indexOf("[");
-        if (p > 0) t = t.substring(0, p).trim();
-        p = t.indexOf(":");
-        if (p > 0) t = t.substring(0, p).trim();
-        return t;
-    } catch (Throwable ignored) {}
-    return title;
-}
-
-String findTalkerByGroupTitle(String title) {
-    if (TextUtils.isEmpty(title)) return null;
-    String base = stripWechatTitleSuffix(title);
-    if (TextUtils.isEmpty(base)) return null;
-
-    String cacheKey = normalizeTitleLooseKey(base);
-    if (TextUtils.isEmpty(cacheKey)) cacheKey = normalizeTitleKey(base);
-    if (!TextUtils.isEmpty(cacheKey)) {
-        try {
-            Object cv = sGroupTitleTalkerCache.get(cacheKey);
-            if (cv instanceof String[]) {
-                String[] pair = (String[]) cv;
-                if (pair.length >= 2) {
-                    long ts = 0L;
-                    try { ts = Long.parseLong(pair[1]); } catch (Throwable ignored) {}
-                    if (System.currentTimeMillis() - ts <= sGroupTitleTalkerCacheTtlMs) {
-                        String hit = pair[0];
-                        if (!TextUtils.isEmpty(hit)) return hit;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    try {
-        if (sCachedGroupIds != null && sCachedGroupNames != null && sCachedGroupIds.size() == sCachedGroupNames.size()) {
-            for (int i = 0; i < sCachedGroupIds.size(); i++) {
-                String gid = String.valueOf(sCachedGroupIds.get(i));
-                String gname = String.valueOf(sCachedGroupNames.get(i));
-                if (TextUtils.isEmpty(gid) || TextUtils.isEmpty(gname) || "null".equalsIgnoreCase(gname)) continue;
-                if (titleMaybeMatchName(base, gname) || titleMaybeMatchName(title, gname)) {
-                    if (!TextUtils.isEmpty(cacheKey)) {
-                        if (sGroupTitleTalkerCache.size() >= sGroupTitleTalkerCacheMax) sGroupTitleTalkerCache.clear();
-                        sGroupTitleTalkerCache.put(cacheKey, new String[]{gid, String.valueOf(System.currentTimeMillis())});
-                    }
-                    return gid;
-                }
-            }
-        }
-    } catch (Throwable ignored) {}
-    try {
-        long now = System.currentTimeMillis();
-        if (now - sLastGroupCacheLoadAt < 15000L) return null;
-        sLastGroupCacheLoadAt = now;
-        List groups = getGroupList();
-        if (groups != null) {
-            List names = new ArrayList();
-            List ids = new ArrayList();
-            for (int i = 0; i < groups.size(); i++) {
-                GroupInfo g = (GroupInfo) groups.get(i);
-                if (g == null) continue;
-                String gid = g.getRoomId();
-                String gname = g.getName();
-                if (TextUtils.isEmpty(gid) || TextUtils.isEmpty(gname)) continue;
-                ids.add(gid);
-                names.add(gname);
-                if (titleMaybeMatchName(base, gname) || titleMaybeMatchName(title, gname)) {
-                    sCachedGroupIds = ids;
-                    sCachedGroupNames = names;
-                    if (!TextUtils.isEmpty(cacheKey)) {
-                        if (sGroupTitleTalkerCache.size() >= sGroupTitleTalkerCacheMax) sGroupTitleTalkerCache.clear();
-                        sGroupTitleTalkerCache.put(cacheKey, new String[]{gid, String.valueOf(System.currentTimeMillis())});
-                    }
-                    return gid;
-                }
-            }
-            sCachedGroupIds = ids;
-            sCachedGroupNames = names;
-        }
-    } catch (Throwable ignored) {}
-    return null;
-}
 String resolveTalkerNameForMatch(String talkerId) {
     if (TextUtils.isEmpty(talkerId)) return "";
     try {
@@ -1661,45 +1850,13 @@ String resolveTalkerNameForMatch(String talkerId) {
     } catch (Throwable ignored) {}
     return "";
 }
-String findTalkerByCacheContains(String raw) {
-    if (TextUtils.isEmpty(raw) || cacheTargetSet.isEmpty()) return null;
-    try {
-        Object[] ids = cacheTargetSet.toArray();
-        for (int i = 0; i < ids.length; i++) {
-            String one = String.valueOf(ids[i]);
-            if (TextUtils.isEmpty(one)) continue;
-            if (raw.equals(one) || raw.contains(one)) return one;
-        }
-    } catch (Throwable ignored) {}
-    return null;
-}
-
-String findTargetTalkerByTitle(String title) {
-    if (TextUtils.isEmpty(title) || cacheTargetSet == null || cacheTargetSet.isEmpty()) return null;
-    try {
-        Object[] ids = cacheTargetSet.toArray();
-        for (int i = 0; i < ids.length; i++) {
-            String tid = String.valueOf(ids[i]);
-            if (TextUtils.isEmpty(tid)) continue;
-            String nm = resolveTalkerNameForMatch(tid);
-            if (TextUtils.isEmpty(nm)) continue;
-            if (titleMaybeMatchName(title, nm)) return tid;
-        }
-    } catch (Throwable ignored) {}
-    return null;
-}
 String scanBundleForTalker(Bundle b) {
     if (b == null) return null;
-    String[] keys = new String[]{"Main_User", "MainUser", "talker", "Talker", "chat_talker", "chat_username", "username", "userName", "wxid", "contact", "conversation_id", "conversationId"};
-    for (int i = 0; i < keys.length; i++) {
-        try {
-            String raw = valToString(b.get(keys[i]));
-            String hit = findTalkerByCacheContains(raw);
-            if (hit != null) return hit;
-            hit = findChatroomInString(raw);
-            if (hit != null) return hit;
-        } catch (Throwable ignored) {}
-    }
+    try {
+        Object raw = b.get(JAY_WECHAT_TALKER);
+        String hit = findConfiguredTalkerExact(raw == null ? "" : String.valueOf(raw));
+        return TextUtils.isEmpty(hit) ? null : hit;
+    } catch (Throwable ignored) {}
     return null;
 }
 String extractTalkerFromNotification(Notification n) {
@@ -1707,33 +1864,6 @@ String extractTalkerFromNotification(Notification n) {
     try {
         String t = scanBundleForTalker(n.extras);
         if (t != null) return t;
-    } catch (Throwable ignored) {}
-    try {
-        Notification.Action[] actions = n.actions;
-        if (actions != null) {
-            for (int i = 0; i < actions.length; i++) {
-                Notification.Action a = actions[i];
-                if (a == null) continue;
-                String t = scanBundleForTalker(a.getExtras());
-                if (t != null) return t;
-            }
-        }
-    } catch (Throwable ignored) {}
-
-    // 深扫 PendingIntent extras，提升部分 ROM/版本下重启早期 talker 提取成功率
-    try {
-        PendingIntent[] pis = new PendingIntent[]{n.contentIntent, n.deleteIntent, n.fullScreenIntent};
-        for (int i = 0; i < pis.length; i++) {
-            PendingIntent pi = pis[i];
-            if (pi == null) continue;
-            try {
-                Intent it = null;
-                try { it = (Intent) pi.getClass().getMethod("getIntent").invoke(pi); } catch (Throwable ignored2) {}
-                if (it == null) continue;
-                String t = scanBundleForTalker(it.getExtras());
-                if (t != null) return t;
-            } catch (Throwable ignored3) {}
-        }
     } catch (Throwable ignored) {}
     return null;
 }
@@ -1768,6 +1898,11 @@ Activity globalSettingActivity;
 TextView globalRingtoneValueView;
 String[] globalRingtoneValueRef;
 
+void clearGlobalRingtonePickState() {
+    globalRingtoneValueView = null;
+    globalRingtoneValueRef = null;
+}
+
 void showSettingsUI() {
     globalSettingActivity = getTopActivity();
     if (globalSettingActivity == null) return;
@@ -1783,57 +1918,25 @@ void showSettingsUI() {
 void buildMainUI(final Activity ctx) {
     hideSoftInput(ctx);
     try {
-        final Dialog dialog = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setCancelable(true);
+        final Dialog dialog = makeBaseDialog(ctx, true);
 
-        FrameLayout root = new FrameLayout(ctx);
-        root.setLayoutParams(new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-        ));
-        root.setBackgroundColor(Color.parseColor("#66000000"));
+        FrameLayout root = makeDimMask(ctx);
 
-        LinearLayout card = new LinearLayout(ctx);
-        card.setOrientation(LinearLayout.VERTICAL);
-        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        cardLp.leftMargin = dp(ctx, 20);
-        cardLp.rightMargin = dp(ctx, 20);
-        cardLp.gravity = Gravity.CENTER;
-        card.setLayoutParams(cardLp);
-        card.setPadding(dp(ctx, 18), dp(ctx, 18), dp(ctx, 18), dp(ctx, 12));
+        LinearLayout card = makeVerticalDialogCard(ctx, 20, 18, 18, 12);
 
-        GradientDrawable cardBg = new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")}
-        );
-        cardBg.setCornerRadius(dp(ctx, 20));
-        cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
-        card.setBackground(cardBg);
+        card.setBackground(makeDialogCardBg(ctx, 20));
 
-        TextView title = new TextView(ctx);
-        title.setText("通知设置");
-        title.setTextColor(Color.parseColor("#0F172A"));
-        title.setTextSize(20f);
-        title.setTypeface(null, Typeface.BOLD);
+        TextView title = makeDialogTitleSized(ctx, "通知设置", 20f);
         card.addView(title);
 
-        TextView sub = new TextView(ctx);
-        LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
-        subLp.topMargin = dp(ctx, 8);
+        TextView sub = makeDialogSubText(ctx, "按会话单独配置通知规则");
+        LinearLayout.LayoutParams subLp = topMarginLp(ctx, 8);
         sub.setLayoutParams(subLp);
-        sub.setText("按会话单独配置通知规则");
-        sub.setTextColor(Color.parseColor("#64748B"));
-        sub.setTextSize(13f);
         card.addView(sub);
 
         LinearLayout actionCard = new LinearLayout(ctx);
         actionCard.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams acLp = new LinearLayout.LayoutParams(-1, -2);
-        acLp.topMargin = dp(ctx, 14);
+        LinearLayout.LayoutParams acLp = topMarginLp(ctx, 14);
         actionCard.setLayoutParams(acLp);
         GradientDrawable acBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 14));
         acBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
@@ -1850,44 +1953,22 @@ void buildMainUI(final Activity ctx) {
 
         card.addView(actionCard);
 
-        LinearLayout actions = new LinearLayout(ctx);
-        LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(-1, -2);
-        actionsLp.topMargin = dp(ctx, 16);
-        actions.setLayoutParams(actionsLp);
-        actions.setGravity(Gravity.END);
+        LinearLayout actions = makeActionsRow(ctx, 16);
 
-        TextView btnClose = new TextView(ctx);
-        btnClose.setText("关闭");
-        btnClose.setTextColor(Color.parseColor("#334155"));
-        btnClose.setTextSize(14f);
-        btnClose.setPadding(dp(ctx, 16), dp(ctx, 8), dp(ctx, 16), dp(ctx, 8));
-        GradientDrawable closeBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
-        closeBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
-        btnClose.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), closeBg, null));
+        TextView btnClose = makeNeutralButton(ctx, "关闭", 16, 8);
         actions.addView(btnClose);
 
         card.addView(actions);
         root.addView(card);
         dialog.setContentView(root);
 
-        root.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { dialog.dismiss(); }
-        });
-        card.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {}
-        });
+        bindMaskDismiss(root, card, dialog);
 
         btnClose.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { dialog.dismiss(); }
         });
 
-        Window w = dialog.getWindow();
-        if (w != null) {
-            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-            w.setGravity(Gravity.CENTER);
-            w.setDimAmount(0.25f);
-            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
-        }
+        applyFullScreenDialogWindow(dialog, WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
 
         dialog.show();
         card.setAlpha(0f);
@@ -1901,48 +1982,25 @@ void buildMainUI(final Activity ctx) {
 
 void showRingtonePickStyleDialog(final Activity ctx, final String[] tmpRingtone, final TextView tvRing) {
     try {
-        final Dialog pickDialog = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
-        pickDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        pickDialog.setCancelable(true);
+        final Dialog pickDialog = makeBaseDialog(ctx, true);
 
-        FrameLayout mask = new FrameLayout(ctx);
-        mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        mask.setBackgroundColor(Color.parseColor("#66000000"));
+        FrameLayout mask = makeDimMask(ctx);
 
-        LinearLayout card = new LinearLayout(ctx);
-        card.setOrientation(LinearLayout.VERTICAL);
-        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-1, -2);
-        cardLp.leftMargin = dp(ctx, 24);
-        cardLp.rightMargin = dp(ctx, 24);
-        cardLp.gravity = Gravity.CENTER;
-        card.setLayoutParams(cardLp);
-        card.setPadding(dp(ctx, 16), dp(ctx, 14), dp(ctx, 16), dp(ctx, 12));
+        LinearLayout card = makeVerticalDialogCard(ctx, 24, 16, 14, 12);
 
-        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
-        cardBg.setCornerRadius(dp(ctx, 18));
-        cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
-        card.setBackground(cardBg);
+        card.setBackground(makeDialogCardBg(ctx, 18));
 
-        TextView title = new TextView(ctx);
-        title.setText("选择方式");
-        title.setTextColor(Color.parseColor("#0F172A"));
-        title.setTextSize(17f);
-        title.setTypeface(null, Typeface.BOLD);
+        TextView title = makeDialogTitleSized(ctx, "选择方式", 17f);
         card.addView(title);
 
-        TextView sub = new TextView(ctx);
-        LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
-        subLp.topMargin = dp(ctx, 6);
+        TextView sub = makeDialogSubText(ctx, "选择系统铃声或从文件夹导入");
+        LinearLayout.LayoutParams subLp = topMarginLp(ctx, 6);
         sub.setLayoutParams(subLp);
-        sub.setText("选择系统铃声或从文件夹导入");
-        sub.setTextColor(Color.parseColor("#64748B"));
-        sub.setTextSize(13f);
         card.addView(sub);
 
         LinearLayout btnSys = createRowText(ctx, "选择系统铃声", "推荐 >", false);
         btnSys.setBackground(roundRect(Color.parseColor("#F1F5F9"), dp(ctx, 12)));
-        LinearLayout.LayoutParams sysLp = new LinearLayout.LayoutParams(-1, -2);
-        sysLp.topMargin = dp(ctx, 12);
+        LinearLayout.LayoutParams sysLp = topMarginLp(ctx, 12);
         card.addView(btnSys, sysLp);
         btnSys.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -1951,6 +2009,8 @@ void showRingtonePickStyleDialog(final Activity ctx, final String[] tmpRingtone,
                     intent.putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_NOTIFICATION);
                     intent.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true);
                     intent.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                     if (!TextUtils.isEmpty(tmpRingtone[0])) intent.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(tmpRingtone[0]));
                     ctx.startActivityForResult(intent, REQ_PICK_RINGTONE_SYSTEM);
                 } catch (Throwable ignored) {}
@@ -1960,8 +2020,7 @@ void showRingtonePickStyleDialog(final Activity ctx, final String[] tmpRingtone,
 
         LinearLayout btnFile = createRowText(ctx, "从文件夹选择", "音频文件 >", false);
         btnFile.setBackground(roundRect(Color.parseColor("#F1F5F9"), dp(ctx, 12)));
-        LinearLayout.LayoutParams fileLp = new LinearLayout.LayoutParams(-1, -2);
-        fileLp.topMargin = dp(ctx, 8);
+        LinearLayout.LayoutParams fileLp = topMarginLp(ctx, 8);
         card.addView(btnFile, fileLp);
         btnFile.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -1992,8 +2051,7 @@ void showRingtonePickStyleDialog(final Activity ctx, final String[] tmpRingtone,
         btnCancel.setTextSize(14f);
         btnCancel.setGravity(Gravity.CENTER);
         btnCancel.setPadding(dp(ctx, 12), dp(ctx, 11), dp(ctx, 12), dp(ctx, 8));
-        LinearLayout.LayoutParams cancelLp = new LinearLayout.LayoutParams(-1, -2);
-        cancelLp.topMargin = dp(ctx, 6);
+        LinearLayout.LayoutParams cancelLp = topMarginLp(ctx, 6);
         card.addView(btnCancel, cancelLp);
         btnCancel.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -2002,23 +2060,10 @@ void showRingtonePickStyleDialog(final Activity ctx, final String[] tmpRingtone,
         });
 
         mask.addView(card);
-        mask.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                try { pickDialog.dismiss(); } catch (Throwable ignored) {}
-            }
-        });
-        card.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-            }
-        });
+        bindMaskDismiss(mask, card, pickDialog);
 
         pickDialog.setContentView(mask);
-        Window w = pickDialog.getWindow();
-        if (w != null) {
-            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-            w.setGravity(Gravity.CENTER);
-            w.setDimAmount(0.25f);
-        }
+        applyFullScreenDialogWindow(pickDialog, 0);
         pickDialog.show();
         card.setAlpha(0f);
         card.setTranslationY(dp(ctx, 14));
@@ -2056,6 +2101,199 @@ GradientDrawable roundRect(int color, int radiusPx) {
     g.setCornerRadius(radiusPx);
     return g;
 }
+
+FrameLayout makeDimMask(Activity ctx) {
+    FrameLayout mask = new FrameLayout(ctx);
+    mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+    mask.setBackgroundColor(Color.parseColor("#66000000"));
+    return mask;
+}
+
+GradientDrawable makeDialogCardBg(Activity ctx, int radiusDp) {
+    GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
+    bg.setCornerRadius(dp(ctx, radiusDp));
+    bg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
+    return bg;
+}
+
+void applyFullScreenDialogWindow(Dialog dialog, int softInputMode) {
+    try {
+        Window w = dialog == null ? null : dialog.getWindow();
+        if (w == null) return;
+        w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+        w.setGravity(Gravity.CENTER);
+        w.setDimAmount(0.25f);
+        if (softInputMode != 0) w.setSoftInputMode(softInputMode);
+    } catch (Throwable ignored) {}
+}
+
+void applyFullScreenResizeDialogWindow(Dialog dialog) {
+    try {
+        Window w = dialog == null ? null : dialog.getWindow();
+        if (w == null) return;
+        w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+        w.setGravity(Gravity.CENTER);
+        w.setDimAmount(0.25f);
+        w.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+        w.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+    } catch (Throwable ignored) {}
+}
+
+TextView makeNeutralButton(Activity ctx, String text, int hp, int vp) {
+    TextView b = new TextView(ctx);
+    b.setText(text);
+    b.setTextColor(Color.parseColor("#334155"));
+    b.setTextSize(14f);
+    b.setPadding(dp(ctx, hp), dp(ctx, vp), dp(ctx, hp), dp(ctx, vp));
+    GradientDrawable bg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
+    bg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
+    b.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), bg, null));
+    return b;
+}
+
+TextView makePrimaryButton(Activity ctx, String text, int hp, int vp) {
+    TextView b = new TextView(ctx);
+    b.setText(text);
+    b.setTextColor(Color.WHITE);
+    b.setTextSize(14f);
+    b.setTypeface(null, Typeface.BOLD);
+    b.setPadding(dp(ctx, hp), dp(ctx, vp), dp(ctx, hp), dp(ctx, vp));
+    GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Color.parseColor("#2563EB"), Color.parseColor("#7C3AED")});
+    bg.setCornerRadius(dp(ctx, 999));
+    b.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#55FFFFFF")), bg, null));
+    return b;
+}
+
+TextView makePillButton(Activity ctx, String text, String textColor, String bgColor) {
+    TextView b = new TextView(ctx);
+    b.setText(text);
+    b.setTextColor(Color.parseColor(textColor));
+    b.setTextSize(13f);
+    b.setPadding(dp(ctx, 10), dp(ctx, 6), dp(ctx, 10), dp(ctx, 6));
+    b.setBackground(roundRect(Color.parseColor(bgColor), dp(ctx, 999)));
+    return b;
+}
+
+TextView makeDialogTitle(Activity ctx, String text) {
+    TextView t = new TextView(ctx);
+    t.setText(text);
+    t.setTextColor(Color.parseColor("#0F172A"));
+    t.setTextSize(18f);
+    t.setTypeface(null, Typeface.BOLD);
+    return t;
+}
+
+TextView makeDialogTitleSized(Activity ctx, String text, float sp) {
+    TextView t = makeDialogTitle(ctx, text);
+    t.setTextSize(sp);
+    return t;
+}
+
+TextView makeDialogSubText(Activity ctx, String text) {
+    TextView t = new TextView(ctx);
+    t.setText(text);
+    t.setTextColor(Color.parseColor("#64748B"));
+    t.setTextSize(13f);
+    return t;
+}
+
+EditText makeDialogSearchInput(Activity ctx, String hint) {
+    EditText et = new EditText(ctx);
+    et.setHint(hint);
+    et.setSingleLine(true);
+    et.setTextSize(14f);
+    et.setTextColor(Color.parseColor("#0F172A"));
+    et.setHintTextColor(Color.parseColor("#94A3B8"));
+    GradientDrawable bg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
+    bg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
+    et.setBackground(bg);
+    et.setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10));
+    prepareSearchInput(ctx, et);
+    return et;
+}
+
+TextView addDialogCountText(Activity ctx, LinearLayout card) {
+    TextView tv = new TextView(ctx);
+    tv.setTextSize(12f);
+    tv.setTextColor(Color.parseColor("#64748B"));
+    card.addView(tv, topMarginLp(ctx, 8));
+    return tv;
+}
+
+LinearLayout makeDialogListWrap(Activity ctx, int heightDp, int topMarginDp) {
+    LinearLayout wrap = new LinearLayout(ctx);
+    wrap.setOrientation(LinearLayout.VERTICAL);
+    GradientDrawable bg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
+    bg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
+    wrap.setBackground(bg);
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(ctx, heightDp));
+    lp.topMargin = dp(ctx, topMarginDp);
+    wrap.setLayoutParams(lp);
+    return wrap;
+}
+
+ListView makeDialogListView(Activity ctx, int choiceMode, boolean hideScrollBar) {
+    ListView lv = new ListView(ctx);
+    lv.setChoiceMode(choiceMode);
+    lv.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E8EEF5")));
+    lv.setDividerHeight(1);
+    lv.setSelector(new android.graphics.drawable.ColorDrawable(Color.parseColor("#12000000")));
+    lv.setPadding(dp(ctx, 6), dp(ctx, 6), dp(ctx, 6), dp(ctx, 6));
+    lv.setClipToPadding(false);
+    if (hideScrollBar) lv.setVerticalScrollBarEnabled(false);
+    return lv;
+}
+
+Dialog makeBaseDialog(Activity ctx, boolean cancelable) {
+    Dialog d = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
+    d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+    d.setCancelable(cancelable);
+    return d;
+}
+
+LinearLayout makeActionsRow(Activity ctx, int topMarginDp) {
+    LinearLayout actions = new LinearLayout(ctx);
+    actions.setLayoutParams(topMarginLp(ctx, topMarginDp));
+    actions.setGravity(Gravity.END);
+    return actions;
+}
+
+void addActionButton(Activity ctx, LinearLayout actions, View button, int leftMarginDp) {
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+    lp.leftMargin = dp(ctx, leftMarginDp);
+    actions.addView(button, lp);
+}
+
+LinearLayout.LayoutParams topMarginLp(Activity ctx, int topMarginDp) {
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+    lp.topMargin = dp(ctx, topMarginDp);
+    return lp;
+}
+
+CompoundButton.OnCheckedChangeListener boolSwitchListener(final boolean[] ref) {
+    return new CompoundButton.OnCheckedChangeListener() {
+        public void onCheckedChanged(CompoundButton b, boolean c) { ref[0] = c; }
+    };
+}
+
+LinearLayout makeVerticalDialogCard(Activity ctx, int marginDp, int padH, int padTop, int padBottom) {
+    LinearLayout card = new LinearLayout(ctx);
+    card.setOrientation(LinearLayout.VERTICAL);
+    FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2);
+    lp.leftMargin = dp(ctx, marginDp);
+    lp.rightMargin = dp(ctx, marginDp);
+    lp.gravity = Gravity.CENTER;
+    card.setLayoutParams(lp);
+    card.setPadding(dp(ctx, padH), dp(ctx, padTop), dp(ctx, padH), dp(ctx, padBottom));
+    return card;
+}
+
+void bindMaskDismiss(View mask, View card, final Dialog dialog) {
+    mask.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dialog.dismiss(); } });
+    card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {} });
+}
+
 void showTargetListUI(final Activity ctx) {
     if (sCachedFriendNames != null && sCachedGroupNames != null) {
         buildListUI(ctx, sCachedFriendNames, sCachedFriendIds, sCachedGroupNames, sCachedGroupIds);
@@ -2064,13 +2302,9 @@ void showTargetListUI(final Activity ctx) {
     final Dialog[] loadingRef = new Dialog[1];
     try {
         if (!ctx.isFinishing() && !ctx.isDestroyed()) {
-            Dialog loading = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
-            loading.requestWindowFeature(Window.FEATURE_NO_TITLE);
-            loading.setCancelable(false);
+            Dialog loading = makeBaseDialog(ctx, false);
 
-            FrameLayout mask = new FrameLayout(ctx);
-            mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-            mask.setBackgroundColor(Color.parseColor("#66000000"));
+            FrameLayout mask = makeDimMask(ctx);
 
             LinearLayout card = new LinearLayout(ctx);
             card.setOrientation(LinearLayout.HORIZONTAL);
@@ -2080,10 +2314,7 @@ void showTargetListUI(final Activity ctx) {
             cardLp.gravity = Gravity.CENTER;
             card.setLayoutParams(cardLp);
 
-            GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
-            cardBg.setCornerRadius(dp(ctx, 16));
-            cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
-            card.setBackground(cardBg);
+            card.setBackground(makeDialogCardBg(ctx, 16));
 
             ProgressBar pb = new ProgressBar(ctx);
             card.addView(pb);
@@ -2099,12 +2330,7 @@ void showTargetListUI(final Activity ctx) {
             mask.addView(card);
             loading.setContentView(mask);
 
-            Window w = loading.getWindow();
-            if (w != null) {
-                w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-                w.setGravity(Gravity.CENTER);
-                w.setDimAmount(0.25f);
-            }
+            applyFullScreenDialogWindow(loading, 0);
 
             loading.show();
             loadingRef[0] = loading;
@@ -2190,6 +2416,16 @@ void showSingleTimePicker(final Activity ctx, String title, final String[] value
     d.show();
 }
 
+void bindTimePickerRow(final Activity ctx, final TextView tv, final String title, final String[] valueRef) {
+    ((View) tv.getParent()).setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showSingleTimePicker(ctx, title, valueRef, new Runnable() {
+                public void run() { tv.setText(valueRef[0] + " >"); }
+            });
+        }
+    });
+}
+
 void saveSelectedTargets(Set selectedIds) {
     StringBuilder sb = new StringBuilder();
     Object[] arr = selectedIds.toArray();
@@ -2198,6 +2434,17 @@ void saveSelectedTargets(Set selectedIds) {
         sb.append(arr[i]);
     }
     putString(CFG_TARGETS, sb.toString());
+}
+
+void removeTalkerConfig(String talkerId, Set selectedIds, Runnable onSaved, Dialog dialog, String msg) {
+    selectedIds.remove(talkerId);
+    putString(CFG_TALKER_CFG_PREFIX + talkerId, "");
+    saveSelectedTargets(selectedIds);
+    loadConfigToCache();
+    if (onSaved != null) onSaved.run();
+    clearGlobalRingtonePickState();
+    dialog.dismiss();
+    toast(msg);
 }
 
 Map buildBatchTalkerCfg(boolean isGroup, boolean dnd, boolean vibrate, boolean sound, boolean quickReply, boolean showDetail,
@@ -2238,48 +2485,6 @@ int applyBatchTalkerConfig(List ids, boolean isGroup, Map cfg, Set selectedIds) 
     return count;
 }
 
-String labelObjName(Object label) {
-    if (label == null) return "";
-    try {
-        Object v = safeInvokeAny(label, new String[]{"getLabelName", "getName", "getLabel", "getDisplayName"});
-        if (v != null && !TextUtils.isEmpty(String.valueOf(v))) return String.valueOf(v);
-    } catch (Throwable ignored) {}
-    try {
-        Object v2 = safeGetFieldAny(label, new String[]{"labelName", "name", "label", "displayName"});
-        if (v2 != null && !TextUtils.isEmpty(String.valueOf(v2))) return String.valueOf(v2);
-    } catch (Throwable ignored) {}
-    return String.valueOf(label);
-}
-
-String labelObjId(Object label) {
-    if (label == null) return "";
-    try {
-        Object v = safeInvokeAny(label, new String[]{"getLabelId", "getId", "getLabelID"});
-        if (v != null && !TextUtils.isEmpty(String.valueOf(v))) return String.valueOf(v);
-    } catch (Throwable ignored) {}
-    try {
-        Object v2 = safeGetFieldAny(label, new String[]{"labelId", "id", "labelID"});
-        if (v2 != null && !TextUtils.isEmpty(String.valueOf(v2))) return String.valueOf(v2);
-    } catch (Throwable ignored) {}
-    return "";
-}
-
-List getFriendIdsByLabelSafe(String labelId, String labelName) {
-    try {
-        if (!TextUtils.isEmpty(labelId)) {
-            List byId = getContactByLabelId(labelId);
-            if (byId != null && !byId.isEmpty()) return byId;
-        }
-    } catch (Throwable ignored) {}
-    try {
-        if (!TextUtils.isEmpty(labelName)) {
-            List byName = getContactByLabelName(labelName);
-            if (byName != null) return byName;
-        }
-    } catch (Throwable ignored) {}
-    return new ArrayList();
-}
-
 void showBatchConfigDialog(final Activity ctx, final String title, final List targetIds, final boolean isGroup, final Set selectedIds, final Runnable onSaved) {
     if (targetIds == null || targetIds.isEmpty()) {
         toast("没有可批量设置的会话");
@@ -2301,14 +2506,10 @@ void showBatchConfigDialog(final Activity ctx, final String title, final List ta
         final LinearLayout body = new LinearLayout(ctx);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(dp(ctx, 8), dp(ctx, 4), dp(ctx, 8), dp(ctx, 4));
-        addDarkSwitchRow(ctx, body, "免打扰(不弹通知)", tmpDnd[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpDnd[0] = c; }});
-        addDarkDivider(ctx, body);
-        addDarkSwitchRow(ctx, body, "震动", tmpVibrate[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpVibrate[0] = c; }});
-        addDarkDivider(ctx, body);
-        addDarkSwitchRow(ctx, body, "铃声", tmpSound[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpSound[0] = c; }});
-        addDarkDivider(ctx, body);
-        addDarkSwitchRow(ctx, body, "快捷回复", tmpQuickReply[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpQuickReply[0] = c; }});
-        addDarkDivider(ctx, body);
+        addDarkSwitchDiv(ctx, body, "免打扰(不弹通知)", tmpDnd[0], boolSwitchListener(tmpDnd));
+        addDarkSwitchDiv(ctx, body, "震动", tmpVibrate[0], boolSwitchListener(tmpVibrate));
+        addDarkSwitchDiv(ctx, body, "铃声", tmpSound[0], boolSwitchListener(tmpSound));
+        addDarkSwitchDiv(ctx, body, "快捷回复", tmpQuickReply[0], boolSwitchListener(tmpQuickReply));
         final TextView tvRing = addDarkClickRow(ctx, body, "选择铃声", getRingtoneDisplayName(ctx, tmpRingtone[0]) + " >");
         ((View) tvRing.getParent()).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -2318,21 +2519,18 @@ void showBatchConfigDialog(final Activity ctx, final String title, final List ta
             }
         });
         addDarkDivider(ctx, body);
-        addDarkSwitchRow(ctx, body, "通知显示消息详情", tmpShowDetail[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpShowDetail[0] = c; }});
-        addDarkDivider(ctx, body);
-        addDarkSwitchRow(ctx, body, "开启时段静默", tmpMuteEnable[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpMuteEnable[0] = c; }});
-        addDarkDivider(ctx, body);
+        addDarkSwitchDiv(ctx, body, "通知显示消息详情", tmpShowDetail[0], boolSwitchListener(tmpShowDetail));
+        addDarkSwitchDiv(ctx, body, "开启时段静默", tmpMuteEnable[0], boolSwitchListener(tmpMuteEnable));
         final TextView[] tvTime = new TextView[2];
         tvTime[0] = addDarkClickRow(ctx, body, "开始时间", tmpMuteStart[0] + " >");
-        ((View) tvTime[0].getParent()).setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showSingleTimePicker(ctx, "选择开始时间", tmpMuteStart, new Runnable() { public void run() { tvTime[0].setText(tmpMuteStart[0] + " >"); }}); }});
+        bindTimePickerRow(ctx, tvTime[0], "选择开始时间", tmpMuteStart);
         addDarkDivider(ctx, body);
         tvTime[1] = addDarkClickRow(ctx, body, "结束时间", tmpMuteEnd[0] + " >");
-        ((View) tvTime[1].getParent()).setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showSingleTimePicker(ctx, "选择结束时间", tmpMuteEnd, new Runnable() { public void run() { tvTime[1].setText(tmpMuteEnd[0] + " >"); }}); }});
+        bindTimePickerRow(ctx, tvTime[1], "选择结束时间", tmpMuteEnd);
         if (isGroup) {
             addDarkDivider(ctx, body);
-            addDarkSwitchRow(ctx, body, "屏蔽@所有人", tmpBlockAll[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpBlockAll[0] = c; }});
-            addDarkDivider(ctx, body);
-            addDarkSwitchRow(ctx, body, "屏蔽@我", tmpBlockMe[0], new CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(CompoundButton b, boolean c) { tmpBlockMe[0] = c; }});
+            addDarkSwitchDiv(ctx, body, "屏蔽@所有人", tmpBlockAll[0], boolSwitchListener(tmpBlockAll));
+            addDarkSwitchRow(ctx, body, "屏蔽@我", tmpBlockMe[0], boolSwitchListener(tmpBlockMe));
         }
 
         ScrollView sv = new ScrollView(ctx);
@@ -2341,90 +2539,43 @@ void showBatchConfigDialog(final Activity ctx, final String title, final List ta
         sv.setLayoutParams(svLp);
         sv.addView(body);
 
-        final Dialog d = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
-        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        d.setCancelable(true);
+        final Dialog d = makeBaseDialog(ctx, true);
 
-        FrameLayout mask = new FrameLayout(ctx);
-        mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        mask.setBackgroundColor(Color.parseColor("#66000000"));
+        FrameLayout mask = makeDimMask(ctx);
 
-        LinearLayout card = new LinearLayout(ctx);
-        card.setOrientation(LinearLayout.VERTICAL);
-        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-1, -2);
-        cardLp.leftMargin = dp(ctx, 16);
-        cardLp.rightMargin = dp(ctx, 16);
-        cardLp.gravity = Gravity.CENTER;
-        card.setLayoutParams(cardLp);
-        card.setPadding(dp(ctx, 16), dp(ctx, 16), dp(ctx, 16), dp(ctx, 12));
-        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
-        cardBg.setCornerRadius(dp(ctx, 20));
-        cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
-        card.setBackground(cardBg);
+        LinearLayout card = makeVerticalDialogCard(ctx, 16, 16, 16, 12);
+        card.setBackground(makeDialogCardBg(ctx, 20));
 
-        TextView tvTitle = new TextView(ctx);
-        tvTitle.setText(title + "\n将修改 " + targetIds.size() + " 个" + (isGroup ? "群聊" : "好友"));
-        tvTitle.setTextColor(Color.parseColor("#0F172A"));
-        tvTitle.setTextSize(18f);
-        tvTitle.setTypeface(null, Typeface.BOLD);
+        TextView tvTitle = makeDialogTitle(ctx, title + "\n将修改 " + targetIds.size() + " 个" + (isGroup ? "群聊" : "好友"));
         card.addView(tvTitle);
         card.addView(sv);
 
-        LinearLayout actions = new LinearLayout(ctx);
-        actions.setGravity(Gravity.END);
-        LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(-1, -2);
-        actionsLp.topMargin = dp(ctx, 12);
-        actions.setLayoutParams(actionsLp);
+        LinearLayout actions = makeActionsRow(ctx, 12);
 
-        TextView btnCancel = new TextView(ctx);
-        btnCancel.setText("取消");
-        btnCancel.setTextColor(Color.parseColor("#334155"));
-        btnCancel.setTextSize(14f);
-        btnCancel.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
-        GradientDrawable cancelBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
-        cancelBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
-        btnCancel.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), cancelBg, null));
+        TextView btnCancel = makeNeutralButton(ctx, "取消", 14, 8);
 
-        TextView btnSave = new TextView(ctx);
-        btnSave.setText("批量保存");
-        btnSave.setTextColor(Color.WHITE);
-        btnSave.setTextSize(14f);
-        btnSave.setTypeface(null, Typeface.BOLD);
-        btnSave.setPadding(dp(ctx, 18), dp(ctx, 8), dp(ctx, 18), dp(ctx, 8));
-        GradientDrawable saveBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Color.parseColor("#2563EB"), Color.parseColor("#7C3AED")});
-        saveBg.setCornerRadius(dp(ctx, 999));
-        btnSave.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#55FFFFFF")), saveBg, null));
+        TextView btnSave = makePrimaryButton(ctx, "批量保存", 18, 8);
 
-        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-2, -2);
-        lpBtn.leftMargin = dp(ctx, 10);
         actions.addView(btnCancel);
-        actions.addView(btnSave, lpBtn);
+        addActionButton(ctx, actions, btnSave, 10);
         card.addView(actions);
 
         mask.addView(card);
         d.setContentView(mask);
-        mask.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { d.dismiss(); } });
-        card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {} });
+        bindMaskDismiss(mask, card, d);
         btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { d.dismiss(); } });
         btnSave.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 Map cfg = buildBatchTalkerCfg(isGroup, tmpDnd[0], tmpVibrate[0], tmpSound[0], tmpQuickReply[0], tmpShowDetail[0], tmpMuteEnable[0], tmpMuteStart[0], tmpMuteEnd[0], tmpRingtone[0], tmpBlockAll[0], tmpBlockMe[0]);
                 int count = applyBatchTalkerConfig(targetIds, isGroup, cfg, selectedIds);
                 if (onSaved != null) onSaved.run();
-                globalRingtoneValueRef = null;
-                globalRingtoneValueView = null;
+                clearGlobalRingtonePickState();
                 d.dismiss();
                 toast("已批量设置 " + count + " 个" + (isGroup ? "群聊" : "好友"));
             }
         });
 
-        Window w = d.getWindow();
-        if (w != null) {
-            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-            w.setGravity(Gravity.CENTER);
-            w.setDimAmount(0.25f);
-            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
-        }
+        applyFullScreenDialogWindow(d, WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
         d.show();
     } catch (Throwable e) {
         toast("打开批量设置失败");
@@ -2437,102 +2588,36 @@ void showBatchTalkerPickerDialog(final Activity ctx, final String title, final L
         return;
     }
     try {
-        final Dialog dlg = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
-        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dlg.setCancelable(true);
+        final Dialog dlg = makeBaseDialog(ctx, true);
 
-        FrameLayout mask = new FrameLayout(ctx);
-        mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        mask.setBackgroundColor(Color.parseColor("#66000000"));
+        FrameLayout mask = makeDimMask(ctx);
 
-        LinearLayout card = new LinearLayout(ctx);
-        card.setOrientation(LinearLayout.VERTICAL);
-        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-1, -2);
-        cardLp.leftMargin = dp(ctx, 16);
-        cardLp.rightMargin = dp(ctx, 16);
-        cardLp.gravity = Gravity.CENTER;
-        card.setLayoutParams(cardLp);
-        card.setPadding(dp(ctx, 16), dp(ctx, 16), dp(ctx, 16), dp(ctx, 12));
-        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
-        cardBg.setCornerRadius(dp(ctx, 20));
-        cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
-        card.setBackground(cardBg);
+        LinearLayout card = makeVerticalDialogCard(ctx, 16, 16, 16, 12);
+        card.setBackground(makeDialogCardBg(ctx, 20));
 
-        TextView tvTitle = new TextView(ctx);
-        tvTitle.setText(title);
-        tvTitle.setTextSize(18f);
-        tvTitle.setTypeface(null, Typeface.BOLD);
-        tvTitle.setTextColor(Color.parseColor("#0F172A"));
+        TextView tvTitle = makeDialogTitle(ctx, title);
         card.addView(tvTitle);
 
-        final EditText etSearch = new EditText(ctx);
-        etSearch.setHint("搜索后勾选要批量修改的会话");
-        etSearch.setSingleLine(true);
-        etSearch.setTextSize(14f);
-        etSearch.setTextColor(Color.parseColor("#0F172A"));
-        etSearch.setHintTextColor(Color.parseColor("#94A3B8"));
-        GradientDrawable searchBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
-        searchBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
-        etSearch.setBackground(searchBg);
-        etSearch.setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10));
-        prepareSearchInput(ctx, etSearch);
-        LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(-1, -2);
-        searchLp.topMargin = dp(ctx, 12);
-        card.addView(etSearch, searchLp);
+        final EditText etSearch = makeDialogSearchInput(ctx, "搜索后勾选要批量修改的会话");
+        card.addView(etSearch, topMarginLp(ctx, 12));
 
-        final TextView tvCount = new TextView(ctx);
-        tvCount.setTextSize(12f);
-        tvCount.setTextColor(Color.parseColor("#64748B"));
-        LinearLayout.LayoutParams cntLp = new LinearLayout.LayoutParams(-1, -2);
-        cntLp.topMargin = dp(ctx, 8);
-        card.addView(tvCount, cntLp);
+        final TextView tvCount = addDialogCountText(ctx, card);
 
         LinearLayout quickActions = new LinearLayout(ctx);
         quickActions.setGravity(Gravity.RIGHT);
-        LinearLayout.LayoutParams quickLp = new LinearLayout.LayoutParams(-1, -2);
-        quickLp.topMargin = dp(ctx, 8);
-        final TextView btnSelectAll = new TextView(ctx);
-        btnSelectAll.setText("全选当前");
-        btnSelectAll.setTextColor(Color.parseColor("#2563EB"));
-        btnSelectAll.setTextSize(13f);
-        btnSelectAll.setPadding(dp(ctx, 10), dp(ctx, 6), dp(ctx, 10), dp(ctx, 6));
-        btnSelectAll.setBackground(roundRect(Color.parseColor("#EFF6FF"), dp(ctx, 999)));
-        final TextView btnInvert = new TextView(ctx);
-        btnInvert.setText("反选当前");
-        btnInvert.setTextColor(Color.parseColor("#6D28D9"));
-        btnInvert.setTextSize(13f);
-        btnInvert.setPadding(dp(ctx, 10), dp(ctx, 6), dp(ctx, 10), dp(ctx, 6));
-        btnInvert.setBackground(roundRect(Color.parseColor("#F5F3FF"), dp(ctx, 999)));
-        final TextView btnClearPicked = new TextView(ctx);
-        btnClearPicked.setText("清空");
-        btnClearPicked.setTextColor(Color.parseColor("#334155"));
-        btnClearPicked.setTextSize(13f);
-        btnClearPicked.setPadding(dp(ctx, 10), dp(ctx, 6), dp(ctx, 10), dp(ctx, 6));
-        btnClearPicked.setBackground(roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999)));
-        LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(-2, -2);
-        qlp.leftMargin = dp(ctx, 8);
+        LinearLayout.LayoutParams quickLp = topMarginLp(ctx, 8);
+        final TextView btnSelectAll = makePillButton(ctx, "全选当前", "#2563EB", "#EFF6FF");
+        final TextView btnInvert = makePillButton(ctx, "反选当前", "#6D28D9", "#F5F3FF");
+        final TextView btnClearPicked = makePillButton(ctx, "清空", "#334155", "#EFF3F8");
         quickActions.addView(btnSelectAll);
-        quickActions.addView(btnInvert, qlp);
-        quickActions.addView(btnClearPicked, qlp);
+        addActionButton(ctx, quickActions, btnInvert, 8);
+        addActionButton(ctx, quickActions, btnClearPicked, 8);
         card.addView(quickActions, quickLp);
 
-        LinearLayout listWrap = new LinearLayout(ctx);
-        listWrap.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable listBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
-        listBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
-        listWrap.setBackground(listBg);
-        LinearLayout.LayoutParams wrapLp = new LinearLayout.LayoutParams(-1, dp(ctx, 360));
-        wrapLp.topMargin = dp(ctx, 8);
-
-        final ListView lv = new ListView(ctx);
-        lv.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        lv.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E8EEF5")));
-        lv.setDividerHeight(1);
-        lv.setSelector(new android.graphics.drawable.ColorDrawable(Color.parseColor("#12000000")));
-        lv.setPadding(dp(ctx, 6), dp(ctx, 6), dp(ctx, 6), dp(ctx, 6));
-        lv.setClipToPadding(false);
+        LinearLayout listWrap = makeDialogListWrap(ctx, 360, 8);
+        final ListView lv = makeDialogListView(ctx, ListView.CHOICE_MODE_MULTIPLE, false);
         listWrap.addView(lv, new LinearLayout.LayoutParams(-1, -1));
-        card.addView(listWrap, wrapLp);
+        card.addView(listWrap);
 
         final Set picked = new HashSet();
         final List showNames = new ArrayList();
@@ -2593,41 +2678,19 @@ void showBatchTalkerPickerDialog(final Activity ctx, final String title, final L
             }
         });
 
-        LinearLayout actions = new LinearLayout(ctx);
-        actions.setGravity(Gravity.END);
-        LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(-1, -2);
-        actionsLp.topMargin = dp(ctx, 12);
-        actions.setLayoutParams(actionsLp);
+        LinearLayout actions = makeActionsRow(ctx, 12);
 
-        TextView btnCancel = new TextView(ctx);
-        btnCancel.setText("取消");
-        btnCancel.setTextColor(Color.parseColor("#334155"));
-        btnCancel.setTextSize(14f);
-        btnCancel.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
-        GradientDrawable cancelBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
-        cancelBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
-        btnCancel.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), cancelBg, null));
+        TextView btnCancel = makeNeutralButton(ctx, "取消", 14, 8);
 
-        TextView btnNext = new TextView(ctx);
-        btnNext.setText("下一步");
-        btnNext.setTextColor(Color.WHITE);
-        btnNext.setTextSize(14f);
-        btnNext.setTypeface(null, Typeface.BOLD);
-        btnNext.setPadding(dp(ctx, 18), dp(ctx, 8), dp(ctx, 18), dp(ctx, 8));
-        GradientDrawable nextBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Color.parseColor("#2563EB"), Color.parseColor("#7C3AED")});
-        nextBg.setCornerRadius(dp(ctx, 999));
-        btnNext.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#55FFFFFF")), nextBg, null));
+        TextView btnNext = makePrimaryButton(ctx, "下一步", 18, 8);
 
-        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-2, -2);
-        lpBtn.leftMargin = dp(ctx, 10);
         actions.addView(btnCancel);
-        actions.addView(btnNext, lpBtn);
+        addActionButton(ctx, actions, btnNext, 10);
         card.addView(actions);
 
         mask.addView(card);
         dlg.setContentView(mask);
-        mask.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
-        card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {} });
+        bindMaskDismiss(mask, card, dlg);
         btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
         btnNext.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -2642,15 +2705,7 @@ void showBatchTalkerPickerDialog(final Activity ctx, final String title, final L
             }
         });
 
-        Window w = dlg.getWindow();
-        if (w != null) {
-            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-            w.setGravity(Gravity.CENTER);
-            w.setDimAmount(0.25f);
-            w.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
-            w.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        }
+        applyFullScreenResizeDialogWindow(dlg);
         dlg.show();
         update.run();
     } catch (Throwable e) {
@@ -2660,13 +2715,9 @@ void showBatchTalkerPickerDialog(final Activity ctx, final String title, final L
 
 void showCustomLoadingDialog(Activity ctx, String msg) {
     try {
-        Dialog d = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
-        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        d.setCancelable(false);
+        Dialog d = makeBaseDialog(ctx, false);
 
-        FrameLayout mask = new FrameLayout(ctx);
-        mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        mask.setBackgroundColor(Color.parseColor("#66000000"));
+        FrameLayout mask = makeDimMask(ctx);
 
         LinearLayout card = new LinearLayout(ctx);
         card.setOrientation(LinearLayout.HORIZONTAL);
@@ -2675,10 +2726,7 @@ void showCustomLoadingDialog(Activity ctx, String msg) {
         FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-2, -2);
         cardLp.gravity = Gravity.CENTER;
         card.setLayoutParams(cardLp);
-        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
-        cardBg.setCornerRadius(dp(ctx, 16));
-        cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
-        card.setBackground(cardBg);
+        card.setBackground(makeDialogCardBg(ctx, 16));
 
         ProgressBar pb = new ProgressBar(ctx);
         card.addView(pb);
@@ -2694,12 +2742,7 @@ void showCustomLoadingDialog(Activity ctx, String msg) {
         mask.addView(card);
         d.setContentView(mask);
 
-        Window w = d.getWindow();
-        if (w != null) {
-            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-            w.setGravity(Gravity.CENTER);
-            w.setDimAmount(0.25f);
-        }
+        applyFullScreenDialogWindow(d, 0);
         d.show();
         // 存引用以便关闭
         sLoadingDialogRef = d;
@@ -2726,8 +2769,9 @@ void showLabelFriendPickerDialog(final Activity ctx, final Set selectedIds, fina
                 if (labels != null) {
                     for (int i = 0; i < labels.size(); i++) {
                         Object label = labels.get(i);
-                        String name = labelObjName(label);
-                        String id = labelObjId(label);
+                        String name = readStringByAccessors(label, new String[]{"getLabelName", "getName", "getLabel", "getDisplayName"}, new String[]{"labelName", "name", "label", "displayName"});
+                        if (TextUtils.isEmpty(name) && label != null) name = String.valueOf(label);
+                        String id = readStringByAccessors(label, new String[]{"getLabelId", "getId", "getLabelID"}, new String[]{"labelId", "id", "labelID"});
                         if (TextUtils.isEmpty(name) || "null".equalsIgnoreCase(name)) name = TextUtils.isEmpty(id) ? ("标签" + (i + 1)) : ("标签" + id);
                         labelNames.add(name);
                         labelIds.add(id);
@@ -2742,80 +2786,35 @@ void showLabelFriendPickerDialog(final Activity ctx, final Set selectedIds, fina
                         toast("没有读取到好友标签");
                         return;
                     }
-                    final Dialog dlg = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
-                    dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
-                    dlg.setCancelable(true);
+                    final Dialog dlg = makeBaseDialog(ctx, true);
 
-                    FrameLayout mask = new FrameLayout(ctx);
-                    mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-                    mask.setBackgroundColor(Color.parseColor("#66000000"));
+                    FrameLayout mask = makeDimMask(ctx);
 
-                    LinearLayout card = new LinearLayout(ctx);
-                    card.setOrientation(LinearLayout.VERTICAL);
-                    FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-1, -2);
-                    cardLp.leftMargin = dp(ctx, 16);
-                    cardLp.rightMargin = dp(ctx, 16);
-                    cardLp.gravity = Gravity.CENTER;
-                    card.setLayoutParams(cardLp);
-                    card.setPadding(dp(ctx, 16), dp(ctx, 16), dp(ctx, 16), dp(ctx, 12));
-                    GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
-                    cardBg.setCornerRadius(dp(ctx, 20));
-                    cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
-                    card.setBackground(cardBg);
+                    LinearLayout card = makeVerticalDialogCard(ctx, 16, 16, 16, 12);
+                    card.setBackground(makeDialogCardBg(ctx, 20));
 
-                    TextView tvTitle = new TextView(ctx);
-                    tvTitle.setText("选择好友标签");
-                    tvTitle.setTextColor(Color.parseColor("#0F172A"));
-                    tvTitle.setTextSize(18f);
-                    tvTitle.setTypeface(null, Typeface.BOLD);
+                    TextView tvTitle = makeDialogTitle(ctx, "选择好友标签");
                     card.addView(tvTitle);
 
-                    TextView tvSub = new TextView(ctx);
-                    tvSub.setText("选择一个标签后，将进入好友多选界面");
-                    tvSub.setTextColor(Color.parseColor("#64748B"));
-                    tvSub.setTextSize(13f);
-                    LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
-                    subLp.topMargin = dp(ctx, 6);
+                    TextView tvSub = makeDialogSubText(ctx, "选择一个标签后，将进入好友多选界面");
+                    LinearLayout.LayoutParams subLp = topMarginLp(ctx, 6);
                     card.addView(tvSub, subLp);
 
-                    LinearLayout listWrap = new LinearLayout(ctx);
-                    listWrap.setOrientation(LinearLayout.VERTICAL);
-                    GradientDrawable listBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
-                    listBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
-                    listWrap.setBackground(listBg);
-                    LinearLayout.LayoutParams wrapLp = new LinearLayout.LayoutParams(-1, dp(ctx, 420));
-                    wrapLp.topMargin = dp(ctx, 12);
-
-                    final ListView lv = new ListView(ctx);
-                    lv.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E8EEF5")));
-                    lv.setDividerHeight(1);
-                    lv.setSelector(new android.graphics.drawable.ColorDrawable(Color.parseColor("#12000000")));
-                    lv.setPadding(dp(ctx, 6), dp(ctx, 6), dp(ctx, 6), dp(ctx, 6));
-                    lv.setClipToPadding(false);
+                    LinearLayout listWrap = makeDialogListWrap(ctx, 420, 12);
+                    final ListView lv = makeDialogListView(ctx, ListView.CHOICE_MODE_NONE, false);
                     ArrayAdapter ad = new ArrayAdapter(ctx, android.R.layout.simple_list_item_1, labelNames);
                     lv.setAdapter(ad);
                     listWrap.addView(lv, new LinearLayout.LayoutParams(-1, -1));
-                    card.addView(listWrap, wrapLp);
+                    card.addView(listWrap);
 
-                    LinearLayout actions = new LinearLayout(ctx);
-                    actions.setGravity(Gravity.END);
-                    LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(-1, -2);
-                    actionsLp.topMargin = dp(ctx, 12);
-                    TextView btnCancel = new TextView(ctx);
-                    btnCancel.setText("取消");
-                    btnCancel.setTextColor(Color.parseColor("#334155"));
-                    btnCancel.setTextSize(14f);
-                    btnCancel.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
-                    GradientDrawable cancelBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
-                    cancelBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
-                    btnCancel.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), cancelBg, null));
+                    LinearLayout actions = makeActionsRow(ctx, 12);
+                    TextView btnCancel = makeNeutralButton(ctx, "取消", 14, 8);
                     actions.addView(btnCancel);
                     card.addView(actions, actionsLp);
 
                     mask.addView(card);
                     dlg.setContentView(mask);
-                    mask.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
-                    card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {} });
+                    bindMaskDismiss(mask, card, dlg);
                     btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
                     lv.setOnItemClickListener(new AdapterView.OnItemClickListener() {
                         public void onItemClick(AdapterView parent, View view, int which, long id) {
@@ -2825,7 +2824,20 @@ void showLabelFriendPickerDialog(final Activity ctx, final Set selectedIds, fina
                             showCustomLoadingDialog(ctx, "读取标签好友中...");
                             new Thread(new Runnable() {
                                 public void run() {
-                                    final List ids = getFriendIdsByLabelSafe(labelId, labelName);
+                                    List loadedIds = new ArrayList();
+                                    try {
+                                        if (!TextUtils.isEmpty(labelId)) {
+                                            List byId = getContactByLabelId(labelId);
+                                            if (byId != null && !byId.isEmpty()) loadedIds = byId;
+                                        }
+                                    } catch (Throwable ignored) {}
+                                    try {
+                                        if (loadedIds.isEmpty() && !TextUtils.isEmpty(labelName)) {
+                                            List byName = getContactByLabelName(labelName);
+                                            if (byName != null) loadedIds = byName;
+                                        }
+                                    } catch (Throwable ignored) {}
+                                    final List ids = loadedIds;
                                     new Handler(Looper.getMainLooper()).post(new Runnable() {
                                         public void run() {
                                             dismissCustomLoadingDialog();
@@ -2849,32 +2861,12 @@ void showLabelFriendPickerDialog(final Activity ctx, final Set selectedIds, fina
                         }
                     });
 
-                    Window w = dlg.getWindow();
-                    if (w != null) {
-                        w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-                        w.setGravity(Gravity.CENTER);
-                        w.setDimAmount(0.25f);
-                    }
+                    applyFullScreenDialogWindow(dlg, 0);
                     dlg.show();
                 }
             });
         }
     }).start();
-}
-
-void applyDialogSize(AlertDialog d, float widthRatio, float heightRatio) {
-    try {
-        if (d == null || d.getWindow() == null) return;
-        DisplayMetrics dm = new DisplayMetrics();
-        d.getWindow().getWindowManager().getDefaultDisplay().getMetrics(dm);
-        int w = (int) (dm.widthPixels * widthRatio);
-        int h = (int) (dm.heightPixels * heightRatio);
-        d.getWindow().setLayout(w, h);
-        d.getWindow().setGravity(Gravity.CENTER);
-        d.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-        d.getWindow().setDimAmount(0f);
-        d.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-    } catch (Throwable ignored) {}
 }
 
 void hideSoftInput(Activity ctx) {
@@ -2943,33 +2935,15 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
     final String[] tmpBlockMembers = {cfgGet(oldCfg, "blockMembers", "")};
 
     try {
-        final Dialog dialog = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setCancelable(true);
+        final Dialog dialog = makeBaseDialog(ctx, true);
 
-        FrameLayout root = new FrameLayout(ctx);
-        root.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        root.setBackgroundColor(Color.parseColor("#66000000"));
+        FrameLayout root = makeDimMask(ctx);
 
-        LinearLayout card = new LinearLayout(ctx);
-        card.setOrientation(LinearLayout.VERTICAL);
-        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-1, -2);
-        cardLp.leftMargin = dp(ctx, 16);
-        cardLp.rightMargin = dp(ctx, 16);
-        cardLp.gravity = Gravity.CENTER;
-        card.setLayoutParams(cardLp);
-        card.setPadding(dp(ctx, 16), dp(ctx, 16), dp(ctx, 16), dp(ctx, 12));
+        LinearLayout card = makeVerticalDialogCard(ctx, 16, 16, 16, 12);
 
-        GradientDrawable cardBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")});
-        cardBg.setCornerRadius(dp(ctx, 20));
-        cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
-        card.setBackground(cardBg);
+        card.setBackground(makeDialogCardBg(ctx, 20));
 
-        TextView title = new TextView(ctx);
-        title.setText((isGroup ? "群聊通知配置" : "私聊通知配置") + "\n" + displayName);
-        title.setTextColor(Color.parseColor("#0F172A"));
-        title.setTextSize(18f);
-        title.setTypeface(null, Typeface.BOLD);
+        TextView title = makeDialogTitle(ctx, (isGroup ? "群聊通知配置" : "私聊通知配置") + "\n" + displayName);
         card.addView(title);
 
         ScrollView sv = new ScrollView(ctx);
@@ -2983,33 +2957,16 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
         bodyBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
         body.setBackground(bodyBg);
 
-        addDarkSwitchRow(ctx, body, "启用此会话规则", tmpEnable[0], new CompoundButton.OnCheckedChangeListener() {
-            public void onCheckedChanged(CompoundButton b, boolean c) { tmpEnable[0] = c; }
-        });
-        addDarkDivider(ctx, body);
-
-        addDarkSwitchRow(ctx, body, "免打扰(不弹通知)", tmpDnd[0], new CompoundButton.OnCheckedChangeListener() {
+        addDarkSwitchDiv(ctx, body, "启用此会话规则", tmpEnable[0], boolSwitchListener(tmpEnable));
+        addDarkSwitchDiv(ctx, body, "免打扰(不弹通知)", tmpDnd[0], new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton b, boolean c) {
                 tmpDnd[0] = c;
                 tmpMode[0] = c ? 0 : 1;
             }
         });
-        addDarkDivider(ctx, body);
-
-        addDarkSwitchRow(ctx, body, "震动", tmpVibrate[0], new CompoundButton.OnCheckedChangeListener() {
-            public void onCheckedChanged(CompoundButton b, boolean c) { tmpVibrate[0] = c; }
-        });
-        addDarkDivider(ctx, body);
-
-        addDarkSwitchRow(ctx, body, "铃声", tmpSound[0], new CompoundButton.OnCheckedChangeListener() {
-            public void onCheckedChanged(CompoundButton b, boolean c) { tmpSound[0] = c; }
-        });
-        addDarkDivider(ctx, body);
-
-        addDarkSwitchRow(ctx, body, "快捷回复", tmpQuickReply[0], new CompoundButton.OnCheckedChangeListener() {
-            public void onCheckedChanged(CompoundButton b, boolean c) { tmpQuickReply[0] = c; }
-        });
-        addDarkDivider(ctx, body);
+        addDarkSwitchDiv(ctx, body, "震动", tmpVibrate[0], boolSwitchListener(tmpVibrate));
+        addDarkSwitchDiv(ctx, body, "铃声", tmpSound[0], boolSwitchListener(tmpSound));
+        addDarkSwitchDiv(ctx, body, "快捷回复", tmpQuickReply[0], boolSwitchListener(tmpQuickReply));
 
         final TextView tvRing = addDarkClickRow(ctx, body, "选择铃声", getRingtoneDisplayName(ctx, tmpRingtone[0]) + " >");
         ((View) tvRing.getParent()).setOnClickListener(new View.OnClickListener() {
@@ -3021,41 +2978,15 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
         });
         addDarkDivider(ctx, body);
 
-        addDarkSwitchRow(ctx, body, "通知显示消息详情", tmpShowDetail[0], new CompoundButton.OnCheckedChangeListener() {
-            public void onCheckedChanged(CompoundButton b, boolean c) { tmpShowDetail[0] = c; }
-        });
-        addDarkDivider(ctx, body);
-
-        addDarkSwitchRow(ctx, body, "开启时段静默", tmpMuteEnable[0], new CompoundButton.OnCheckedChangeListener() {
-            public void onCheckedChanged(CompoundButton b, boolean c) { tmpMuteEnable[0] = c; }
-        });
-        addDarkDivider(ctx, body);
-
+        addDarkSwitchDiv(ctx, body, "通知显示消息详情", tmpShowDetail[0], boolSwitchListener(tmpShowDetail));
+        addDarkSwitchDiv(ctx, body, "开启时段静默", tmpMuteEnable[0], boolSwitchListener(tmpMuteEnable));
         final TextView[] tvTime = new TextView[2];
         tvTime[0] = addDarkClickRow(ctx, body, "开始时间", tmpMuteStart[0] + " >");
-        ((View) tvTime[0].getParent()).setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                showSingleTimePicker(ctx, "选择开始时间", tmpMuteStart, new Runnable() {
-                    public void run() {
-                        tvTime[0].setText(tmpMuteStart[0] + " >");
-                        tvTime[1].setText(tmpMuteEnd[0] + " >");
-                    }
-                });
-            }
-        });
+        bindTimePickerRow(ctx, tvTime[0], "选择开始时间", tmpMuteStart);
         addDarkDivider(ctx, body);
 
         tvTime[1] = addDarkClickRow(ctx, body, "结束时间", tmpMuteEnd[0] + " >");
-        ((View) tvTime[1].getParent()).setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                showSingleTimePicker(ctx, "选择结束时间", tmpMuteEnd, new Runnable() {
-                    public void run() {
-                        tvTime[0].setText(tmpMuteStart[0] + " >");
-                        tvTime[1].setText(tmpMuteEnd[0] + " >");
-                    }
-                });
-            }
-        });
+        bindTimePickerRow(ctx, tvTime[1], "选择结束时间", tmpMuteEnd);
 
         if (isGroup) {
             addDarkDivider(ctx, body);
@@ -3078,117 +3009,50 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
                 }
             });
             addDarkDivider(ctx, body);
-            addDarkSwitchRow(ctx, body, "屏蔽@所有人", tmpBlockAll[0], new CompoundButton.OnCheckedChangeListener() {
-                public void onCheckedChanged(CompoundButton b, boolean c) { tmpBlockAll[0] = c; }
-            });
-            addDarkDivider(ctx, body);
-            addDarkSwitchRow(ctx, body, "屏蔽@我", tmpBlockMe[0], new CompoundButton.OnCheckedChangeListener() {
-                public void onCheckedChanged(CompoundButton b, boolean c) { tmpBlockMe[0] = c; }
-            });
+            addDarkSwitchDiv(ctx, body, "屏蔽@所有人", tmpBlockAll[0], boolSwitchListener(tmpBlockAll));
+            addDarkSwitchRow(ctx, body, "屏蔽@我", tmpBlockMe[0], boolSwitchListener(tmpBlockMe));
         }
 
         sv.addView(body);
         card.addView(sv);
 
-        LinearLayout actions = new LinearLayout(ctx);
-        LinearLayout.LayoutParams acLp = new LinearLayout.LayoutParams(-1, -2);
-        acLp.topMargin = dp(ctx, 14);
-        actions.setLayoutParams(acLp);
-        actions.setGravity(Gravity.END);
+        LinearLayout actions = makeActionsRow(ctx, 14);
 
-        TextView btnClear = new TextView(ctx);
-        btnClear.setText("清除");
-        btnClear.setTextColor(Color.parseColor("#334155"));
-        btnClear.setTextSize(14f);
-        btnClear.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
-        GradientDrawable clearBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
-        clearBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
-        btnClear.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), clearBg, null));
+        TextView btnClear = makeNeutralButton(ctx, "清除", 14, 8);
 
-        TextView btnCancel = new TextView(ctx);
-        btnCancel.setText("取消");
-        btnCancel.setTextColor(Color.parseColor("#334155"));
-        btnCancel.setTextSize(14f);
-        btnCancel.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
-        GradientDrawable cancelBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
-        cancelBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
-        btnCancel.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), cancelBg, null));
+        TextView btnCancel = makeNeutralButton(ctx, "取消", 14, 8);
 
-        TextView btnSave = new TextView(ctx);
-        btnSave.setText("保存");
-        btnSave.setTextColor(Color.WHITE);
-        btnSave.setTextSize(14f);
-        btnSave.setTypeface(null, Typeface.BOLD);
-        btnSave.setPadding(dp(ctx, 18), dp(ctx, 8), dp(ctx, 18), dp(ctx, 8));
-        GradientDrawable saveBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Color.parseColor("#2563EB"), Color.parseColor("#7C3AED")});
-        saveBg.setCornerRadius(dp(ctx, 999));
-        btnSave.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#55FFFFFF")), saveBg, null));
+        TextView btnSave = makePrimaryButton(ctx, "保存", 18, 8);
 
-        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-2, -2);
-        lpBtn.leftMargin = dp(ctx, 10);
         actions.addView(btnClear);
-        actions.addView(btnCancel, lpBtn);
-        actions.addView(btnSave, lpBtn);
+        addActionButton(ctx, actions, btnCancel, 10);
+        addActionButton(ctx, actions, btnSave, 10);
 
         card.addView(actions);
         root.addView(card);
         dialog.setContentView(root);
 
-        root.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dialog.dismiss(); }});
-        card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {} });
+        bindMaskDismiss(root, card, dialog);
 
-        btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { globalRingtoneValueRef = null; globalRingtoneValueView = null; dialog.dismiss(); }});
+        btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { clearGlobalRingtonePickState(); dialog.dismiss(); }});
 
         btnClear.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                selectedIds.remove(talkerId);
-                putString(CFG_TALKER_CFG_PREFIX + talkerId, "");
-                saveSelectedTargets(selectedIds);
-                loadConfigToCache();
-                if (onSaved != null) onSaved.run();
-                globalRingtoneValueRef = null;
-                globalRingtoneValueView = null;
-                dialog.dismiss();
-                toast("已清除该会话配置");
+                removeTalkerConfig(talkerId, selectedIds, onSaved, dialog, "已清除该会话配置");
             }
         });
 
         btnSave.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 if (!tmpEnable[0]) {
-                    selectedIds.remove(talkerId);
-                    putString(CFG_TALKER_CFG_PREFIX + talkerId, "");
-                    saveSelectedTargets(selectedIds);
-                    loadConfigToCache();
-                    if (onSaved != null) onSaved.run();
-                    globalRingtoneValueRef = null;
-                    globalRingtoneValueView = null;
-                    dialog.dismiss();
-                    toast("该会话已关闭接管");
+                    removeTalkerConfig(talkerId, selectedIds, onSaved, dialog, "该会话已关闭接管");
                     return;
                 }
 
-                Map newCfg = new HashMap();
-                int modeToSave = tmpDnd[0] ? 0 : 1;
-                newCfg.put("mode", String.valueOf(modeToSave));
-                newCfg.put("vibrate", tmpVibrate[0] ? "1" : "0");
-                newCfg.put("sound", tmpSound[0] ? "1" : "0");
-                newCfg.put("quickReply", tmpQuickReply[0] ? "1" : "0");
-                newCfg.put("ringtone", tmpRingtone[0]);
-                newCfg.put("showDetail", tmpShowDetail[0] ? "1" : "0");
-                newCfg.put("muteEnable", tmpMuteEnable[0] ? "1" : "0");
-                newCfg.put("muteStart", normalizeTime(tmpMuteStart[0], "23:00"));
-                newCfg.put("muteEnd", normalizeTime(tmpMuteEnd[0], "07:00"));
+                Map newCfg = buildBatchTalkerCfg(isGroup, tmpDnd[0], tmpVibrate[0], tmpSound[0], tmpQuickReply[0], tmpShowDetail[0], tmpMuteEnable[0], tmpMuteStart[0], tmpMuteEnd[0], tmpRingtone[0], tmpBlockAll[0], tmpBlockMe[0]);
                 if (isGroup) {
-                    newCfg.put("blockAll", tmpBlockAll[0] ? "1" : "0");
-                    newCfg.put("blockMe", tmpBlockMe[0] ? "1" : "0");
                     newCfg.put("onlyMembers", joinMemberRuleSet(parseMemberRuleSet(tmpOnlyMembers[0])));
                     newCfg.put("blockMembers", joinMemberRuleSet(parseMemberRuleSet(tmpBlockMembers[0])));
-                } else {
-                    newCfg.put("blockAll", "0");
-                    newCfg.put("blockMe", "0");
-                    newCfg.put("onlyMembers", "");
-                    newCfg.put("blockMembers", "");
                 }
 
                 selectedIds.add(talkerId);
@@ -3196,20 +3060,13 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
                 saveSelectedTargets(selectedIds);
                 loadConfigToCache();
                 if (onSaved != null) onSaved.run();
-                globalRingtoneValueRef = null;
-                globalRingtoneValueView = null;
+                clearGlobalRingtonePickState();
                 dialog.dismiss();
                 toast("会话配置已保存");
             }
         });
 
-        Window w = dialog.getWindow();
-        if (w != null) {
-            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-            w.setGravity(Gravity.CENTER);
-            w.setDimAmount(0.25f);
-            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
-        }
+        applyFullScreenDialogWindow(dialog, WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
 
         dialog.show();
         card.setAlpha(0f);
@@ -3264,79 +3121,26 @@ void showGroupMemberPickerDialog(final Activity ctx, final String groupId, final
                     final List ids = new ArrayList();
                     final List names = new ArrayList();
 
-                    final Dialog dlg = new Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar);
-                    dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
-                    dlg.setCancelable(true);
+                    final Dialog dlg = makeBaseDialog(ctx, true);
 
-                    FrameLayout mask = new FrameLayout(ctx);
-                    mask.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-                    mask.setBackgroundColor(Color.parseColor("#66000000"));
+                    FrameLayout mask = makeDimMask(ctx);
 
-                    LinearLayout card = new LinearLayout(ctx);
-                    card.setOrientation(LinearLayout.VERTICAL);
-                    FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(-1, -2);
-                    cardLp.leftMargin = dp(ctx, 16);
-                    cardLp.rightMargin = dp(ctx, 16);
-                    cardLp.gravity = Gravity.CENTER;
-                    card.setLayoutParams(cardLp);
-                    card.setPadding(dp(ctx, 16), dp(ctx, 16), dp(ctx, 16), dp(ctx, 12));
+                    LinearLayout card = makeVerticalDialogCard(ctx, 16, 16, 16, 12);
 
-                    GradientDrawable cardBg = new GradientDrawable(
-                            GradientDrawable.Orientation.TOP_BOTTOM,
-                            new int[]{Color.parseColor("#FFFFFF"), Color.parseColor("#F8FAFC")}
-                    );
-                    cardBg.setCornerRadius(dp(ctx, 20));
-                    cardBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE6F2"));
-                    card.setBackground(cardBg);
+                    card.setBackground(makeDialogCardBg(ctx, 20));
 
-                    TextView tvTitle = new TextView(ctx);
-                    tvTitle.setText(title);
-                    tvTitle.setTextSize(18f);
-                    tvTitle.setTypeface(null, Typeface.BOLD);
-                    tvTitle.setTextColor(Color.parseColor("#0F172A"));
+                    TextView tvTitle = makeDialogTitle(ctx, title);
                     card.addView(tvTitle);
 
-                    final EditText etSearch = new EditText(ctx);
-                    etSearch.setHint("搜索成员昵称或 wxid");
-                    etSearch.setSingleLine(true);
-                    etSearch.setTextSize(14f);
-                    etSearch.setTextColor(Color.parseColor("#0F172A"));
-                    etSearch.setHintTextColor(Color.parseColor("#94A3B8"));
-    GradientDrawable searchBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
-    searchBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
-    etSearch.setBackground(searchBg);
-    etSearch.setPadding(dp(ctx, 12), dp(ctx, 10), dp(ctx, 12), dp(ctx, 10));
-    prepareSearchInput(ctx, etSearch);
-    LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(-1, -2);
-                    searchLp.topMargin = dp(ctx, 12);
-                    card.addView(etSearch, searchLp);
+                    final EditText etSearch = makeDialogSearchInput(ctx, "搜索成员昵称或 wxid");
+                    card.addView(etSearch, topMarginLp(ctx, 12));
 
-                    final TextView tvCount = new TextView(ctx);
-                    tvCount.setTextSize(12f);
-                    tvCount.setTextColor(Color.parseColor("#64748B"));
-                    LinearLayout.LayoutParams cntLp = new LinearLayout.LayoutParams(-1, -2);
-                    cntLp.topMargin = dp(ctx, 8);
-                    card.addView(tvCount, cntLp);
+                    final TextView tvCount = addDialogCountText(ctx, card);
 
-                    LinearLayout listWrap = new LinearLayout(ctx);
-                    listWrap.setOrientation(LinearLayout.VERTICAL);
-                    GradientDrawable listBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
-                    listBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
-                    listWrap.setBackground(listBg);
-                    LinearLayout.LayoutParams wrapLp = new LinearLayout.LayoutParams(-1, dp(ctx, 360));
-                    wrapLp.topMargin = dp(ctx, 8);
-                    listWrap.setLayoutParams(wrapLp);
-
-                    final ListView lv = new ListView(ctx);
-                    lv.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-                    lv.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E8EEF5")));
-                    lv.setDividerHeight(1);
-                    lv.setSelector(new android.graphics.drawable.ColorDrawable(Color.parseColor("#12000000")));
-                    lv.setPadding(dp(ctx, 6), dp(ctx, 6), dp(ctx, 6), dp(ctx, 6));
-                    lv.setClipToPadding(false);
-                    lv.setVerticalScrollBarEnabled(false);
+                    LinearLayout listWrap = makeDialogListWrap(ctx, 360, 8);
+                    final ListView lv = makeDialogListView(ctx, ListView.CHOICE_MODE_MULTIPLE, true);
                     listWrap.addView(lv, new LinearLayout.LayoutParams(-1, -1));
-                    card.addView(listWrap, wrapLp);
+                    card.addView(listWrap);
 
                     final Runnable update = new Runnable() {
                         public void run() {
@@ -3388,52 +3192,23 @@ void showGroupMemberPickerDialog(final Activity ctx, final String groupId, final
                         public void afterTextChanged(Editable s) { update.run(); }
                     });
 
-                    LinearLayout actions = new LinearLayout(ctx);
-                    actions.setGravity(Gravity.END);
-                    LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(-1, -2);
-                    actionsLp.topMargin = dp(ctx, 12);
-                    actions.setLayoutParams(actionsLp);
+                    LinearLayout actions = makeActionsRow(ctx, 12);
 
-                    TextView btnClear = new TextView(ctx);
-                    btnClear.setText("清空");
-                    btnClear.setTextColor(Color.parseColor("#334155"));
-                    btnClear.setTextSize(14f);
-                    btnClear.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
-                    GradientDrawable clearBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
-                    clearBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
-                    btnClear.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), clearBg, null));
+                    TextView btnClear = makeNeutralButton(ctx, "清空", 14, 8);
 
-                    TextView btnCancel = new TextView(ctx);
-                    btnCancel.setText("取消");
-                    btnCancel.setTextColor(Color.parseColor("#334155"));
-                    btnCancel.setTextSize(14f);
-                    btnCancel.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
-                    GradientDrawable cancelBg = roundRect(Color.parseColor("#EFF3F8"), dp(ctx, 999));
-                    cancelBg.setStroke(dp(ctx, 1), Color.parseColor("#DEE7F2"));
-                    btnCancel.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), cancelBg, null));
+                    TextView btnCancel = makeNeutralButton(ctx, "取消", 14, 8);
 
-                    TextView btnSave = new TextView(ctx);
-                    btnSave.setText("确定");
-                    btnSave.setTextColor(Color.WHITE);
-                    btnSave.setTextSize(14f);
-                    btnSave.setTypeface(null, Typeface.BOLD);
-                    btnSave.setPadding(dp(ctx, 18), dp(ctx, 8), dp(ctx, 18), dp(ctx, 8));
-                    GradientDrawable saveBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Color.parseColor("#2563EB"), Color.parseColor("#7C3AED")});
-                    saveBg.setCornerRadius(dp(ctx, 999));
-                    btnSave.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#55FFFFFF")), saveBg, null));
+                    TextView btnSave = makePrimaryButton(ctx, "确定", 18, 8);
 
-                    LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-2, -2);
-                    lpBtn.leftMargin = dp(ctx, 10);
                     actions.addView(btnClear);
-                    actions.addView(btnCancel, lpBtn);
-                    actions.addView(btnSave, lpBtn);
+                    addActionButton(ctx, actions, btnCancel, 10);
+                    addActionButton(ctx, actions, btnSave, 10);
                     card.addView(actions);
 
                     mask.addView(card);
                     dlg.setContentView(mask);
 
-                    mask.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
-                    card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {} });
+                    bindMaskDismiss(mask, card, dlg);
                     btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } });
                     btnClear.setOnClickListener(new View.OnClickListener() {
                         public void onClick(View v) {
@@ -3450,15 +3225,7 @@ void showGroupMemberPickerDialog(final Activity ctx, final String groupId, final
                         }
                     });
 
-                    Window w = dlg.getWindow();
-                    if (w != null) {
-                        w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-                        w.setGravity(Gravity.CENTER);
-                        w.setDimAmount(0.25f);
-                        w.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
-                        w.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-                        w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-                    }
+                    applyFullScreenResizeDialogWindow(dlg);
 
                     dlg.show();
                     etSearch.postDelayed(new Runnable() {
@@ -3499,6 +3266,11 @@ void addDarkSwitchRow(Activity ctx, LinearLayout parent, String title, boolean c
     parent.addView(row);
 }
 
+void addDarkSwitchDiv(Activity ctx, LinearLayout parent, String title, boolean checked, CompoundButton.OnCheckedChangeListener listener) {
+    addDarkSwitchRow(ctx, parent, title, checked, listener);
+    addDarkDivider(ctx, parent);
+}
+
 TextView addDarkClickRow(Activity ctx, LinearLayout parent, String title, String right) {
     LinearLayout row = new LinearLayout(ctx);
     row.setOrientation(LinearLayout.HORIZONTAL);
@@ -3526,6 +3298,187 @@ TextView addDarkClickRow(Activity ctx, LinearLayout parent, String title, String
     parent.addView(row);
     return r;
 }
+
+void fillStringListPair(List srcNames, List srcIds, List outNames, List outNameLower, List outIds) {
+    if (srcNames == null || srcIds == null || outNames == null || outNameLower == null || outIds == null) return;
+    int n = Math.min(srcNames.size(), srcIds.size());
+    for (int i = 0; i < n; i++) {
+        String name = String.valueOf(srcNames.get(i));
+        String id = String.valueOf(srcIds.get(i));
+        outNames.add(name);
+        outNameLower.add(name.toLowerCase());
+        outIds.add(id);
+    }
+}
+
+void appendDisplayItem(List names, List ids, List isGroups, String name, String talkerId, boolean isGroup, Set selectedIds) {
+    if (names == null || ids == null || isGroups == null) return;
+    names.add(selectedIds != null && selectedIds.contains(talkerId) ? name + "  [已配置]" : name);
+    ids.add(talkerId);
+    isGroups.add(isGroup ? Boolean.TRUE : Boolean.FALSE);
+}
+
+int appendPreviewItems(List srcNames, List srcIds, boolean isGroup, Set selectedIds, List outNames, List outIds, List outIsGroup, int added, int limit) {
+    if (srcNames == null || srcIds == null || added >= limit) return added;
+    int n = Math.min(srcNames.size(), srcIds.size());
+    for (int i = 0; i < n && added < limit; i++) {
+        appendDisplayItem(outNames, outIds, outIsGroup, String.valueOf(srcNames.get(i)), String.valueOf(srcIds.get(i)), isGroup, selectedIds);
+        added++;
+    }
+    return added;
+}
+
+void fillFilteredDisplayList(List srcNames, List srcNameLower, List srcIds, boolean isGroup, String kw, Set selectedIds, List outNames, List outIds, List outIsGroup) {
+    if (srcNames == null || srcNameLower == null || srcIds == null) return;
+    int n = Math.min(srcNames.size(), Math.min(srcNameLower.size(), srcIds.size()));
+    for (int i = 0; i < n; i++) {
+        String nameLower = String.valueOf(srcNameLower.get(i));
+        if (!TextUtils.isEmpty(kw) && !nameLower.contains(kw)) continue;
+        appendDisplayItem(outNames, outIds, outIsGroup, String.valueOf(srcNames.get(i)), String.valueOf(srcIds.get(i)), isGroup, selectedIds);
+    }
+}
+
+void attachDebouncedSearch(EditText etSearch, final Handler uiHandler, final Runnable[] pendingSearch, final Runnable updateList) {
+    if (etSearch == null || uiHandler == null || pendingSearch == null || updateList == null) return;
+    etSearch.addTextChangedListener(new TextWatcher() {
+        public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+        public void onTextChanged(CharSequence s, int start, int before, int count) {}
+        public void afterTextChanged(Editable s) {
+            if (pendingSearch[0] != null) uiHandler.removeCallbacks(pendingSearch[0]);
+            pendingSearch[0] = new Runnable() {
+                public void run() { updateList.run(); }
+            };
+            uiHandler.postDelayed(pendingSearch[0], 60);
+        }
+    });
+}
+
+void attachListItemConfigClick(final Activity ctx, ListView lv, final List displayNames, final List displayIds, final List displayIsGroup, final Set selectedIds, final Runnable updateList) {
+    if (ctx == null || lv == null) return;
+    lv.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        public void onItemClick(AdapterView parent, View view, int position, long id) {
+            final String talkerId = String.valueOf(displayIds.get(position));
+            final boolean isGroup = ((Boolean) displayIsGroup.get(position)).booleanValue();
+            final String displayName = String.valueOf(displayNames.get(position));
+            showTalkerConfigDialog(ctx, talkerId, isGroup, displayName, selectedIds, updateList);
+        }
+    });
+}
+
+void configureListDialogWindow(AlertDialog dialog, View root, EditText etSearch) {
+    if (dialog == null) return;
+    dialog.show();
+    Window w = dialog.getWindow();
+    if (w != null) {
+        w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        w.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+        w.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+    }
+    dialog.setContentView(root);
+    if (w != null) {
+        DisplayMetrics dm = new DisplayMetrics();
+        w.getWindowManager().getDefaultDisplay().getMetrics(dm);
+        w.setLayout((int) (dm.widthPixels * 0.96f), (int) (dm.heightPixels * 0.90f));
+        w.setGravity(Gravity.CENTER);
+        w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        w.setDimAmount(0f);
+    }
+    try { if (etSearch != null) etSearch.clearFocus(); } catch (Throwable ignored) {}
+}
+
+void attachBatchEntryClicks(final Activity ctx, View rowBatchFriend, View rowBatchGroup, View rowLabelFriend,
+                            final List fNameStr, final List fIdStr, final List gNameStr, final List gIdStr,
+                            final Set selectedIds, final Runnable updateList) {
+    final Runnable refresh = new Runnable() { public void run() { updateList.run(); } };
+    if (rowBatchFriend != null) {
+        rowBatchFriend.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                showBatchTalkerPickerDialog(ctx, "批量修改私聊", fNameStr, fIdStr, false, selectedIds, refresh);
+            }
+        });
+    }
+    if (rowBatchGroup != null) {
+        rowBatchGroup.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                showBatchTalkerPickerDialog(ctx, "批量修改群聊", gNameStr, gIdStr, true, selectedIds, refresh);
+            }
+        });
+    }
+    if (rowLabelFriend != null) {
+        rowLabelFriend.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                showLabelFriendPickerDialog(ctx, selectedIds, refresh);
+            }
+        });
+    }
+}
+
+void fillPreviewDisplay(int checkedId, Set selectedIds, List fNameStr, List fIdStr, List gNameStr, List gIdStr,
+                        List outNames, List outIds, List outIsGroup, int previewLimit) {
+    if (outNames == null || outIds == null || outIsGroup == null) return;
+    outNames.clear();
+    outIds.clear();
+    outIsGroup.clear();
+    int added = 0;
+    if (checkedId == 1 || checkedId == 3) {
+        added = appendPreviewItems(fNameStr, fIdStr, false, selectedIds, outNames, outIds, outIsGroup, added, previewLimit);
+    }
+    if ((checkedId == 2 || checkedId == 3) && added < previewLimit) {
+        appendPreviewItems(gNameStr, gIdStr, true, selectedIds, outNames, outIds, outIsGroup, added, previewLimit);
+    }
+    sortConfiguredFirst(outNames, outIds, outIsGroup, selectedIds);
+}
+
+void fillFullDisplay(int checkedId, String kw, Set selectedIds, List fNameStr, List fNameLower, List fIdStr,
+                     List gNameStr, List gNameLower, List gIdStr, List outNames, List outIds, List outIsGroup) {
+    if (checkedId == 1 || checkedId == 3) {
+        fillFilteredDisplayList(fNameStr, fNameLower, fIdStr, false, kw, selectedIds, outNames, outIds, outIsGroup);
+    }
+    if (checkedId == 2 || checkedId == 3) {
+        fillFilteredDisplayList(gNameStr, gNameLower, gIdStr, true, kw, selectedIds, outNames, outIds, outIsGroup);
+    }
+    sortConfiguredFirst(outNames, outIds, outIsGroup, selectedIds);
+}
+
+Object[] createBatchActionCard(Activity ctx) {
+    LinearLayout batchCard = new LinearLayout(ctx);
+    batchCard.setOrientation(LinearLayout.VERTICAL);
+    GradientDrawable batchBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
+    batchBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
+    batchCard.setBackground(batchBg);
+
+    String[][] rows = new String[][]{{"批量修改私聊", "多选好友 >"}, {"批量修改群聊", "多选群聊 >"}, {"标签好友", "按标签批量 >"}};
+    LinearLayout[] views = new LinearLayout[3];
+    for (int i = 0; i < rows.length; i++) {
+        views[i] = createRowText(ctx, rows[i][0], rows[i][1], true);
+        if (i > 0) addDarkDivider(ctx, batchCard);
+        batchCard.addView(views[i]);
+    }
+    return new Object[]{batchCard, views[0], views[1], views[2]};
+}
+
+ListView addConversationListView(Activity ctx, LinearLayout root) {
+    FrameLayout listWrap = new FrameLayout(ctx);
+    GradientDrawable listWrapBg = roundRect(Color.parseColor("#F5F7FB"), dp(ctx, 12));
+    listWrapBg.setStroke(dp(ctx, 1), Color.parseColor("#EEF2F7"));
+    listWrap.setBackground(listWrapBg);
+    LinearLayout.LayoutParams wrapLp = new LinearLayout.LayoutParams(-1, 0, 1f);
+    wrapLp.topMargin = dp(ctx, 12);
+
+    ListView lv = new ListView(ctx);
+    lv.setChoiceMode(ListView.CHOICE_MODE_NONE);
+    lv.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E9EDF3")));
+    lv.setDividerHeight(1);
+    lv.setSelector(new android.graphics.drawable.ColorDrawable(Color.parseColor("#12000000")));
+    lv.setPadding(dp(ctx, 8), dp(ctx, 8), dp(ctx, 8), dp(ctx, 8));
+    lv.setClipToPadding(false);
+    lv.setVerticalScrollBarEnabled(false);
+    listWrap.addView(lv, new FrameLayout.LayoutParams(-1, -1));
+    root.addView(listWrap, wrapLp);
+    return lv;
+}
+
 void buildListUI(final Activity ctx, final List fNames, final List fIds, final List gNames, final List gIds) {
     LinearLayout root = new LinearLayout(ctx);
     root.setOrientation(LinearLayout.VERTICAL);
@@ -3545,29 +3498,15 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
     final RadioGroup rg = new RadioGroup(ctx);
     rg.setOrientation(RadioGroup.HORIZONTAL);
     rg.setGravity(Gravity.CENTER);
-    LinearLayout.LayoutParams rgLp = new LinearLayout.LayoutParams(-1, -2);
-    rgLp.topMargin = dp(ctx, 14);
-    rg.setLayoutParams(rgLp);
-
-    RadioButton rbFriend = new RadioButton(ctx);
-    rbFriend.setText("好友");
-    rbFriend.setId(1);
-    rbFriend.setTextSize(16f);
-
-    RadioButton rbGroup = new RadioButton(ctx);
-    rbGroup.setText("群聊");
-    rbGroup.setId(2);
-    rbGroup.setTextSize(16f);
-
-    RadioButton rbAll = new RadioButton(ctx);
-    rbAll.setText("全部");
-    rbAll.setId(3);
-    rbAll.setTextSize(16f);
-
-    rg.addView(rbFriend);
-    rg.addView(rbGroup);
-    rg.addView(rbAll);
-    root.addView(rg);
+    String[] tabLabels = new String[]{"好友", "群聊", "全部"};
+    for (int i = 0; i < tabLabels.length; i++) {
+        RadioButton rb = new RadioButton(ctx);
+        rb.setText(tabLabels[i]);
+        rb.setId(i + 1);
+        rb.setTextSize(16f);
+        rg.addView(rb);
+    }
+    root.addView(rg, topMarginLp(ctx, 14));
 
     final EditText etSearch = new EditText(ctx);
     etSearch.setHint("搜索会话");
@@ -3579,106 +3518,40 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
     etSearch.setBackground(searchBg);
     etSearch.setPadding(dp(ctx, 16), dp(ctx, 10), dp(ctx, 16), dp(ctx, 10));
     prepareSearchInput(ctx, etSearch);
-    LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(-1, -2);
-    searchLp.topMargin = dp(ctx, 12);
-    root.addView(etSearch, searchLp);
+    root.addView(etSearch, topMarginLp(ctx, 12));
 
-    LinearLayout batchCard = new LinearLayout(ctx);
-    batchCard.setOrientation(LinearLayout.VERTICAL);
-    LinearLayout.LayoutParams batchLp = new LinearLayout.LayoutParams(-1, -2);
-    batchLp.topMargin = dp(ctx, 10);
-    GradientDrawable batchBg = roundRect(Color.parseColor("#F8FAFC"), dp(ctx, 12));
-    batchBg.setStroke(dp(ctx, 1), Color.parseColor("#E2E8F0"));
-    batchCard.setBackground(batchBg);
-    final LinearLayout rowBatchFriend = createRowText(ctx, "批量修改私聊", "多选好友 >", true);
-    final LinearLayout rowBatchGroup = createRowText(ctx, "批量修改群聊", "多选群聊 >", true);
-    final LinearLayout rowLabelFriend = createRowText(ctx, "标签好友", "按标签批量 >", true);
-    batchCard.addView(rowBatchFriend);
-    addDarkDivider(ctx, batchCard);
-    batchCard.addView(rowBatchGroup);
-    addDarkDivider(ctx, batchCard);
-    batchCard.addView(rowLabelFriend);
+    Object[] batchViews = createBatchActionCard(ctx);
+    LinearLayout batchCard = (LinearLayout) batchViews[0];
+    final LinearLayout rowBatchFriend = (LinearLayout) batchViews[1];
+    final LinearLayout rowBatchGroup = (LinearLayout) batchViews[2];
+    final LinearLayout rowLabelFriend = (LinearLayout) batchViews[3];
+    LinearLayout.LayoutParams batchLp = topMarginLp(ctx, 10);
     root.addView(batchCard, batchLp);
 
-    FrameLayout listWrap = new FrameLayout(ctx);
-    GradientDrawable listWrapBg = roundRect(Color.parseColor("#F5F7FB"), dp(ctx, 12));
-    listWrapBg.setStroke(dp(ctx, 1), Color.parseColor("#EEF2F7"));
-    listWrap.setBackground(listWrapBg);
-    LinearLayout.LayoutParams wrapLp = new LinearLayout.LayoutParams(-1, 0, 1f);
-    wrapLp.topMargin = dp(ctx, 12);
+    final ListView lv = addConversationListView(ctx, root);
 
-    final ListView lv = new ListView(ctx);
-    lv.setChoiceMode(ListView.CHOICE_MODE_NONE);
-    lv.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E9EDF3")));
-    lv.setDividerHeight(1);
-    lv.setSelector(new android.graphics.drawable.ColorDrawable(Color.parseColor("#12000000")));
-    lv.setPadding(dp(ctx, 8), dp(ctx, 8), dp(ctx, 8), dp(ctx, 8));
-    lv.setClipToPadding(false);
-    lv.setVerticalScrollBarEnabled(false);
-    listWrap.addView(lv, new FrameLayout.LayoutParams(-1, -1));
-    root.addView(listWrap, wrapLp);
-
-    LinearLayout actions = new LinearLayout(ctx);
+    LinearLayout actions = makeActionsRow(ctx, 14);
     actions.setOrientation(LinearLayout.HORIZONTAL);
-    actions.setGravity(Gravity.END);
-    LinearLayout.LayoutParams actionLp = new LinearLayout.LayoutParams(-1, -2);
-    actionLp.topMargin = dp(ctx, 14);
-    actions.setLayoutParams(actionLp);
-
-    final TextView tvCancel = new TextView(ctx);
-    tvCancel.setText("取消");
+    final TextView tvCancel = makeNeutralButton(ctx, "取消", 20, 10);
+    final TextView tvOk = makePrimaryButton(ctx, "完成", 24, 10);
     tvCancel.setTextSize(16f);
-    tvCancel.setTextColor(Color.parseColor("#334155"));
-    tvCancel.setPadding(dp(ctx, 20), dp(ctx, 10), dp(ctx, 20), dp(ctx, 10));
-    GradientDrawable cancelBg = roundRect(Color.parseColor("#EDF1F6"), dp(ctx, 999));
-    cancelBg.setStroke(dp(ctx, 1), Color.parseColor("#DDE3EC"));
-    tvCancel.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#22000000")), cancelBg, null));
-    actions.addView(tvCancel);
-
-    final TextView tvOk = new TextView(ctx);
-    tvOk.setText("完成");
     tvOk.setTextSize(16f);
-    tvOk.setTypeface(null, Typeface.BOLD);
-    tvOk.setTextColor(Color.WHITE);
-    tvOk.setPadding(dp(ctx, 24), dp(ctx, 10), dp(ctx, 24), dp(ctx, 10));
-    GradientDrawable okBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Color.parseColor("#2E64F0"), Color.parseColor("#6F3BDE")});
-    okBg.setCornerRadius(dp(ctx, 999));
-    tvOk.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.parseColor("#55FFFFFF")), okBg, null));
-    LinearLayout.LayoutParams okLp = new LinearLayout.LayoutParams(-2, -2);
-    okLp.leftMargin = dp(ctx, 10);
-    actions.addView(tvOk, okLp);
+    actions.addView(tvCancel);
+    addActionButton(ctx, actions, tvOk, 10);
     root.addView(actions);
 
     final String existStr = getString(CFG_TARGETS, "");
-    final Set selectedIds = new HashSet();
-    if (!TextUtils.isEmpty(existStr)) {
-        String[] parts = existStr.split(",");
-        for (int i = 0; i < parts.length; i++) {
-            selectedIds.add(parts[i].trim());
-        }
-    }
+    final Set selectedIds = parseTargetSet(existStr);
 
     final List fNameStr = new ArrayList();
     final List fNameLower = new ArrayList();
     final List fIdStr = new ArrayList();
-    for (int i = 0; i < fNames.size(); i++) {
-        String n = String.valueOf(fNames.get(i));
-        String id = String.valueOf(fIds.get(i));
-        fNameStr.add(n);
-        fNameLower.add(n.toLowerCase());
-        fIdStr.add(id);
-    }
+    fillStringListPair(fNames, fIds, fNameStr, fNameLower, fIdStr);
 
     final List gNameStr = new ArrayList();
     final List gNameLower = new ArrayList();
     final List gIdStr = new ArrayList();
-    for (int i = 0; i < gNames.size(); i++) {
-        String n = String.valueOf(gNames.get(i));
-        String id = String.valueOf(gIds.get(i));
-        gNameStr.add(n);
-        gNameLower.add(n.toLowerCase());
-        gIdStr.add(id);
-    }
+    fillStringListPair(gNames, gIds, gNameStr, gNameLower, gIdStr);
 
     final List currentDisplayNames = new ArrayList();
     final List currentDisplayIds = new ArrayList();
@@ -3709,34 +3582,7 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
             // 首屏空关键字时先给一批预览，避免“空白2~3秒”
             boolean isEmptyKw = TextUtils.isEmpty(kw);
             if (isEmptyKw) {
-                currentDisplayNames.clear();
-                currentDisplayIds.clear();
-                currentDisplayIsGroup.clear();
-
-                int previewLimit = 120;
-                int added = 0;
-
-                if (checkedId == 1 || checkedId == 3) {
-                    for (int i = 0; i < fNameStr.size() && added < previewLimit; i++) {
-                        String name = String.valueOf(fNameStr.get(i));
-                        String talkerId = String.valueOf(fIdStr.get(i));
-                        currentDisplayNames.add(selectedIds.contains(talkerId) ? (name + "  [已配置]") : name);
-                        currentDisplayIds.add(talkerId);
-                        currentDisplayIsGroup.add(Boolean.FALSE);
-                        added++;
-                    }
-                }
-                if ((checkedId == 2 || checkedId == 3) && added < previewLimit) {
-                    for (int i = 0; i < gNameStr.size() && added < previewLimit; i++) {
-                        String name = String.valueOf(gNameStr.get(i));
-                        String talkerId = String.valueOf(gIdStr.get(i));
-                        currentDisplayNames.add(selectedIds.contains(talkerId) ? (name + "  [已配置]") : name);
-                        currentDisplayIds.add(talkerId);
-                        currentDisplayIsGroup.add(Boolean.TRUE);
-                        added++;
-                    }
-                }
-                sortConfiguredFirst(currentDisplayNames, currentDisplayIds, currentDisplayIsGroup, selectedIds);
+                fillPreviewDisplay(checkedId, selectedIds, fNameStr, fIdStr, gNameStr, gIdStr, currentDisplayNames, currentDisplayIds, currentDisplayIsGroup, 120);
                 adapter.notifyDataSetChanged();
             }
 
@@ -3749,31 +3595,7 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
                     final List tmpIds = new ArrayList();
                     final List tmpIsGroup = new ArrayList();
 
-                    if (checkedId == 1 || checkedId == 3) {
-                        for (int i = 0; i < fNameStr.size(); i++) {
-                            String nameLower = String.valueOf(fNameLower.get(i));
-                            if (kw.isEmpty() || nameLower.contains(kw)) {
-                                String name = String.valueOf(fNameStr.get(i));
-                                String talkerId = String.valueOf(fIdStr.get(i));
-                                tmpNames.add(selectedIds.contains(talkerId) ? (name + "  [已配置]") : name);
-                                tmpIds.add(talkerId);
-                                tmpIsGroup.add(Boolean.FALSE);
-                            }
-                        }
-                    }
-                    if (checkedId == 2 || checkedId == 3) {
-                        for (int i = 0; i < gNameStr.size(); i++) {
-                            String nameLower = String.valueOf(gNameLower.get(i));
-                            if (kw.isEmpty() || nameLower.contains(kw)) {
-                                String name = String.valueOf(gNameStr.get(i));
-                                String talkerId = String.valueOf(gIdStr.get(i));
-                                tmpNames.add(selectedIds.contains(talkerId) ? (name + "  [已配置]") : name);
-                                tmpIds.add(talkerId);
-                                tmpIsGroup.add(Boolean.TRUE);
-                            }
-                        }
-                    }
-                    sortConfiguredFirst(tmpNames, tmpIds, tmpIsGroup, selectedIds);
+                    fillFullDisplay(checkedId, kw, selectedIds, fNameStr, fNameLower, fIdStr, gNameStr, gNameLower, gIdStr, tmpNames, tmpIds, tmpIsGroup);
 
                     uiHandler.post(new Runnable() {
                         public void run() {
@@ -3783,7 +3605,6 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
                             currentDisplayNames.clear();
                             currentDisplayIds.clear();
                             currentDisplayIsGroup.clear();
-
                             currentDisplayNames.addAll(tmpNames);
                             currentDisplayIds.addAll(tmpIds);
                             currentDisplayIsGroup.addAll(tmpIsGroup);
@@ -3800,61 +3621,12 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
         public void onCheckedChanged(RadioGroup group, int checkedId) { updateList.run(); }
     });
 
-    etSearch.addTextChangedListener(new TextWatcher() {
-        public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-        public void onTextChanged(CharSequence s, int start, int before, int count) {}
-        public void afterTextChanged(Editable s) {
-            if (pendingSearch[0] != null) uiHandler.removeCallbacks(pendingSearch[0]);
-            pendingSearch[0] = new Runnable() {
-                public void run() { updateList.run(); }
-            };
-            uiHandler.postDelayed(pendingSearch[0], 60);
-        }
-    });
-
-    lv.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-        public void onItemClick(AdapterView parent, View view, int position, long id) {
-            final String talkerId = String.valueOf(currentDisplayIds.get(position));
-            final boolean isGroup = ((Boolean) currentDisplayIsGroup.get(position)).booleanValue();
-            final String displayName = String.valueOf(currentDisplayNames.get(position));
-            showTalkerConfigDialog(ctx, talkerId, isGroup, displayName, selectedIds, new Runnable() {
-                public void run() { updateList.run(); }
-            });
-        }
-    });
+    attachDebouncedSearch(etSearch, uiHandler, pendingSearch, updateList);
+    attachListItemConfigClick(ctx, lv, currentDisplayNames, currentDisplayIds, currentDisplayIsGroup, selectedIds, updateList);
 
     final AlertDialog listDialog = new AlertDialog.Builder(ctx).create();
-    listDialog.show();
-    listDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-    if (listDialog.getWindow() != null) {
-        listDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
-        listDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-        listDialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-    }
-    listDialog.setContentView(root);
-    applyDialogSize(listDialog, 0.96f, 0.90f);
-    etSearch.clearFocus();
-    try {
-        if (listDialog.getWindow() != null) {
-            listDialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        }
-    } catch (Throwable ignored) {}
-
-    rowBatchFriend.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            showBatchTalkerPickerDialog(ctx, "批量修改私聊", fNameStr, fIdStr, false, selectedIds, new Runnable() { public void run() { updateList.run(); } });
-        }
-    });
-    rowBatchGroup.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            showBatchTalkerPickerDialog(ctx, "批量修改群聊", gNameStr, gIdStr, true, selectedIds, new Runnable() { public void run() { updateList.run(); } });
-        }
-    });
-    rowLabelFriend.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            showLabelFriendPickerDialog(ctx, selectedIds, new Runnable() { public void run() { updateList.run(); } });
-        }
-    });
+    configureListDialogWindow(listDialog, root, etSearch);
+    attachBatchEntryClicks(ctx, rowBatchFriend, rowBatchGroup, rowLabelFriend, fNameStr, fIdStr, gNameStr, gIdStr, selectedIds, updateList);
 
     tvCancel.setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) { listDialog.dismiss(); }
@@ -3866,7 +3638,7 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
             toast("会话配置已更新");
         }
     });
-    rbAll.setChecked(true);
+    rg.check(3);
     updateList.run();
 }
 void sortConfiguredFirst(List names, List ids, List isGroups, Set selectedIds) {
@@ -3875,30 +3647,18 @@ void sortConfiguredFirst(List names, List ids, List isGroups, Set selectedIds) {
     if (n <= 1 || selectedIds.isEmpty()) return;
     if (names.size() != n || isGroups.size() != n) return;
 
-    List idxConfigured = new ArrayList();
-    List idxUnconfigured = new ArrayList();
-    for (int i = 0; i < n; i++) {
-        String talkerId = String.valueOf(ids.get(i));
-        if (selectedIds.contains(talkerId)) idxConfigured.add(Integer.valueOf(i));
-        else idxUnconfigured.add(Integer.valueOf(i));
-    }
-    if (idxConfigured.isEmpty() || idxUnconfigured.isEmpty()) return;
-
     List sortedNames = new ArrayList(n);
     List sortedIds = new ArrayList(n);
     List sortedIsGroups = new ArrayList(n);
-
-    for (int i = 0; i < idxConfigured.size(); i++) {
-        int idx = ((Integer) idxConfigured.get(i)).intValue();
-        sortedNames.add(names.get(idx));
-        sortedIds.add(ids.get(idx));
-        sortedIsGroups.add(isGroups.get(idx));
-    }
-    for (int i = 0; i < idxUnconfigured.size(); i++) {
-        int idx = ((Integer) idxUnconfigured.get(i)).intValue();
-        sortedNames.add(names.get(idx));
-        sortedIds.add(ids.get(idx));
-        sortedIsGroups.add(isGroups.get(idx));
+    for (int pass = 0; pass < 2; pass++) {
+        boolean wantConfigured = pass == 0;
+        for (int i = 0; i < n; i++) {
+            boolean configured = selectedIds.contains(String.valueOf(ids.get(i)));
+            if (configured != wantConfigured) continue;
+            sortedNames.add(names.get(i));
+            sortedIds.add(ids.get(i));
+            sortedIsGroups.add(isGroups.get(i));
+        }
     }
 
     names.clear();

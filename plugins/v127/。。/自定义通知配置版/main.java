@@ -2566,12 +2566,22 @@ void showBatchConfigDialog(final Activity ctx, final String title, final List ta
         btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { d.dismiss(); } });
         btnSave.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                Map cfg = buildBatchTalkerCfg(isGroup, tmpDnd[0], tmpVibrate[0], tmpSound[0], tmpQuickReply[0], tmpShowDetail[0], tmpMuteEnable[0], tmpMuteStart[0], tmpMuteEnd[0], tmpRingtone[0], tmpBlockAll[0], tmpBlockMe[0]);
-                int count = applyBatchTalkerConfig(targetIds, isGroup, cfg, selectedIds);
-                if (onSaved != null) onSaved.run();
-                clearGlobalRingtonePickState();
+                final Map cfg = buildBatchTalkerCfg(isGroup, tmpDnd[0], tmpVibrate[0], tmpSound[0], tmpQuickReply[0], tmpShowDetail[0], tmpMuteEnable[0], tmpMuteStart[0], tmpMuteEnd[0], tmpRingtone[0], tmpBlockAll[0], tmpBlockMe[0]);
                 d.dismiss();
-                toast("已批量设置 " + count + " 个" + (isGroup ? "群聊" : "好友"));
+                showCustomLoadingDialog(ctx, "批量保存中...");
+                new Thread(new Runnable() {
+                    public void run() {
+                        final int count = applyBatchTalkerConfig(targetIds, isGroup, cfg, selectedIds);
+                        new Handler(Looper.getMainLooper()).post(new Runnable() {
+                            public void run() {
+                                dismissCustomLoadingDialog();
+                                if (onSaved != null) onSaved.run();
+                                clearGlobalRingtonePickState();
+                                toast("已批量设置 " + count + " 个" + (isGroup ? "群聊" : "好友"));
+                            }
+                        });
+                    }
+                }).start();
             }
         });
 
@@ -2622,24 +2632,33 @@ void showBatchTalkerPickerDialog(final Activity ctx, final String title, final L
         final Set picked = new HashSet();
         final List showNames = new ArrayList();
         final List showIds = new ArrayList();
+        final int displayLimit = 400;
+        final int[] matchCount = {0};
+        final ArrayAdapter adapter = new ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, showNames);
+        lv.setAdapter(adapter);
         final Runnable update = new Runnable() {
             public void run() {
                 showNames.clear();
                 showIds.clear();
+                matchCount[0] = 0;
                 String kw = etSearch.getText().toString().trim().toLowerCase();
                 for (int i = 0; i < ids.size(); i++) {
                     String id = String.valueOf(ids.get(i));
-                    String name = i < names.size() ? String.valueOf(names.get(i)) : id;
+                    String name = names != null && i < names.size() ? String.valueOf(names.get(i)) : id;
                     String low = (name + " " + id).toLowerCase();
                     if (TextUtils.isEmpty(kw) || low.contains(kw)) {
-                        showNames.add(name);
-                        showIds.add(id);
+                        matchCount[0]++;
+                        if (showNames.size() < displayLimit) {
+                            showNames.add(name);
+                            showIds.add(id);
+                        }
                     }
                 }
-                ArrayAdapter ad = new ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, showNames);
-                lv.setAdapter(ad);
+                lv.clearChoices();
+                adapter.notifyDataSetChanged();
                 for (int i = 0; i < showIds.size(); i++) lv.setItemChecked(i, picked.contains(String.valueOf(showIds.get(i))));
-                tvCount.setText("已选 " + picked.size() + " / 共 " + ids.size() + " 个");
+                String tail = matchCount[0] > showIds.size() ? ("，已显示前 " + showIds.size() + " 个，请搜索缩小范围") : "";
+                tvCount.setText("已选 " + picked.size() + " / 匹配 " + matchCount[0] + " / 共 " + ids.size() + " 个" + tail);
             }
         };
         lv.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -2647,13 +2666,19 @@ void showBatchTalkerPickerDialog(final Activity ctx, final String title, final L
                 String talkerId = String.valueOf(showIds.get(position));
                 if (lv.isItemChecked(position)) picked.add(talkerId);
                 else picked.remove(talkerId);
-                tvCount.setText("已选 " + picked.size() + " / 共 " + ids.size() + " 个");
+                tvCount.setText("已选 " + picked.size() + " / 匹配 " + matchCount[0] + " / 共 " + ids.size() + " 个");
             }
         });
+        final Handler searchHandler = new Handler(Looper.getMainLooper());
+        final Runnable[] pendingSearch = new Runnable[1];
         etSearch.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            public void afterTextChanged(Editable s) { update.run(); }
+            public void afterTextChanged(Editable s) {
+                if (pendingSearch[0] != null) searchHandler.removeCallbacks(pendingSearch[0]);
+                pendingSearch[0] = new Runnable() { public void run() { update.run(); } };
+                searchHandler.postDelayed(pendingSearch[0], 120);
+            }
         });
         btnSelectAll.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -3142,11 +3167,17 @@ void showGroupMemberPickerDialog(final Activity ctx, final String groupId, final
                     listWrap.addView(lv, new LinearLayout.LayoutParams(-1, -1));
                     card.addView(listWrap);
 
+                    final int displayLimit = 400;
+                    final int[] matchCount = new int[]{0};
+                    final ArrayAdapter ad = new ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, display);
+                    lv.setAdapter(ad);
+
                     final Runnable update = new Runnable() {
                         public void run() {
                             display.clear();
                             ids.clear();
                             names.clear();
+                            matchCount[0] = 0;
                             String kw = etSearch.getText().toString().trim().toLowerCase();
                             for (int i = 0; i < allIds.size(); i++) {
                                 String id = String.valueOf(allIds.get(i));
@@ -3154,20 +3185,24 @@ void showGroupMemberPickerDialog(final Activity ctx, final String groupId, final
                                 String row = String.valueOf(allDisplay.get(i));
                                 String low = row.toLowerCase();
                                 if (TextUtils.isEmpty(kw) || low.contains(kw)) {
-                                    ids.add(id);
-                                    names.add(name);
-                                    display.add(row);
+                                    matchCount[0]++;
+                                    if (display.size() < displayLimit) {
+                                        ids.add(id);
+                                        names.add(name);
+                                        display.add(row);
+                                    }
                                 }
                             }
-                            ArrayAdapter ad = new ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, display);
-                            lv.setAdapter(ad);
+                            lv.clearChoices();
+                            ad.notifyDataSetChanged();
                             for (int i = 0; i < ids.size(); i++) {
                                 String id = String.valueOf(ids.get(i));
                                 String name = String.valueOf(names.get(i));
                                 boolean checked = selected.contains(id) || selected.contains(name);
                                 lv.setItemChecked(i, checked);
                             }
-                            tvCount.setText("已选 " + selected.size() + " / 共 " + allIds.size() + " 人");
+                            String tail = matchCount[0] > display.size() ? ("，已显示前 " + display.size() + " 人，请搜索缩小范围") : "";
+                            tvCount.setText("已选 " + selected.size() + " / 匹配 " + matchCount[0] + " / 共 " + allIds.size() + " 人" + tail);
                         }
                     };
 
@@ -3186,11 +3221,7 @@ void showGroupMemberPickerDialog(final Activity ctx, final String groupId, final
                         }
                     });
 
-                    etSearch.addTextChangedListener(new TextWatcher() {
-                        public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-                        public void onTextChanged(CharSequence s, int start, int before, int count) {}
-                        public void afterTextChanged(Editable s) { update.run(); }
-                    });
+                    attachDebouncedSearch(etSearch, new Handler(Looper.getMainLooper()), new Runnable[1], update);
 
                     LinearLayout actions = makeActionsRow(ctx, 12);
 
@@ -3328,10 +3359,11 @@ int appendPreviewItems(List srcNames, List srcIds, boolean isGroup, Set selected
     return added;
 }
 
-void fillFilteredDisplayList(List srcNames, List srcNameLower, List srcIds, boolean isGroup, String kw, Set selectedIds, List outNames, List outIds, List outIsGroup) {
+void fillFilteredDisplayList(List srcNames, List srcNameLower, List srcIds, boolean isGroup, String kw, Set selectedIds, List outNames, List outIds, List outIsGroup, int limit) {
     if (srcNames == null || srcNameLower == null || srcIds == null) return;
     int n = Math.min(srcNames.size(), Math.min(srcNameLower.size(), srcIds.size()));
     for (int i = 0; i < n; i++) {
+        if (limit > 0 && outNames != null && outNames.size() >= limit) return;
         String nameLower = String.valueOf(srcNameLower.get(i));
         if (!TextUtils.isEmpty(kw) && !nameLower.contains(kw)) continue;
         appendDisplayItem(outNames, outIds, outIsGroup, String.valueOf(srcNames.get(i)), String.valueOf(srcIds.get(i)), isGroup, selectedIds);
@@ -3431,12 +3463,12 @@ void fillPreviewDisplay(int checkedId, Set selectedIds, List fNameStr, List fIdS
 }
 
 void fillFullDisplay(int checkedId, String kw, Set selectedIds, List fNameStr, List fNameLower, List fIdStr,
-                     List gNameStr, List gNameLower, List gIdStr, List outNames, List outIds, List outIsGroup) {
+                     List gNameStr, List gNameLower, List gIdStr, List outNames, List outIds, List outIsGroup, int limit) {
     if (checkedId == 1 || checkedId == 3) {
-        fillFilteredDisplayList(fNameStr, fNameLower, fIdStr, false, kw, selectedIds, outNames, outIds, outIsGroup);
+        fillFilteredDisplayList(fNameStr, fNameLower, fIdStr, false, kw, selectedIds, outNames, outIds, outIsGroup, limit);
     }
     if (checkedId == 2 || checkedId == 3) {
-        fillFilteredDisplayList(gNameStr, gNameLower, gIdStr, true, kw, selectedIds, outNames, outIds, outIsGroup);
+        fillFilteredDisplayList(gNameStr, gNameLower, gIdStr, true, kw, selectedIds, outNames, outIds, outIsGroup, limit);
     }
     sortConfiguredFirst(outNames, outIds, outIsGroup, selectedIds);
 }
@@ -3572,6 +3604,7 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
     final Handler uiHandler = new Handler(Looper.getMainLooper());
     final Runnable[] pendingSearch = new Runnable[1];
     final int[] filterVersion = new int[]{0};
+    final int displayLimit = 500;
 
     final Runnable updateList = new Runnable() {
         public void run() {
@@ -3595,7 +3628,7 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
                     final List tmpIds = new ArrayList();
                     final List tmpIsGroup = new ArrayList();
 
-                    fillFullDisplay(checkedId, kw, selectedIds, fNameStr, fNameLower, fIdStr, gNameStr, gNameLower, gIdStr, tmpNames, tmpIds, tmpIsGroup);
+                    fillFullDisplay(checkedId, kw, selectedIds, fNameStr, fNameLower, fIdStr, gNameStr, gNameLower, gIdStr, tmpNames, tmpIds, tmpIsGroup, displayLimit);
 
                     uiHandler.post(new Runnable() {
                         public void run() {
@@ -3611,6 +3644,10 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
                             adapter.notifyDataSetChanged();
 
                             tvLoading.setVisibility(View.GONE);
+                            if (tmpNames.size() >= displayLimit) {
+                                tvLoading.setText("仅显示前 " + displayLimit + " 个结果，请搜索缩小范围");
+                                tvLoading.setVisibility(View.VISIBLE);
+                            }
                         }
                     });
                 }

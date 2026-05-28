@@ -13,6 +13,8 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.*;
+import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.regex.*;
 import me.hd.wauxv.data.bean.info.FriendInfo;
@@ -24,7 +26,10 @@ String KEY_MODE = "tf_ultra_mode"; // 0:全收, 1:仅白名单, 2:拒黑名单
 String KEY_WHITELIST = "tf_ultra_whitelist"; // 白名单wxid
 String KEY_BLACKLIST = "tf_ultra_blacklist"; // 黑名单wxid
 String KEY_REFUSE = "tf_ultra_refuse"; // 拒收时动作: false忽略, true退回
-String KEY_DELAY = "tf_ultra_delay"; // 接收延迟(ms)
+String KEY_DELAY = "tf_ultra_delay"; // 旧版固定接收延迟(ms)，用于兼容迁移
+String KEY_DELAY_MIN = "tf_ultra_delay_min"; // 随机延迟最小值(ms)
+String KEY_DELAY_MAX = "tf_ultra_delay_max"; // 随机延迟最大值(ms)
+String KEY_DELAY_RANGE_INIT = "tf_ultra_delay_range_init"; // 是否已经保存过新版延迟区间
 
 // 金额规则
 String KEY_AMT_ENABLE = "tf_ultra_amt_enable"; // 金额限制开关
@@ -40,16 +45,45 @@ String KEY_KEYWORDS = "tf_ultra_keywords"; // 关键词
 String KEY_REPLY_ENABLE = "tf_ultra_reply_enable";
 String KEY_REPLY_TEXT = "tf_ultra_reply_text"; // 缓存变量
 
+// 每日收款总结
+String KEY_SUMMARY_ENABLE = "tf_ultra_summary_enable"; // 每日总结总开关
+String KEY_SUMMARY_TIME = "tf_ultra_summary_time"; // 每日总结发送时间(HH:mm)
+String KEY_SUMMARY_TARGETS = "tf_ultra_summary_targets"; // 总结发送目标wxid或群聊id
+String KEY_SUMMARY_LAST_SENT_DATE = "tf_ultra_summary_last_sent_date"; // 最近一次成功发送总结日期
+String KEY_DAILY_STATS_PREFIX = "tf_ultra_daily_stats_"; // 单日收款统计前缀
+int SUMMARY_DETAIL_LIMIT = 20; // 仅保留最近明细，避免配置文件无限膨胀
+Object SUMMARY_LOCK = new Object();
+java.util.Timer summaryTimer = null;
+java.util.TimerTask summaryTask = null;
+
 List sCachedFriendList = null;
 List sCachedGroupList = null;
 
 // ================= 入口函数 =================
+/**
+ * 插件加载时恢复每日总结调度器。
+ */
+void onLoad() {
+    startSummaryScheduler();
+}
+
+/**
+ * 插件卸载时释放定时任务，避免旧任务继续占用线程。
+ */
+void onUnload() {
+    stopSummaryScheduler();
+}
+
 /**
  * 拦截发送消息，用于触发设置界面
  */
 boolean onClickSendBtn(String text) {
     if ("转账设置".equals(text)) {
         showSettingsUI();
+        return true; // 拦截，不发送
+    }
+    if ("转账收款总结".equals(text)) {
+        sendManualSummaryToCurrentTalker();
         return true; // 拦截，不发送
     }
     return false;
@@ -219,10 +253,16 @@ void handleTransfer(final Object msg) {
 
     // 3. 执行动作
     final boolean needRefuse = getBoolean(KEY_REFUSE, false);
-    final long delay = getLong(KEY_DELAY, 0);
+    long[] delayRange = getDelayRange();
+    final long delayMin = delayRange[0];
+    final long delayMax = delayRange[1];
+    final long delay = getRandomDelay(delayMin, delayMax);
     final boolean replyEnable = getBoolean(KEY_REPLY_ENABLE, false);
     final String replyText = getString(KEY_REPLY_TEXT, "谢谢老板");
     final String fTalker = talker;
+    final String fPayer = payer;
+    final String fPayerDisplayName = getDisplayName(payer);
+    final double fAmount = amount;
     
     // ======== 准备 final 变量传入子线程 ========
     final String fTransactionId = transactionId;
@@ -232,7 +272,7 @@ void handleTransfer(final Object msg) {
 
     if (rejectReason == null) {
         // >> 接收 <<
-        log(">> 准备收款: " + amount + "元, 延迟: " + delay + "ms");
+        log(">> 准备收款: " + amount + "元, 延迟区间: " + delayMin + "-" + delayMax + "ms, 本次: " + delay + "ms");
         
         // 如果提取不到必要单号参数，不执行收款并提示日志
         if (TextUtils.isEmpty(fTransactionId) || TextUtils.isEmpty(fTransferId)) {
@@ -247,6 +287,7 @@ void handleTransfer(final Object msg) {
                     
                     // 调用收款接口
                     confirmTransfer(fTransactionId, fTransferId, fPayerUsername, fInvalidTime);
+                    recordDailyCollection(fTalker, fPayer, fPayerDisplayName, fAmount, fTransferId);
                     log(">> 收款动作执行完成 (单号:" + fTransferId + ")");
 
                     // 成功后才回复
@@ -371,6 +412,367 @@ String getDisplayName(String wxid) {
     }
 }
 
+// ================= 随机延迟与每日总结 =================
+/**
+ * 读取随机延迟区间。未保存过新版配置时，自动沿用旧版固定延迟。
+ */
+long[] getDelayRange() {
+    long min = 0;
+    long max = 0;
+    if (!getBoolean(KEY_DELAY_RANGE_INIT, false)) {
+        long oldDelay = getLong(KEY_DELAY, 0);
+        min = oldDelay < 0 ? 0 : oldDelay;
+        max = min;
+    } else {
+        min = getLong(KEY_DELAY_MIN, 0);
+        max = getLong(KEY_DELAY_MAX, min);
+        if (min < 0) min = 0;
+        if (max < 0) max = 0;
+        if (max < min) max = min;
+    }
+    return new long[]{min, max};
+}
+
+/**
+ * 从闭区间内随机取本次延迟，区间相等时退化为固定延迟。
+ */
+long getRandomDelay(long min, long max) {
+    if (min < 0) min = 0;
+    if (max < min) max = min;
+    if (max == min) return min;
+    return min + (long) (Math.random() * (double) (max - min + 1));
+}
+
+long parseNonNegativeLong(String text) {
+    if (text == null) return 0;
+    String s = text.trim();
+    if (s.length() == 0) return 0;
+    long value = Long.parseLong(s);
+    if (value < 0) throw new IllegalArgumentException("数字不能小于0");
+    return value;
+}
+
+int[] parseSummaryTimeParts(String timeText) {
+    if (timeText == null) return null;
+    String s = timeText.trim();
+    Matcher m = Pattern.compile("^(\\d{1,2}):(\\d{2})$").matcher(s);
+    if (!m.find()) return null;
+    int hour = Integer.parseInt(m.group(1));
+    int minute = Integer.parseInt(m.group(2));
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return new int[]{hour, minute};
+}
+
+String normalizeSummaryTime(String timeText) {
+    int[] hm = parseSummaryTimeParts(timeText);
+    if (hm == null) return null;
+    String hourText = hm[0] < 10 ? "0" + hm[0] : String.valueOf(hm[0]);
+    String minuteText = hm[1] < 10 ? "0" + hm[1] : String.valueOf(hm[1]);
+    return hourText + ":" + minuteText;
+}
+
+String getTodayDateStr() {
+    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT);
+    sdf.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+    return sdf.format(new Date());
+}
+
+String getNowTimeStr() {
+    SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss", Locale.ROOT);
+    sdf.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+    return sdf.format(new Date());
+}
+
+String dailyStatsBase(String date) {
+    return KEY_DAILY_STATS_PREFIX + date + "_";
+}
+
+String cleanSummaryText(String value) {
+    if (value == null) return "";
+    return value.replace("\n", " ").replace("\r", " ").replace("|", "/").trim();
+}
+
+long amountToFen(double amount) {
+    return Math.round(amount * 100.0);
+}
+
+String formatFen(long fen) {
+    return new DecimalFormat("0.00").format(((double) fen) / 100.0);
+}
+
+List<String> splitCsv(String value) {
+    List<String> out = new ArrayList<String>();
+    if (TextUtils.isEmpty(value)) return out;
+    String[] arr = value.split(",");
+    for (int i = 0; i < arr.length; i++) {
+        String item = arr[i] == null ? "" : arr[i].trim();
+        if (item.length() > 0 && !out.contains(item)) out.add(item);
+    }
+    return out;
+}
+
+String joinCsv(List<String> values) {
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < values.size(); i++) {
+        String item = String.valueOf(values.get(i));
+        if (TextUtils.isEmpty(item)) continue;
+        if (sb.length() > 0) sb.append(",");
+        sb.append(item);
+    }
+    return sb.toString();
+}
+
+List<String> splitRecords(String value) {
+    List<String> out = new ArrayList<String>();
+    if (TextUtils.isEmpty(value)) return out;
+    String[] arr = value.split("\\u001E");
+    for (int i = 0; i < arr.length; i++) {
+        String item = arr[i] == null ? "" : arr[i].trim();
+        if (item.length() > 0) out.add(item);
+    }
+    return out;
+}
+
+String joinRecords(List<String> values) {
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < values.size(); i++) {
+        String item = String.valueOf(values.get(i));
+        if (TextUtils.isEmpty(item)) continue;
+        if (sb.length() > 0) sb.append("\u001E");
+        sb.append(item);
+    }
+    return sb.toString();
+}
+
+/**
+ * 收款接口无返回值；未抛异常即按成功收款记录到当天统计。
+ */
+void recordDailyCollection(String talker, String payer, String payerName, double amount, String transferId) {
+    synchronized (SUMMARY_LOCK) {
+        try {
+            String date = getTodayDateStr();
+            String base = dailyStatsBase(date);
+            long fen = amountToFen(amount);
+            int count = getInt(base + "count", 0) + 1;
+            long totalFen = getLong(base + "total_fen", 0) + fen;
+            putInt(base + "count", count);
+            putLong(base + "total_fen", totalFen);
+
+            String safePayer = TextUtils.isEmpty(payer) ? "unknown" : payer;
+            List<String> payers = splitCsv(getString(base + "payers", ""));
+            if (!payers.contains(safePayer)) {
+                payers.add(safePayer);
+                putString(base + "payers", joinCsv(payers));
+            }
+
+            String payerBase = base + "payer_" + safePayer + "_";
+            putString(payerBase + "name", cleanSummaryText(payerName));
+            putInt(payerBase + "count", getInt(payerBase + "count", 0) + 1);
+            putLong(payerBase + "total_fen", getLong(payerBase + "total_fen", 0) + fen);
+
+            List<String> details = splitRecords(getString(base + "details", ""));
+            String detail = getNowTimeStr() + " | " + cleanSummaryText(payerName) + " | "
+                + formatFen(fen) + "元 | 会话:" + cleanSummaryText(talker)
+                + (TextUtils.isEmpty(transferId) ? "" : " | 单号:" + cleanSummaryText(transferId));
+            details.add(detail);
+            while (details.size() > SUMMARY_DETAIL_LIMIT) {
+                details.remove(0);
+            }
+            putString(base + "details", joinRecords(details));
+        } catch (Throwable e) {
+            log("记录每日收款统计失败: " + e.toString());
+        }
+    }
+}
+
+String buildDailySummaryMessage(String date) {
+    final String base = dailyStatsBase(date);
+    int count = getInt(base + "count", 0);
+    long totalFen = getLong(base + "total_fen", 0);
+    StringBuilder sb = new StringBuilder();
+    sb.append("自动收款单日总结\n");
+    sb.append("日期: ").append(date).append("\n");
+    sb.append("笔数: ").append(count).append("\n");
+    sb.append("总金额: ").append(formatFen(totalFen)).append("元\n");
+    if (count <= 0) {
+        sb.append("\n今日暂无自动收款记录。");
+        return sb.toString();
+    }
+
+    List<String> payers = splitCsv(getString(base + "payers", ""));
+    Collections.sort(payers, new Comparator<String>() {
+        public int compare(String a, String b) {
+            long ta = getLong(base + "payer_" + a + "_total_fen", 0);
+            long tb = getLong(base + "payer_" + b + "_total_fen", 0);
+            if (ta == tb) return 0;
+            return ta > tb ? -1 : 1;
+        }
+    });
+
+    sb.append("\n付款人统计:\n");
+    int payerLimit = Math.min(payers.size(), 10);
+    for (int i = 0; i < payerLimit; i++) {
+        String payer = String.valueOf(payers.get(i));
+        String payerBase = base + "payer_" + payer + "_";
+        String name = getString(payerBase + "name", payer);
+        int payerCount = getInt(payerBase + "count", 0);
+        long payerTotal = getLong(payerBase + "total_fen", 0);
+        sb.append(i + 1).append(". ").append(TextUtils.isEmpty(name) ? payer : name)
+            .append(": ").append(payerCount).append("笔 / ")
+            .append(formatFen(payerTotal)).append("元\n");
+    }
+    if (payers.size() > payerLimit) {
+        sb.append("... 另有 ").append(payers.size() - payerLimit).append(" 位付款人\n");
+    }
+
+    List<String> details = splitRecords(getString(base + "details", ""));
+    if (!details.isEmpty()) {
+        sb.append("\n最近明细:\n");
+        for (int i = 0; i < details.size(); i++) {
+            sb.append(String.valueOf(details.get(i))).append("\n");
+        }
+    }
+    return sb.toString().trim();
+}
+
+/**
+ * 手动触发只把当天总结发到当前会话，不清理统计，也不更新自动总结去重日期。
+ */
+void sendManualSummaryToCurrentTalker() {
+    try {
+        String talker = getTargetTalker();
+        if (TextUtils.isEmpty(talker)) {
+            toast("请在目标聊天窗口内发送收款总结");
+            return;
+        }
+        sendText(talker, buildDailySummaryMessage(getTodayDateStr()));
+        toast("收款总结已发送");
+    } catch (Throwable e) {
+        log("手动发送收款总结失败: " + e.toString());
+        toast("收款总结发送失败: " + e.toString());
+    }
+}
+
+/**
+ * 自动总结发送成功后清理当天统计，避免历史数据重复累积。
+ */
+void clearDailyCollectionStats(String date) {
+    synchronized (SUMMARY_LOCK) {
+        try {
+            String base = dailyStatsBase(date);
+            List<String> payers = splitCsv(getString(base + "payers", ""));
+            for (int i = 0; i < payers.size(); i++) {
+                String payer = String.valueOf(payers.get(i));
+                String payerBase = base + "payer_" + payer + "_";
+                putString(payerBase + "name", "");
+                putInt(payerBase + "count", 0);
+                putLong(payerBase + "total_fen", 0);
+            }
+            putInt(base + "count", 0);
+            putLong(base + "total_fen", 0);
+            putString(base + "payers", "");
+            putString(base + "details", "");
+            log("已清理 " + date + " 的单日收款统计");
+        } catch (Throwable e) {
+            log("清理单日收款统计失败: " + e.toString());
+        }
+    }
+}
+
+long calcNextSummaryDelay() {
+    String timeText = getString(KEY_SUMMARY_TIME, "23:59");
+    int[] hm = parseSummaryTimeParts(timeText);
+    if (hm == null) hm = new int[]{23, 59};
+
+    TimeZone tz = TimeZone.getTimeZone("Asia/Shanghai");
+    Calendar target = Calendar.getInstance(tz);
+    target.set(Calendar.HOUR_OF_DAY, hm[0]);
+    target.set(Calendar.MINUTE, hm[1]);
+    target.set(Calendar.SECOND, 0);
+    target.set(Calendar.MILLISECOND, 0);
+
+    long now = System.currentTimeMillis();
+    if (target.getTimeInMillis() <= now || getTodayDateStr().equals(getString(KEY_SUMMARY_LAST_SENT_DATE, ""))) {
+        target.add(Calendar.DAY_OF_MONTH, 1);
+    }
+    long delay = target.getTimeInMillis() - now;
+    return delay < 0 ? 0 : delay;
+}
+
+void startSummaryScheduler() {
+    synchronized (SUMMARY_LOCK) {
+        stopSummarySchedulerLocked();
+        if (!getBoolean(KEY_SUMMARY_ENABLE, false)) return;
+        try {
+            long delay = calcNextSummaryDelay();
+            summaryTimer = new java.util.Timer("tf-summary-dispatch", true);
+            summaryTask = new java.util.TimerTask() {
+                public void run() {
+                    try {
+                        sendDailySummaryIfNeeded();
+                    } catch (Throwable e) {
+                        log("每日收款总结任务异常: " + e.toString());
+                    } finally {
+                        startSummaryScheduler();
+                    }
+                }
+            };
+            summaryTimer.schedule(summaryTask, delay);
+            log("每日收款总结调度已启动，距离下次执行 " + delay + "ms");
+        } catch (Throwable e) {
+            log("每日收款总结调度启动失败: " + e.toString());
+        }
+    }
+}
+
+void stopSummaryScheduler() {
+    synchronized (SUMMARY_LOCK) {
+        stopSummarySchedulerLocked();
+    }
+}
+
+void stopSummarySchedulerLocked() {
+    try {
+        if (summaryTask != null) summaryTask.cancel();
+    } catch (Exception e) {}
+    summaryTask = null;
+    try {
+        if (summaryTimer != null) summaryTimer.cancel();
+    } catch (Exception e) {}
+    summaryTimer = null;
+}
+
+void sendDailySummaryIfNeeded() {
+    synchronized (SUMMARY_LOCK) {
+        if (!getBoolean(KEY_SUMMARY_ENABLE, false)) return;
+        String today = getTodayDateStr();
+        if (today.equals(getString(KEY_SUMMARY_LAST_SENT_DATE, ""))) return;
+
+        List<String> targets = splitCsv(getString(KEY_SUMMARY_TARGETS, ""));
+        if (targets.isEmpty()) {
+            log("每日收款总结未发送: 未配置发送目标");
+            return;
+        }
+
+        String message = buildDailySummaryMessage(today);
+        int sentCount = 0;
+        for (int i = 0; i < targets.size(); i++) {
+            String target = String.valueOf(targets.get(i));
+            try {
+                sendText(target, message);
+                sentCount++;
+            } catch (Throwable e) {
+                log("发送每日收款总结失败(" + target + "): " + e.toString());
+            }
+        }
+        if (sentCount > 0) {
+            putString(KEY_SUMMARY_LAST_SENT_DATE, today);
+            clearDailyCollectionStats(today);
+            log("每日收款总结已发送到 " + sentCount + " 个目标");
+        }
+    }
+}
+
 // ================= UI 构建逻辑 =================
 void showSettingsUI() {
     Activity ctx = getTopActivity();
@@ -400,8 +802,9 @@ void showDialogInternal(final Activity ctx) {
     addSectionTitle(ctx, card1, "🛠️ 基础设置");
     final Switch swEnable = addSwitch(ctx, card1, "开启自动收款", getBoolean(KEY_ENABLE, false));
     final Switch swRefuse = addSwitch(ctx, card1, "拒收时原路退回", getBoolean(KEY_REFUSE, false));
-    long delayVal = getLong(KEY_DELAY, -1);
-    final EditText etDelay = addInput(ctx, card1, "收款延迟 (毫秒)", delayVal <= 0 ? "" : String.valueOf(delayVal), InputType.TYPE_CLASS_NUMBER);
+    long[] delayRange = getDelayRange();
+    final EditText etDelayMin = addInput(ctx, card1, "随机延迟最小值 (毫秒)", delayRange[0] <= 0 ? "" : String.valueOf(delayRange[0]), InputType.TYPE_CLASS_NUMBER);
+    final EditText etDelayMax = addInput(ctx, card1, "随机延迟最大值 (毫秒)", delayRange[1] <= 0 ? "" : String.valueOf(delayRange[1]), InputType.TYPE_CLASS_NUMBER);
 
     // 2. 自动回复
     LinearLayout cardReply = createCard(ctx);
@@ -414,7 +817,25 @@ void showDialogInternal(final Activity ctx) {
     final Switch swReply = addSwitch(ctx, cardReply, "收款后回复发送者", getBoolean(KEY_REPLY_ENABLE, false));
     final EditText etReplyText = addInput(ctx, cardReply, "回复内容", getString(KEY_REPLY_TEXT, "谢谢老板"), InputType.TYPE_CLASS_TEXT);
 
-    // 3. 名单策略
+    // 3. 每日总结
+    LinearLayout cardSummary = createCard(ctx);
+    root.addView(cardSummary);
+    addSectionTitle(ctx, cardSummary, "📊 每日总结");
+    final Switch swSummary = addSwitch(ctx, cardSummary, "定时发送单日收款总结", getBoolean(KEY_SUMMARY_ENABLE, false));
+    final EditText etSummaryTime = addInput(ctx, cardSummary, "发送时间 (HH:mm)", getString(KEY_SUMMARY_TIME, "23:59"), InputType.TYPE_CLASS_TEXT);
+    final TextView tvSummaryTargets = new TextView(ctx);
+    tvSummaryTargets.setTextSize(12);
+    tvSummaryTargets.setTextColor(Color.GRAY);
+    tvSummaryTargets.setText("已选择 " + splitCsv(getString(KEY_SUMMARY_TARGETS, "")).size() + " 个发送目标");
+    cardSummary.addView(tvSummaryTargets);
+    Button btnSummaryTargets = addButton(ctx, cardSummary, "选择总结发送目标", "#607D8B");
+    btnSummaryTargets.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            showContactSourceDialog(ctx, "总结发送目标", KEY_SUMMARY_TARGETS);
+        }
+    });
+
+    // 4. 名单策略
     LinearLayout cardList = createCard(ctx);
     root.addView(cardList);
     addSectionTitle(ctx, cardList, "📋 名单策略");
@@ -433,7 +854,7 @@ void showDialogInternal(final Activity ctx) {
         }
     });
 
-    // 4. 金额过滤
+    // 5. 金额过滤
     LinearLayout cardAmt = createCard(ctx);
     root.addView(cardAmt);
     addSectionTitle(ctx, cardAmt, "💰 金额规则");
@@ -472,7 +893,7 @@ void showDialogInternal(final Activity ctx) {
     amtRow.setPadding(10,10,10,10);
     cardAmt.addView(amtRow);
 
-    // 5. 关键词
+    // 6. 关键词
     LinearLayout cardKw = createCard(ctx);
     root.addView(cardKw);
     addSectionTitle(ctx, cardKw, "🔑 关键词过滤");
@@ -493,12 +914,27 @@ void showDialogInternal(final Activity ctx) {
     d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
         public void onClick(View v) {
             try {
+                long delayMin = parseNonNegativeLong(etDelayMin.getText().toString());
+                long delayMax = parseNonNegativeLong(etDelayMax.getText().toString());
+                if (delayMax < delayMin) {
+                    toast("随机延迟最大值不能小于最小值，笨蛋~");
+                    return;
+                }
+                String summaryTime = normalizeSummaryTime(etSummaryTime.getText().toString());
+                if (summaryTime == null) {
+                    toast("每日总结时间格式错误，请填写 HH:mm");
+                    return;
+                }
                 putBoolean(KEY_ENABLE, swEnable.isChecked());
                 putBoolean(KEY_REFUSE, swRefuse.isChecked());
-                String dStr = etDelay.getText().toString();
-                putLong(KEY_DELAY, dStr.isEmpty() ? 0 : Long.parseLong(dStr));
+                putLong(KEY_DELAY_MIN, delayMin);
+                putLong(KEY_DELAY_MAX, delayMax);
+                putBoolean(KEY_DELAY_RANGE_INIT, true);
+                putLong(KEY_DELAY, delayMin == delayMax ? delayMin : 0);
                 putBoolean(KEY_REPLY_ENABLE, swReply.isChecked());
                 putString(KEY_REPLY_TEXT, etReplyText.getText().toString());
+                putBoolean(KEY_SUMMARY_ENABLE, swSummary.isChecked());
+                putString(KEY_SUMMARY_TIME, summaryTime);
                 putInt(KEY_MODE, spMode.getSelectedItemPosition());
                 putBoolean(KEY_AMT_ENABLE, swAmt.isChecked());
                 putInt(KEY_AMT_COND, spCond.getSelectedItemPosition());
@@ -506,6 +942,7 @@ void showDialogInternal(final Activity ctx) {
                 putInt(KEY_AMT_ACTION, spAct.getSelectedItemPosition());
                 putInt(KEY_KW_MODE, spKw.getSelectedItemPosition());
                 putString(KEY_KEYWORDS, etKw.getText().toString());
+                startSummaryScheduler();
                 toast("保存成功");
                 d.dismiss();
             } catch(Exception e) {
@@ -664,7 +1101,6 @@ void loadAndSelect(final Activity ctx, final String title, final String saveKey,
                 }
             } catch(Exception e) {
                 log("加载失败: " + e.getMessage());
-                e.printStackTrace();
             } finally {
                 new Handler(Looper.getMainLooper()).post(new Runnable() {
                     public void run() {

@@ -11,6 +11,11 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E9%9A%8F%E6%9C%BA%E8%A1%A8%E6%83%85&filename=%E9%9A%8F%E6%9C%BA%E8%A1%A8%E6%83%85_1.0.0
     linkText: 更新于 202604030
 
+  - title: 自动收款(1.3.0)
+    details: 作者 。。
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%8A%A8%E6%94%B6%E6%AC%BE&filename=%E8%87%AA%E5%8A%A8%E6%94%B6%E6%AC%BE_1.3.0
+    linkText: 更新于 20260528
+
   - title: 自定义通知配置版(1.3.5)
     details: 作者 。。 & 周杰伦
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.5
@@ -206,11 +211,6 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2FVocu%20ai%E6%96%87%E8%BD%AC%E9%9F%B3&filename=Vocu%20ai%E6%96%87%E8%BD%AC%E9%9F%B3_1.0.0
     linkText: 更新于 20260318
 
-  - title: 自动收款(1.3.0)
-    details: 作者 。。
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%8A%A8%E6%94%B6%E6%AC%BE&filename=%E8%87%AA%E5%8A%A8%E6%94%B6%E6%AC%BE_1.3.0
-    linkText: 更新于 20260528
-
   - title: 微信AI回复插件(1.2.1)
     details: 作者 Alan-qwq
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2FAlan-qwq%2FwechatAI&filename=%E5%BE%AE%E4%BF%A1AI%E5%9B%9E%E5%A4%8D%E6%8F%92%E4%BB%B6_1.2.1
@@ -305,3 +305,4 @@ features:
     details: 作者 晚药
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E6%B2%B9%E4%BB%B7%E6%9F%A5%E8%AF%A2&filename=%E6%B2%B9%E4%BB%B7%E5%AE%9E%E6%97%B6%E6%9F%A5%E8%AF%A2_1.0.0
     linkText: 更新于 2026520
+

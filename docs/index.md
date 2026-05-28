@@ -6,11 +6,6 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
-  - title: 随机表情(1.0.0)
-    details: 作者 晚药
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E9%9A%8F%E6%9C%BA%E8%A1%A8%E6%83%85&filename=%E9%9A%8F%E6%9C%BA%E8%A1%A8%E6%83%85_1.0.0
-    linkText: 更新于 202604030
-
   - title: 自动收款(1.3.0)
     details: 作者 。。
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%8A%A8%E6%94%B6%E6%AC%BE&filename=%E8%87%AA%E5%8A%A8%E6%94%B6%E6%AC%BE_1.3.0
@@ -195,6 +190,11 @@ features:
     details: 作者 晚药
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E5%A4%A9%E6%B0%94%E9%A2%84%E6%8A%A5&filename=%E5%A4%A9%E6%B0%94%E6%9F%A5%E8%AF%A2%E9%85%8D%E7%BD%AE%E7%89%88_2.2.0
     linkText: 更新于 20260404
+
+  - title: 随机表情(1.0.0)
+    details: 作者 晚药
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E9%9A%8F%E6%9C%BA%E8%A1%A8%E6%83%85&filename=%E9%9A%8F%E6%9C%BA%E8%A1%A8%E6%83%85_1.0.0
+    linkText: 更新于 20260403
 
   - title: 星座运势(1.1.0)
     details: 作者 晚药

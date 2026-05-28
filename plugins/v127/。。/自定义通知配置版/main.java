@@ -48,7 +48,7 @@ String CFG_MUTE_TIME_END = "jay_cfg_mute_time_end_v7";
 String CFG_BLOCK_AT_ALL = "jay_cfg_block_at_all_v7";
 String CFG_BLOCK_AT_ME = "jay_cfg_block_at_me_v7";
 String CFG_TALKER_CFG_PREFIX = "jay_talker_cfg_v9_";
-String JAY_MARK = "is_jay_custom_mark_v7"; 
+String JAY_MARK = "is_jay_custom_mark_v7";
 String JAY_WECHAT_TALKER = "jay_wechat_talker_v1";
 String KEYWORD_NOTIFY_MARK = "is_keyword_notify";
 String CUSTOM_CHANNEL_PREFIX = "jay_chn_v9_";
@@ -335,7 +335,7 @@ void onUnload() {
     sWechatNotificationItemHookInstalled = false;
     unhookAll(resultUnhooks);
     sActivityResultHookInstalled = false;
-    
+
     sCachedFriendNames = null;
     sCachedFriendIds = null;
     sCachedGroupNames = null;
@@ -357,7 +357,7 @@ void onUnload() {
 
 
 void openSettings(){
-showSettingsUI();
+    showSettingsUI();
 }
 
 boolean onClickSendBtn(String text) {
@@ -414,7 +414,7 @@ void loadConfigToCache() {
     cacheMuteTimeEnd = normalizeTime(getString(CFG_MUTE_TIME_END, "07:00"), "07:00");
     cacheBlockAtAll = getBoolean(CFG_BLOCK_AT_ALL, false);
     cacheBlockAtMe = getBoolean(CFG_BLOCK_AT_ME, false);
-    
+
     loadTargetSetFromConfig(cacheTargetsStr);
     cacheTalkerCfgMap.clear();
     Object[] targetArr = cacheTargetSet.toArray();
@@ -422,10 +422,10 @@ void loadConfigToCache() {
         String talkerId = String.valueOf(targetArr[i]);
         cacheTalkerCfgMap.put(talkerId, loadAndMigrateTalkerCfg(talkerId));
     }
-    
+
     currentChannelId = CUSTOM_CHANNEL_PREFIX + (cacheSound ? "S" : "N") + "_" + (cacheVibrate ? "V" : "N");
     rebuildNotificationChannel();
-    
+
 }
 
 void registerQuickReplyReceiver() {
@@ -1573,10 +1573,10 @@ Intent[] buildChatOpenIntents(String talker) {
 void applyBasicNotificationOptions(Notification.Builder builder, String title, String text, boolean useVibrate, boolean useSound, String talkerRing, boolean useManualCustomSound) {
     if (builder == null) return;
     builder.setContentTitle(title)
-           .setContentText(text)
-           .setSmallIcon(android.R.drawable.stat_notify_chat)
-           .setAutoCancel(true)
-           .setOnlyAlertOnce(false);
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.stat_notify_chat)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(false);
 
     try { builder.setCategory(Notification.CATEGORY_MESSAGE); } catch (Throwable ignored) {}
     try { builder.setVisibility(Notification.VISIBILITY_PRIVATE); } catch (Throwable ignored) {}
@@ -1906,7 +1906,7 @@ void clearGlobalRingtonePickState() {
 void showSettingsUI() {
     globalSettingActivity = getTopActivity();
     if (globalSettingActivity == null) return;
-    
+
     globalSettingActivity.runOnUiThread(new Runnable() {
         public void run() {
             hideSoftInput(globalSettingActivity);
@@ -2390,12 +2390,12 @@ void showTargetListUI(final Activity ctx) {
                         if (loadingRef[0] != null && loadingRef[0].isShowing()) loadingRef[0].dismiss();
                     } catch (Throwable e) {}
                     if (ctx.isFinishing() || ctx.isDestroyed()) return;
-                    
+
                     sCachedFriendNames = friendNames;
                     sCachedFriendIds = friendIds;
                     sCachedGroupNames = groupNames;
                     sCachedGroupIds = groupIds;
-                    
+
                     buildListUI(ctx, friendNames, friendIds, groupNames, groupIds);
                 }
             });

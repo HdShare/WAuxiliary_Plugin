@@ -105,6 +105,7 @@ String sBootNonce = "";
 long sLastAutoReloadAt = 0L;
 Dialog sLoadingDialogRef = null;
 int sCustomNotifySeq = 0;
+long sLastGroupCacheLoadAt = 0L;  // 【修复】添加缺失的变量声明
 
 // ================= 生命周期 =================
 void warmupTalkerChannelsOnce() {
@@ -217,9 +218,8 @@ void onUnload() {
     unregisterQuickReplyReceiver();
 }
 
-
 void openSettings(){
-showSettingsUI();
+    showSettingsUI();
 }
 
 boolean onClickSendBtn(String text) {
@@ -273,7 +273,6 @@ void loadConfigToCache() {
     String vTag = cacheVibrate ? "V" : "N";
     currentChannelId = "jay_chn_v9_" + sTag + "_" + vTag;
     rebuildNotificationChannel();
-    
 }
 
 void registerQuickReplyReceiver() {
@@ -296,7 +295,6 @@ void registerQuickReplyReceiver() {
                         final String reply = cs == null ? "" : cs.toString().trim();
                         if (TextUtils.isEmpty(reply)) return;
 
-                        // 异步发送，避免阻塞广播主线程导致卡顿或个别机型闪退
                         if (sQuickReplyExecutor == null || sQuickReplyExecutor.isShutdown()) {
                             sQuickReplyExecutor = Executors.newSingleThreadExecutor();
                         }
@@ -414,7 +412,6 @@ Map getTalkerCfg(String talker) {
     if (TextUtils.isEmpty(talker)) return new HashMap();
     if (cacheTalkerCfgMap.containsKey(talker)) return (Map) cacheTalkerCfgMap.get(talker);
     try {
-        // 冷启动时兜底：按会话ID实时回源读取，避免必须进一次设置页才恢复单聊配置
         String rawCfg = getString(CFG_TALKER_CFG_PREFIX + talker, "");
         Map parsed = parseTalkerCfg(rawCfg);
         cacheTalkerCfgMap.put(talker, parsed);
@@ -849,8 +846,8 @@ boolean isSystemMessageLike(Object msg, String talker, String content, int type)
     try {
         String tk = TextUtils.isEmpty(talker) ? "" : talker.trim().toLowerCase();
         if ("weixin".equals(tk) || "fmessage".equals(tk) || "medianote".equals(tk)
-                || "notifymessage".equals(tk) || "notification_messages".equals(tk)
-                || "qqmail".equals(tk) || "weixinreminder".equals(tk)) {
+            || "notifymessage".equals(tk) || "notification_messages".equals(tk)
+            || "qqmail".equals(tk) || "weixinreminder".equals(tk)) {
             return true;
         }
     } catch (Throwable ignored) {}
@@ -870,7 +867,6 @@ String getRingtoneDisplayName(Context ctx, String uriStr) {
         if (rt != null) {
             String title = rt.getTitle(ctx);
             if (!TextUtils.isEmpty(title)) {
-                // 有些文档 Uri 会返回 primary:... 这类路径串，优先转成文件名显示
                 if (title.contains(":") || title.contains("/")) {
                     String fallback = prettyAudioNameFromUri(uri);
                     if (!TextUtils.isEmpty(fallback)) return fallback;
@@ -956,8 +952,6 @@ String freezeRingtoneUri(String rawUri) {
 }
 
 boolean shouldBlockNativeByCfg(Map cfg) {
-    // 已配置会话统一拦截微信原生通知，全部走插件通知链路。
-    // 免打扰/时段静默仍由 onHandleMsg() 控制为不弹通知。
     return true;
 }
 
@@ -977,8 +971,6 @@ int nextCustomNotifyId(String talker, boolean enableQuickReply) {
         if (sCustomNotifySeq > 999999) sCustomNotifySeq = 1;
         long seq = (long) (sCustomNotifySeq & 0x000FFFFF);
         long base = talker == null ? 0L : (long) talker.hashCode();
-        // BeanShell 对 int 溢出不宽容，通知ID必须控制在 0..Integer.MAX_VALUE。
-        // 只取 base 低10位，和 0x4A000000L 组合后最大不超过 0x7FFFFFFF。
         long raw = 0x4A000000L | ((base & 0x000003FFL) << 20) | seq;
         return (int) (raw & 0x7FFFFFFFL);
     } catch (Throwable ignored) {}
@@ -1013,7 +1005,6 @@ void hookSystemNotification() {
                         if (n.extras != null && n.extras.getBoolean(JAY_MARK, false)) {
                             return;
                         }
-                        // 兼容其它通知类插件：关键词通知自己发出的通知不能被本插件当成微信原生通知拦截。
                         if (n.extras != null && n.extras.getBoolean("is_keyword_notify", false)) {
                             return;
                         }
@@ -1084,7 +1075,6 @@ void onHandleMsg(Object msg) {
             return;
         }
 
-        // 【逻辑优化】使用 Set 的精确匹配
         if (!cacheTargetSet.contains(talker)) {
             return;
         }
@@ -1164,22 +1154,21 @@ void rebuildNotificationChannel() {
         try {
             NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
             
-            // 【安全优化3】清道夫机制：清理之前遗留的过期通道，保持系统整洁，防堆积崩溃
+            // 【安全优化3】清道夫机制：清理之前遗留的过期通道
             try {
                 List channels = (List) nm.getClass().getMethod("getNotificationChannels").invoke(nm);
                 if (channels != null) {
                     for (int i = 0; i < channels.size(); i++) {
                         NotificationChannel ch = (NotificationChannel) channels.get(i);
                         String chId = ch.getId();
-                        // 只清理 v7 和 v8 的历史遗留通道，不碰 v9 的现役通道
-if (chId != null && (chId.startsWith("jay_chn_v7") || chId.startsWith("jay_chn_v8"))) {
-    nm.deleteNotificationChannel(chId);
-}
+                        if (chId != null && (chId.startsWith("jay_chn_v7") || chId.startsWith("jay_chn_v8"))) {
+                            nm.deleteNotificationChannel(chId);
+                        }
                     }
                 }
             } catch (Throwable ignored) {}
 
-            // 额外清理：限制 v9 通道总量，避免长期堆积导致系统通知管理变慢
+            // 额外清理：限制 v9 通道总量
             try {
                 List channels2 = (List) nm.getClass().getMethod("getNotificationChannels").invoke(nm);
                 if (channels2 != null && channels2.size() > 0) {
@@ -1234,7 +1223,7 @@ void ensureNotifyChannel(NotificationManager nm, String channelId, boolean useVi
             boolean vibOk = old.shouldVibrate() == useVibrate;
             Uri oldSound = old.getSound();
             boolean soundOk = (!useSound && oldSound == null)
-                    || (useSound && oldSound != null && oldSound.toString().equals(String.valueOf(targetSound)));
+                || (useSound && oldSound != null && oldSound.toString().equals(String.valueOf(targetSound)));
             boolean impOk = old.getImportance() >= NotificationManager.IMPORTANCE_HIGH;
             if (vibOk && soundOk && impOk) {
                 needCreate = false;
@@ -1359,19 +1348,18 @@ void sendCustomNotification(String talker, String title, String text, boolean us
         Notification.Builder builder;
         String talkerChannelId = currentChannelId;
         String talkerRing = TextUtils.isEmpty(ringtoneUri) ? "" : ringtoneUri;
-        boolean useManualCustomSound = Build.VERSION.SDK_INT >= 26 && useSound; // 8+ 一律手动播放，规避ROM回写通道声音
+        boolean useManualCustomSound = Build.VERSION.SDK_INT >= 26 && useSound;
         if (Build.VERSION.SDK_INT >= 26) {
             String sTag = useSound ? "M" : "N";
             String vTag = useVibrate ? "V" : "N";
             talkerChannelId = "jay_chn_v9_" + sTag + "_" + vTag + "_" + talkerRing.hashCode();
-            // 8+ 通道保持静音，声音由插件手动播放，避免被系统/ROM改回默认声
             ensureNotifyChannel(nm, talkerChannelId, useVibrate, false, talkerRing);
             builder = new Notification.Builder(hostContext, talkerChannelId);
         } else {
             builder = new Notification.Builder(hostContext);
         }
 
-builder.setContentTitle(title)
+        builder.setContentTitle(title)
                .setContentText(text)
                .setSmallIcon((new java.util.concurrent.Callable<android.graphics.drawable.Icon>() {
                    public android.graphics.drawable.Icon call() {
@@ -1393,9 +1381,7 @@ builder.setContentTitle(title)
         try { builder.setCategory(Notification.CATEGORY_MESSAGE); } catch (Throwable ignored) {}
         try { builder.setVisibility(Notification.VISIBILITY_PRIVATE); } catch (Throwable ignored) {}
 
-        long[] vibPattern = useVibrate ? new long[]{0, 250, 250, 250} : new long[]{0};
-        try { builder.setVibrate(vibPattern); } catch (Throwable ignored) {}
-
+        // 【修复】只保留一个 vibPattern 声明
         long[] vibPattern = useVibrate ? new long[]{0, 250, 250, 250} : new long[]{0};
         try { builder.setVibrate(vibPattern); } catch (Throwable ignored) {}
 
@@ -1433,8 +1419,6 @@ builder.setContentTitle(title)
                 replyIntent.putExtra(EXTRA_TALKER, talker);
                 replyIntent.putExtra(EXTRA_NOTIFY_ID, notifyId);
                 int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-                // RemoteInput requires mutable PendingIntent on Android 12+.
-                // On old versions, keep default mutability (do not force IMMUTABLE).
                 if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
                 PendingIntent replyPi = PendingIntent.getBroadcast(hostContext, notifyId, replyIntent, flags);
                 Notification.Action action = new Notification.Action.Builder(
@@ -1446,7 +1430,6 @@ builder.setContentTitle(title)
             } catch (Throwable ignored) {}
         }
 
-        // 标记已读按钮
         if (enableMarkRead) {
             try {
                 Intent markIntent = new Intent(ACTION_MARK_READ);
@@ -1466,7 +1449,6 @@ builder.setContentTitle(title)
 
         nm.notify(notifyId, builder.build());
 
-        // 8+ 声音统一手动播放（含默认通知声/自定义铃声）
         if (Build.VERSION.SDK_INT >= 26) {
             String playableRing = talkerRing;
             if (!TextUtils.isEmpty(playableRing) && !ensureUriReadable(playableRing)) {
@@ -1491,7 +1473,6 @@ void hookActivityResultForRingtone() {
                         android.net.Uri uri = data.getData();
                         if (uri != null) {
                             try {
-                                // 把选中图片复制到插件目录，避免 uri 失效
                                 String iconPath = "/storage/emulated/0/Android/media/com.tencent.mm/WAuxiliary/Plugin/自定义通知配置版/notify_icon.png";
                                 java.io.InputStream in = hostContext.getContentResolver().openInputStream(uri);
                                 java.io.FileOutputStream out = new java.io.FileOutputStream(iconPath);
@@ -1547,6 +1528,9 @@ void hookActivityResultForRingtone() {
                             }
                         });
                     }
+                    // 【修复】清理静态引用，避免悬空
+                    globalRingtoneValueRef = null;
+                    globalRingtoneValueView = null;
                 }
             }
         };
@@ -1595,7 +1579,6 @@ String normalizeTitleLooseKey(String s) {
 
         String t = normalizeTitleKey(s);
         if (TextUtils.isEmpty(t)) return "";
-        // 去掉大部分符号/emoji，只保留中文、字母、数字，提升特殊昵称匹配稳定性
         t = t.replaceAll("[^\\u4e00-\\u9fa5a-z0-9]+", "");
 
         if (sTitleNormCache.size() >= sTitleNormCacheMax) sTitleNormCache.clear();
@@ -1608,7 +1591,6 @@ String normalizeTitleLooseKey(String s) {
 String stripBracketTags(String s) {
     if (s == null) return "";
     try {
-        // 兼容“[表情][闪烁]”这类通知标题标签
         return s.replaceAll("\\[[^\\]]*\\]", "");
     } catch (Throwable ignored) {}
     return s;
@@ -1720,6 +1702,7 @@ String findTalkerByGroupTitle(String title) {
     } catch (Throwable ignored) {}
     return null;
 }
+
 String resolveTalkerNameForMatch(String talkerId) {
     if (TextUtils.isEmpty(talkerId)) return "";
     try {
@@ -1752,6 +1735,7 @@ String resolveTalkerNameForMatch(String talkerId) {
     } catch (Throwable ignored) {}
     return "";
 }
+
 String findTalkerByCacheContains(String raw) {
     if (TextUtils.isEmpty(raw) || cacheTargetSet.isEmpty()) return null;
     try {
@@ -1779,6 +1763,7 @@ String findTargetTalkerByTitle(String title) {
     } catch (Throwable ignored) {}
     return null;
 }
+
 String scanBundleForTalker(Bundle b) {
     if (b == null) return null;
     String[] keys = new String[]{"Main_User", "MainUser", "talker", "Talker", "chat_talker", "chat_username", "username", "userName", "wxid", "contact", "conversation_id", "conversationId"};
@@ -1793,6 +1778,7 @@ String scanBundleForTalker(Bundle b) {
     }
     return null;
 }
+
 String extractTalkerFromNotification(Notification n) {
     if (n == null) return null;
     try {
@@ -1811,7 +1797,6 @@ String extractTalkerFromNotification(Notification n) {
         }
     } catch (Throwable ignored) {}
 
-    // 深扫 PendingIntent extras，提升部分 ROM/版本下重启早期 talker 提取成功率
     try {
         PendingIntent[] pis = new PendingIntent[]{n.contentIntent, n.deleteIntent, n.fullScreenIntent};
         for (int i = 0; i < pis.length; i++) {
@@ -1828,6 +1813,7 @@ String extractTalkerFromNotification(Notification n) {
     } catch (Throwable ignored) {}
     return null;
 }
+
 Object safeInvoke(Object obj, String methodName) {
     if (obj == null || TextUtils.isEmpty(methodName)) return null;
     try {
@@ -2082,13 +2068,11 @@ void showRingtonePickStyleDialog(final Activity ctx, final String[] tmpRingtone,
                     fileIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     fileIntent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
 
-                    // 优先直连系统 DocumentsUI，尽量避免厂商文件管理器接管
                     Intent nativeIntent = new Intent(fileIntent);
                     nativeIntent.setPackage("com.android.documentsui");
                     try {
                         ctx.startActivityForResult(nativeIntent, REQ_PICK_RINGTONE_FILE);
                     } catch (Throwable ignoredNative) {
-                        // 回退到通用文档选择，确保兼容没有 DocumentsUI 包的机型
                         ctx.startActivityForResult(Intent.createChooser(fileIntent, "选择铃声文件"), REQ_PICK_RINGTONE_FILE);
                     }
                 } catch (Throwable ignored) {}
@@ -2166,6 +2150,7 @@ GradientDrawable roundRect(int color, int radiusPx) {
     g.setCornerRadius(radiusPx);
     return g;
 }
+
 void showTargetListUI(final Activity ctx) {
     if (sCachedFriendNames != null && sCachedGroupNames != null) {
         buildListUI(ctx, sCachedFriendNames, sCachedFriendIds, sCachedGroupNames, sCachedGroupIds);
@@ -2243,14 +2228,12 @@ void showTargetListUI(final Activity ctx) {
                         remark = remark.trim();
 
                         String nickNorm = nick == null ? "" : nick.trim();
-                        // 某些环境下无备注会返回昵称本身，避免出现“昵称(昵称)”
                         if (!TextUtils.isEmpty(remark) && remark.equals(nickNorm)) {
                             remark = "";
                         }
 
                         String showName = nick;
                         if (!TextUtils.isEmpty(remark)) {
-                            // 有备注：昵称+备注；无备注：仅昵称
                             showName = nick + "(" + remark + ")";
                         }
 
@@ -2286,6 +2269,7 @@ void showTargetListUI(final Activity ctx) {
         }
     }).start();
 }
+
 void showSingleTimePicker(final Activity ctx, String title, final String[] valueRef, final Runnable onChange) {
     int t = parseTimeToMinute(valueRef[0]);
     int h = t >= 0 ? t / 60 : 0;
@@ -2815,7 +2799,6 @@ void showCustomLoadingDialog(Activity ctx, String msg) {
             w.setDimAmount(0.25f);
         }
         d.show();
-        // 存引用以便关闭
         sLoadingDialogRef = d;
     } catch (Throwable ignored) {}
 }
@@ -3034,7 +3017,6 @@ void prepareSearchInput(final Activity ctx, final EditText et) {
 void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boolean isGroup, final String displayNameRaw, final Set selectedIds, final Runnable onSaved) {
     hideSoftInput(ctx);
     String displayName = displayNameRaw.replace("  ✓", "").replace("  [已配置]", "").replace("  [未配置]", "");
-    // 仅在配置弹窗内做昵称可见化处理，避免全换行昵称导致标题不可见
     displayName = displayName.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ');
     displayName = displayName.replaceAll("\\s+", " ").trim();
     if (TextUtils.isEmpty(displayName)) displayName = "（无可见昵称）";
@@ -3102,7 +3084,6 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
             public void onCheckedChanged(CompoundButton b, boolean c) { tmpEnable[0] = c; }
         });
         addDarkDivider(ctx, body);
-
         addDarkSwitchRow(ctx, body, "免打扰(不弹通知)", tmpDnd[0], new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton b, boolean c) {
                 tmpDnd[0] = c;
@@ -3110,27 +3091,22 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
             }
         });
         addDarkDivider(ctx, body);
-
         addDarkSwitchRow(ctx, body, "震动", tmpVibrate[0], new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton b, boolean c) { tmpVibrate[0] = c; }
         });
         addDarkDivider(ctx, body);
-
         addDarkSwitchRow(ctx, body, "铃声", tmpSound[0], new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton b, boolean c) { tmpSound[0] = c; }
         });
         addDarkDivider(ctx, body);
-
         addDarkSwitchRow(ctx, body, "回复", tmpQuickReply[0], new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton b, boolean c) { tmpQuickReply[0] = c; }
         });
         addDarkDivider(ctx, body);
-
         addDarkSwitchRow(ctx, body, "标记已读", tmpMarkRead[0], new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton b, boolean c) { tmpMarkRead[0] = c; }
         });
         addDarkDivider(ctx, body);
-
         final TextView tvRing = addDarkClickRow(ctx, body, "选择铃声", getRingtoneDisplayName(ctx, tmpRingtone[0]) + " >");
         ((View) tvRing.getParent()).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -3140,17 +3116,14 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
             }
         });
         addDarkDivider(ctx, body);
-
         addDarkSwitchRow(ctx, body, "通知显示消息详情", tmpShowDetail[0], new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton b, boolean c) { tmpShowDetail[0] = c; }
         });
         addDarkDivider(ctx, body);
-
         addDarkSwitchRow(ctx, body, "开启时段静默", tmpMuteEnable[0], new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton b, boolean c) { tmpMuteEnable[0] = c; }
         });
         addDarkDivider(ctx, body);
-
         final TextView[] tvTime = new TextView[2];
         tvTime[0] = addDarkClickRow(ctx, body, "开始时间", tmpMuteStart[0] + " >");
         ((View) tvTime[0].getParent()).setOnClickListener(new View.OnClickListener() {
@@ -3164,7 +3137,6 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
             }
         });
         addDarkDivider(ctx, body);
-
         tvTime[1] = addDarkClickRow(ctx, body, "结束时间", tmpMuteEnd[0] + " >");
         ((View) tvTime[1].getParent()).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -3257,7 +3229,13 @@ void showTalkerConfigDialog(final Activity ctx, final String talkerId, final boo
         root.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { dialog.dismiss(); }});
         card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {} });
 
-        btnCancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { globalRingtoneValueRef = null; globalRingtoneValueView = null; dialog.dismiss(); }});
+        btnCancel.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                globalRingtoneValueRef = null;
+                globalRingtoneValueView = null;
+                dialog.dismiss();
+            }
+        });
 
         btnClear.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -3647,6 +3625,7 @@ TextView addDarkClickRow(Activity ctx, LinearLayout parent, String title, String
     parent.addView(row);
     return r;
 }
+
 void buildListUI(final Activity ctx, final List fNames, final List fIds, final List gNames, final List gIds) {
     LinearLayout root = new LinearLayout(ctx);
     root.setOrientation(LinearLayout.VERTICAL);
@@ -3827,7 +3806,6 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
             final int checkedId = rg.getCheckedRadioButtonId();
             final int version = ++filterVersion[0];
 
-            // 首屏空关键字时先给一批预览，避免“空白2~3秒”
             boolean isEmptyKw = TextUtils.isEmpty(kw);
             if (isEmptyKw) {
                 currentDisplayNames.clear();
@@ -3990,6 +3968,7 @@ void buildListUI(final Activity ctx, final List fNames, final List fIds, final L
     rbAll.setChecked(true);
     updateList.run();
 }
+
 void sortConfiguredFirst(List names, List ids, List isGroups, Set selectedIds) {
     if (names == null || ids == null || isGroups == null || selectedIds == null) return;
     int n = ids.size();

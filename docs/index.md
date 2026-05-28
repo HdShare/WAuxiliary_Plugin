@@ -16,6 +16,11 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%8A%A8%E6%94%B6%E6%AC%BE&filename=%E8%87%AA%E5%8A%A8%E6%94%B6%E6%AC%BE_1.3.0
     linkText: 更新于 20260528
 
+  - title: 自定义通知配置版(1.3.2)
+    details: 作者 SamrtinSinako & 。。 & 周杰伦
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FSamrtinSinako%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.2
+    linkText: 更新于 20260527
+
   - title: 自定义通知配置版(1.3.5)
     details: 作者 。。 & 周杰伦
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.5
@@ -202,7 +207,7 @@ features:
     linkText: 更新于 20260401
 
   - title: 自动增加步数(1.0.7)
-    details: 作者 Wukon & VAY冬冬
+    details: 作者 VAY冬冬 & Wukon
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2FVAY%E5%86%AC%E5%86%AC%2FAutoStep&filename=%E8%87%AA%E5%8A%A8%E5%A2%9E%E5%8A%A0%E6%AD%A5%E6%95%B0_1.0.7
     linkText: 更新于 20260327
 

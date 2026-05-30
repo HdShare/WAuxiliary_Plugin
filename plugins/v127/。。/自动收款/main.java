@@ -83,7 +83,7 @@ boolean onClickSendBtn(String text) {
         showSettingsUI();
         return true; // 拦截，不发送
     }
-    if ("转账收款总结".equals(text)) {
+    if ("每日收款总结".equals(text)) {
         sendManualSummaryToCurrentTalker();
         return true; // 拦截，不发送
     }
@@ -643,14 +643,14 @@ void sendManualSummaryToCurrentTalker() {
     try {
         String talker = getTargetTalker();
         if (TextUtils.isEmpty(talker)) {
-            toast("请在目标聊天窗口内发送收款总结");
+            toast("请在目标聊天窗口内发送每日收款总结");
             return;
         }
         sendText(talker, buildDailySummaryMessage(getTodayDateStr()));
-        toast("收款总结已发送");
+        toast("每日收款总结已发送");
     } catch (Throwable e) {
-        log("手动发送收款总结失败: " + e.toString());
-        toast("收款总结发送失败: " + e.toString());
+        log("手动发送每日收款总结失败: " + e.toString());
+        toast("每日收款总结发送失败: " + e.toString());
     }
 }
 

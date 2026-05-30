@@ -52,6 +52,7 @@ String KEY_SUMMARY_TARGETS = "tf_ultra_summary_targets"; // 总结发送目标wx
 String KEY_SUMMARY_LAST_SENT_DATE = "tf_ultra_summary_last_sent_date"; // 最近一次成功发送总结日期
 String KEY_DAILY_STATS_PREFIX = "tf_ultra_daily_stats_"; // 单日收款统计前缀
 int SUMMARY_DETAIL_LIMIT = 20; // 仅保留最近明细，避免配置文件无限膨胀
+long SUMMARY_CHECK_INTERVAL_MS = 60 * 1000L; // 周期巡检，避免一次性TimerTask只运行一次
 Object SUMMARY_LOCK = new Object();
 java.util.Timer summaryTimer = null;
 java.util.TimerTask summaryTask = null;
@@ -679,24 +680,19 @@ void clearDailyCollectionStats(String date) {
     }
 }
 
-long calcNextSummaryDelay() {
+boolean isSummaryDueNow() {
     String timeText = getString(KEY_SUMMARY_TIME, "23:59");
     int[] hm = parseSummaryTimeParts(timeText);
     if (hm == null) hm = new int[]{23, 59};
 
     TimeZone tz = TimeZone.getTimeZone("Asia/Shanghai");
+    Calendar now = Calendar.getInstance(tz);
     Calendar target = Calendar.getInstance(tz);
     target.set(Calendar.HOUR_OF_DAY, hm[0]);
     target.set(Calendar.MINUTE, hm[1]);
     target.set(Calendar.SECOND, 0);
     target.set(Calendar.MILLISECOND, 0);
-
-    long now = System.currentTimeMillis();
-    if (target.getTimeInMillis() <= now || getTodayDateStr().equals(getString(KEY_SUMMARY_LAST_SENT_DATE, ""))) {
-        target.add(Calendar.DAY_OF_MONTH, 1);
-    }
-    long delay = target.getTimeInMillis() - now;
-    return delay < 0 ? 0 : delay;
+    return now.getTimeInMillis() >= target.getTimeInMillis();
 }
 
 void startSummaryScheduler() {
@@ -704,7 +700,6 @@ void startSummaryScheduler() {
         stopSummarySchedulerLocked();
         if (!getBoolean(KEY_SUMMARY_ENABLE, false)) return;
         try {
-            long delay = calcNextSummaryDelay();
             summaryTimer = new java.util.Timer("tf-summary-dispatch", true);
             summaryTask = new java.util.TimerTask() {
                 public void run() {
@@ -712,13 +707,11 @@ void startSummaryScheduler() {
                         sendDailySummaryIfNeeded();
                     } catch (Throwable e) {
                         log("每日收款总结任务异常: " + e.toString());
-                    } finally {
-                        startSummaryScheduler();
                     }
                 }
             };
-            summaryTimer.schedule(summaryTask, delay);
-            log("每日收款总结调度已启动，距离下次执行 " + delay + "ms");
+            summaryTimer.scheduleAtFixedRate(summaryTask, 0, SUMMARY_CHECK_INTERVAL_MS);
+            log("每日收款总结调度已启动，每60秒检查一次，目标时间: " + getString(KEY_SUMMARY_TIME, "23:59"));
         } catch (Throwable e) {
             log("每日收款总结调度启动失败: " + e.toString());
         }
@@ -747,6 +740,7 @@ void sendDailySummaryIfNeeded() {
         if (!getBoolean(KEY_SUMMARY_ENABLE, false)) return;
         String today = getTodayDateStr();
         if (today.equals(getString(KEY_SUMMARY_LAST_SENT_DATE, ""))) return;
+        if (!isSummaryDueNow()) return;
 
         List<String> targets = splitCsv(getString(KEY_SUMMARY_TARGETS, ""));
         if (targets.isEmpty()) {

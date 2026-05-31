@@ -35,6 +35,7 @@ import de.robv.android.xposed.XposedHelpers;
 import me.hd.wauxv.data.bean.info.FriendInfo;
 import me.hd.wauxv.data.bean.info.GroupInfo;
 
+import java.io.File;
 // ================= 配置常量 =================
 String CFG_TARGETS = "jay_cfg_targets_v7";
 String CFG_VIBRATE = "jay_cfg_vibrate_v7";
@@ -142,7 +143,7 @@ boolean cacheBlockAtAll = false;
 boolean cacheBlockAtMe = false;
 Map cacheTalkerCfgMap = Collections.synchronizedMap(new HashMap());
 
-Set cacheTargetSet = new HashSet();
+volatile Set cacheTargetSet = Collections.emptySet();
 
 List notifyUnhooks = Collections.synchronizedList(new ArrayList());
 List resultUnhooks = Collections.synchronizedList(new ArrayList());
@@ -242,15 +243,21 @@ void onLoad() {
     } catch (Throwable ignored) {}
 }
 
+
 void ensureConfigLoadedForRuntime() {
     try {
         if (!cacheTargetSet.isEmpty()) return;
         long now = System.currentTimeMillis();
-        if (now - sLastAutoReloadAt < 1200L) return;
-        sLastAutoReloadAt = now;
-        loadConfigToCache();
+        synchronized (this) {
+            if (!cacheTargetSet.isEmpty()) return;
+            if (now - sLastAutoReloadAt < 1200L) return;
+            sLastAutoReloadAt = now;
+            loadConfigToCache();
+        }
     } catch (Throwable ignored) {}
 }
+
+
 
 void unhookAll(List hooks) {
     if (hooks == null) return;
@@ -276,7 +283,7 @@ void onUnload() {
     sCachedGroupNames = null;
     sCachedGroupIds = null;
     sLastGroupCacheLoadAt = 0L;
-    cacheTargetSet.clear();
+    cacheTargetSet = Collections.emptySet();
     cacheTalkerCfgMap.clear();
     try { sTalkerUnreadCount.clear(); } catch (Throwable ignored) {}
     try { sAvatarCache.clear(); } catch (Throwable ignored) {}
@@ -309,10 +316,18 @@ boolean onClickSendBtn(String text) {
 }
 
 // ================= 配置加载 =================
+
 void loadTargetSetFromConfig(String rawTargets) {
-    cacheTargetSet.clear();
-    cacheTargetSet.addAll(parseTargetSet(rawTargets));
+    try {
+        Set newSet = new HashSet();
+        newSet.addAll(parseTargetSet(rawTargets));
+        cacheTargetSet = Collections.unmodifiableSet(newSet);
+    } catch (Throwable ignored) {
+        cacheTargetSet = Collections.emptySet();
+    }
 }
+
+
 
 Set parseTargetSet(String rawTargets) {
     Set out = new HashSet();
@@ -1460,27 +1475,53 @@ Bitmap tryGetBetterAvatar(Notification n, String talker) {
 }
 
 
+
 Bitmap getGroupAvatarFromFile(String talkerId) {
     if (TextUtils.isEmpty(talkerId)) return null;
     try {
         String hash = md5(talkerId);
         if (TextUtils.isEmpty(hash)) return null;
         String prefix = hash.substring(0, 2);
-        
-        String base = findAvatarDir();
+
+        // 收集所有可能的头像根目录
         java.util.ArrayList dirs = new java.util.ArrayList();
+        String base = findAvatarDir();
         if (!TextUtils.isEmpty(base)) {
             dirs.add(base + "/avatar/");
         }
-        
-        String[] tryNames = new String[]{"user_" + hash, "small_" + hash, hash};
-        String[] exts = new String[]{".png", ".jpg"};
-        
+
+        // 补充：遍历所有32位hash子目录，多账号场景更稳
+        try {
+            java.io.File mmDir = new java.io.File("/data/data/com.tencent.mm/MicroMsg/");
+            java.io.File[] subs = mmDir.listFiles();
+            if (subs != null) {
+                for (int si = 0; si < subs.length; si++) {
+                    java.io.File d = subs[si];
+                    if (!d.isDirectory()) continue;
+                    String n = d.getName();
+                    if (n.length() == 32 && n.matches("[0-9a-f]{32}")) {
+                        String candidate = d.getAbsolutePath() + "/avatar/";
+                        if (!dirs.contains(candidate)) dirs.add(candidate);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        String[] tryNames = new String[]{
+                "user_" + hash,
+                "small_" + hash,
+                hash,
+                "hd_" + hash,
+                "big_" + hash
+        };
+        String[] exts = new String[]{".png", ".jpg", ""};
+
         for (int di = 0; di < dirs.size(); di++) {
             String dir = String.valueOf(dirs.get(di));
             java.io.File dirFile = new java.io.File(dir);
             if (!dirFile.exists()) continue;
-            
+
+            // 根目录查找
             for (int ni = 0; ni < tryNames.length; ni++) {
                 for (int ei = 0; ei < exts.length; ei++) {
                     String fullPath = dir + tryNames[ni] + exts[ei];
@@ -1491,18 +1532,19 @@ Bitmap getGroupAvatarFromFile(String talkerId) {
                     }
                 }
             }
-            
+
+            // prefix 子目录查找，例如 avatar/ab/user_abcd...
             String subDir = dir + prefix + "/";
             java.io.File subDirFile = new java.io.File(subDir);
-            if (!subDirFile.exists()) continue;
-            
-            for (int ni = 0; ni < tryNames.length; ni++) {
-                for (int ei = 0; ei < exts.length; ei++) {
-                    String fullPath = subDir + tryNames[ni] + exts[ei];
-                    java.io.File f = new java.io.File(fullPath);
-                    if (f.exists() && f.length() > 100) {
-                        Bitmap b = BitmapFactory.decodeFile(fullPath);
-                        if (b != null && b.getWidth() >= 50) return b;
+            if (subDirFile.exists()) {
+                for (int ni = 0; ni < tryNames.length; ni++) {
+                    for (int ei = 0; ei < exts.length; ei++) {
+                        String fullPath = subDir + tryNames[ni] + exts[ei];
+                        java.io.File f = new java.io.File(fullPath);
+                        if (f.exists() && f.length() > 100) {
+                            Bitmap b = BitmapFactory.decodeFile(fullPath);
+                            if (b != null && b.getWidth() >= 50) return b;
+                        }
                     }
                 }
             }
@@ -1510,6 +1552,70 @@ Bitmap getGroupAvatarFromFile(String talkerId) {
     } catch (Throwable ignored) {}
     return null;
 }
+
+
+// CDN 下载头像，兜底，仅在本地缓存未命中时调用
+Bitmap downloadAvatarFromCdn(String talkerId) {
+    if (TextUtils.isEmpty(talkerId)) return null;
+    try {
+        String url = getAvatarUrl(talkerId);
+        if (TextUtils.isEmpty(url)) return null;
+
+        java.net.HttpURLConnection conn = null;
+        java.io.InputStream is = null;
+        try {
+            conn = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            conn.setConnectTimeout(4000);
+            conn.setReadTimeout(6000);
+            conn.setRequestProperty("User-Agent", "MicroMessenger");
+            conn.connect();
+
+            if (conn.getResponseCode() != 200) return null;
+
+            is = conn.getInputStream();
+            Bitmap b = BitmapFactory.decodeStream(is);
+            if (b != null && b.getWidth() >= 50) return b;
+        } finally {
+            try { if (is != null) is.close(); } catch (Throwable ignored) {}
+            try { if (conn != null) conn.disconnect(); } catch (Throwable ignored) {}
+        }
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+// 统一头像获取入口：内存缓存 -> 本地文件 -> CDN
+Bitmap resolveAvatar(String talkerId) {
+    if (TextUtils.isEmpty(talkerId)) return null;
+
+    try {
+        Object cached = sAvatarCache.get(talkerId);
+        if (cached instanceof Bitmap) {
+            Bitmap b = (Bitmap) cached;
+            if (!b.isRecycled()) return b;
+        }
+    } catch (Throwable ignored) {}
+
+    try {
+        Bitmap b = getGroupAvatarFromFile(talkerId);
+        if (b != null) {
+            cacheAvatar(b, talkerId);
+            return b;
+        }
+    } catch (Throwable ignored) {}
+
+    try {
+        Bitmap b = downloadAvatarFromCdn(talkerId);
+        if (b != null) {
+            cacheAvatar(b, talkerId);
+            return b;
+        }
+    } catch (Throwable ignored) {}
+
+    return null;
+}
+
+
+
 
 
 // ================= MD5 工具 =================
@@ -1618,37 +1724,48 @@ void hookSystemNotification() {
 }
 
 // ================= 核心 2：自定义通知发送器 =================
+
 void onHandleMsg(Object msg) {
     ensureConfigLoadedForRuntime();
     if (cacheTargetSet.isEmpty()) return;
     try {
-        // 先取 talker 用于去重检查
+        // 先取 talker
         String talker = readStringByAccessors(msg, MSG_TALKER_METHODS, MSG_TALKER_FIELDS);
         if (TextUtils.isEmpty(talker)) {
             talker = readStringByAccessors(msg, new String[]{"getTalker", "getUsername", "getUserName"}, MSG_TALKER_FIELDS);
         }
 
-        
         int type = getMsgTypeFromMsg(msg);
         if (TextUtils.isEmpty(talker)) talker = resolveTalkerForMsg(msg, "");
+
         String content = resolveMsgContentForNotify(msg, "");
         if (TextUtils.isEmpty(talker)) talker = resolveTalkerForMsg(msg, content);
         content = cleanNotifyContentByType(type, content);
+
         if (isSelfSentMsg(msg, talker, content)) {
             return;
         }
-        // 快速回复后3秒内跳过同一会话
+
+        // 快捷回复后短时间内跳过同一会话。
+        // 私聊保持 3000ms，群聊缩短为 1000ms，避免误吞群内其他人的消息。
         if (!TextUtils.isEmpty(talker)) {
             Long lastReply = (Long) sQuickReplyTimestamps.get(talker);
-            if (lastReply != null && System.currentTimeMillis() - lastReply.longValue() < 3000L) {
-                return;
+            if (lastReply != null) {
+                long gap = System.currentTimeMillis() - lastReply.longValue();
+                long suppressMs = isGroupTalkerOrMsg(talker, msg) ? 1000L : 3000L;
+                if (gap < suppressMs) {
+                    return;
+                }
             }
         }
+
         if (isSystemMessageLike(msg, talker, content, type)) return;
         if (!cacheTargetSet.contains(talker)) return;
         if (isCurrentChatTalker(talker)) return;
+
         ensureTalkerCfgLoaded(talker);
         Map cfg = getTalkerCfg(talker);
+
         int talkerMode = cfgGetInt(cfg, "mode", 1);
         boolean inMuteWindow = isNowInMuteWindowByCfg(cfg);
         boolean showDetail = cfgGetBool(cfg, "showDetail", cacheShowDetail);
@@ -1656,13 +1773,16 @@ void onHandleMsg(Object msg) {
         boolean talkerSound = cfgGetBool(cfg, "sound", cacheSound);
         String talkerRingtone = cfgGet(cfg, "ringtone", "");
         boolean talkerQuickReply = cfgGetBool(cfg, "quickReply", false);
+
         if (talkerMode == 0) return;
         if (inMuteWindow) return;
         if (shouldSuppressByRules(msg, talker, content, cfg)) return;
+
         String[] notifyText = buildNotifyTitleAndText(msg, talker, content, type, showDetail);
         String notifyTitle = notifyText[0];
         String displayContent = notifyText[1];
         long msgTimestamp = System.currentTimeMillis();
+
         // 累计未读计数
         int unreadCount = 1;
         try {
@@ -1670,22 +1790,23 @@ void onHandleMsg(Object msg) {
             if (prev instanceof Integer) unreadCount = ((Integer) prev).intValue() + 1;
             sTalkerUnreadCount.put(talker, Integer.valueOf(unreadCount));
         } catch (Throwable ignored) {}
-        // 延迟发送通知，等原生通知钩子先偷头像填充缓存
-        final String _talker = talker;
-        final String _notifyTitle = notifyTitle;
-        final String _displayContent = displayContent;
-        final boolean _talkerVibrate = talkerVibrate;
-        final boolean _talkerSound = talkerSound;
-        final String _talkerRingtone = talkerRingtone;
-        final boolean _talkerQuickReply = talkerQuickReply;
-        final long _msgTimestamp = msgTimestamp;
-        sMainHandler.postDelayed(new Runnable() {
-            public void run() {
-                sendCustomNotification(_talker, _notifyTitle, _displayContent, _talkerVibrate, _talkerSound, _talkerRingtone, _talkerQuickReply, _msgTimestamp);
-            }
-        }, 500);
+
+        // 直接发送通知，不再延迟 500ms。
+        // 头像在 sendCustomNotification 内部异步补加载。
+        sendCustomNotification(
+                talker,
+                notifyTitle,
+                displayContent,
+                talkerVibrate,
+                talkerSound,
+                talkerRingtone,
+                talkerQuickReply,
+                msgTimestamp
+        );
     } catch (Throwable ignored) {}
 }
+
+
 
 // ================= 通知通道管理 =================
 List getNotificationChannelList(NotificationManager nm) {
@@ -1967,7 +2088,7 @@ void attachQuickReplyAction(Notification.Builder builder, String talker, int not
         replyIntent.putExtra(EXTRA_TALKER, talker);
         replyIntent.putExtra(EXTRA_NOTIFY_ID, notifyId);
 
-        int flags = PendingIntent.FLAG_CANCEL_CURRENT;
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
 
         // 使用稳定 requestCode，避免随机 PendingIntent 残留导致重复广播
@@ -1998,6 +2119,7 @@ void playSoundAfterNotify(boolean useSound, String talkerRing, boolean useManual
     } catch (Throwable ignored) {}
 }
 
+
 void sendCustomNotification(String talker, String title, String text, boolean useVibrate, boolean useSound, String ringtoneUri, boolean enableQuickReply, long msgTimestamp) {
     try {
         // 发通知时实时读计数，避免多条消息快速到达时 snapshot 过期导致覆盖
@@ -2006,13 +2128,18 @@ void sendCustomNotification(String talker, String title, String text, boolean us
             Object cur = sTalkerUnreadCount.get(talker);
             if (cur instanceof Integer) unreadCount = ((Integer) cur).intValue();
         } catch (Throwable ignored) {}
+
         String displayTitle = title;
         String displayText = (unreadCount >= 2) ? ("[" + unreadCount + "]" + text) : text;
+
         NotificationManager nm = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
         Notification.Builder builder;
         String talkerChannelId = currentChannelId;
         String talkerRing = normalizeRingtoneUri(ringtoneUri);
         boolean useManualCustomSound = useSound && !TextUtils.isEmpty(talkerRing);
+
         if (Build.VERSION.SDK_INT >= 26) {
             talkerChannelId = buildTalkerChannelId(useSound, useVibrate, talkerRing);
             ensureNotifyChannel(nm, talkerChannelId, useVibrate, false, talkerRing);
@@ -2023,26 +2150,20 @@ void sendCustomNotification(String talker, String title, String text, boolean us
 
         applyBasicNotificationOptions(builder, displayTitle, displayText, useVibrate, useSound, talkerRing, useManualCustomSound);
 
-                                // ====== 设置头像 ======
+        // 只读内存缓存，不在主流程同步读文件，避免主线程卡顿。
+        Bitmap _cachedBmp = null;
         try {
             Object cached = sAvatarCache.get(talker);
-            Bitmap avatarBmp = null;
-            if (cached instanceof Bitmap) {
-                Bitmap b = (Bitmap) cached;
-                if (!b.isRecycled()) avatarBmp = b;
-            }
-            if (avatarBmp == null && !TextUtils.isEmpty(talker)) {
-                avatarBmp = getGroupAvatarFromFile(talker);
-                if (avatarBmp != null) {
-                    cacheAvatar(avatarBmp, talker);
-                }
-            }
-            if (avatarBmp != null && !avatarBmp.isRecycled()) {
-                builder.setLargeIcon(avatarBmp);
+            if (cached instanceof Bitmap && !((Bitmap) cached).isRecycled()) {
+                _cachedBmp = (Bitmap) cached;
             }
         } catch (Throwable ignored) {}
 
-        // ====== 显示消息时间 ======
+        final Bitmap cachedBmp = _cachedBmp;
+        if (cachedBmp != null) {
+            try { builder.setLargeIcon(cachedBmp); } catch (Throwable ignored) {}
+        }
+
         if (msgTimestamp > 0) {
             try {
                 builder.setWhen(msgTimestamp);
@@ -2064,8 +2185,71 @@ void sendCustomNotification(String talker, String title, String text, boolean us
 
         nm.notify(notifyId, builder.build());
         playSoundAfterNotify(useSound, talkerRing, useManualCustomSound);
+
+        // 异步补加载头像：本地文件/CDN 都放到后台线程，加载成功后更新通知。
+        if (cachedBmp == null) {
+            final String _talker = talker;
+            final int _notifyId = notifyId;
+            final String _displayTitle = displayTitle;
+            final String _displayText = displayText;
+            final boolean _useVibrate = useVibrate;
+            final boolean _useSound = useSound;
+            final String _talkerRing = talkerRing;
+            final boolean _useManualCustomSound = useManualCustomSound;
+            final String _talkerChannelId = talkerChannelId;
+            final long _msgTimestamp = msgTimestamp;
+            final boolean _enableQuickReply = enableQuickReply;
+
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        final Bitmap bmp = resolveAvatar(_talker);
+                        if (bmp == null || bmp.isRecycled()) return;
+
+                        sMainHandler.post(new Runnable() {
+                            public void run() {
+                                try {
+                                    NotificationManager nm2 = (NotificationManager) hostContext.getSystemService(Context.NOTIFICATION_SERVICE);
+                                    if (nm2 == null) return;
+
+                                    Notification.Builder b2;
+                                    if (Build.VERSION.SDK_INT >= 26) {
+                                        b2 = new Notification.Builder(hostContext, _talkerChannelId);
+                                    } else {
+                                        b2 = new Notification.Builder(hostContext);
+                                    }
+
+                                    applyBasicNotificationOptions(b2, _displayTitle, _displayText, _useVibrate, _useSound, _talkerRing, _useManualCustomSound);
+                                    b2.setLargeIcon(bmp);
+
+                                    if (_msgTimestamp > 0) {
+                                        b2.setWhen(_msgTimestamp);
+                                        b2.setShowWhen(true);
+                                    }
+
+                                    Bundle extras2 = new Bundle();
+                                    extras2.putBoolean(JAY_MARK, true);
+                                    extras2.putString("jay_talker", _talker);
+                                    b2.setExtras(extras2);
+
+                                    applyLegacyAlertOptions(b2, _useVibrate, _useSound, _talkerRing, _useManualCustomSound);
+                                    attachChatOpenIntent(b2, _talker, _notifyId);
+                                    attachQuickReplyAction(b2, _talker, _notifyId, _enableQuickReply);
+
+                                    // 更新头像时不重新提醒
+                                    b2.setOnlyAlertOnce(true);
+                                    nm2.notify(_notifyId, b2.build());
+                                } catch (Throwable ignored) {}
+                            }
+                        });
+                    } catch (Throwable ignored) {}
+                }
+            }).start();
+        }
     } catch (Throwable ignored) {}
 }
+
+
 
 int getStableNotifyId(String talker) {
     if (TextUtils.isEmpty(talker)) return 0x4A000002;

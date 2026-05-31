@@ -6,15 +6,15 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: 自定义通知配置版(1.3.6)
+    details: 作者 SamrtinSinako & 。。 & 周杰伦
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FSamrtinSinako%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.6
+    linkText: 更新于 20260531
+
   - title: 自动收款(1.3.0)
     details: 作者 。。
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E8%87%AA%E5%8A%A8%E6%94%B6%E6%AC%BE&filename=%E8%87%AA%E5%8A%A8%E6%94%B6%E6%AC%BE_1.3.0
     linkText: 更新于 20260528
-
-  - title: 自定义通知配置版(1.3.2)
-    details: 作者 SamrtinSinako & 。。 & 周杰伦
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FSamrtinSinako%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.2
-    linkText: 更新于 20260527
 
   - title: 自定义通知配置版(1.3.5)
     details: 作者 。。 & 周杰伦

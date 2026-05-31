@@ -32,6 +32,28 @@ void loadJava(String path);
 
 - `path`：支持绝对路径；相对路径默认相对于当前插件目录，也就是 `pluginDir`
 
+## 编译脚本快照
+
+将指定脚本编译为快照文件，便于后续用 `evalSnapshot(...)` 加载执行。
+
+```beanshell
+void compileSnapshot(String path);
+```
+
+- `path`：支持绝对路径；相对路径默认相对于当前插件目录，也就是 `pluginDir`
+- 输出文件名默认是 `path + ".bshs"`
+
+## 执行脚本快照
+
+```beanshell
+void evalSnapshot(String path);
+
+void evalSnapshot(InputStream input);
+```
+
+- `path`：快照文件路径，支持绝对路径；相对路径默认相对于当前插件目录
+- `input`：快照文件输入流
+
 ## 导入 Dex
 
 ```beanshell
@@ -54,6 +76,8 @@ void loadJar(String path);
 loadJar("libs/demo.jar");
 loadDex("libs/bridge.dex");
 loadJava("extra/Main.java");
+compileSnapshot("extra/Main.java");
+evalSnapshot("extra/Main.java.bshs");
 ```
 
 ## 日志
@@ -63,6 +87,14 @@ void log(Object msg);
 ```
 
 - 输出调试日志到插件日志区域
+
+## 重新加载插件
+
+```beanshell
+boolean reloadPlugin();
+```
+
+- 返回值：重新加载是否成功
 
 ## 提示
 

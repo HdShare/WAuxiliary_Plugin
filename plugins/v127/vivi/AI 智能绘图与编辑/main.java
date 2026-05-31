@@ -21,6 +21,9 @@ Properties config = new Properties();
 // 缓存每个聊天窗口（talker）最后几张图片的本地路径列表
 Map lastImages = new HashMap();
 
+// 全局记录每个聊天会话（talker）最近 10 条消息的 ID 列表，用于进行参考图时效性过滤
+Map recentMessageIds = new HashMap();
+
 /**
  * 插件加载时的初始化回调
  */
@@ -90,10 +93,61 @@ boolean isValidLocalFile(String path) {
 }
 
 /**
+ * 辅助方法：清理本地日志文件
+ */
+void clearLogFiles() {
+    try {
+        // 清理 pluginDir 根目录下的 log.txt, logs.txt, 或以 .log 结尾的文件
+        File dir = new File(pluginDir);
+        if (dir.exists() && dir.isDirectory()) {
+            File[] files = dir.listFiles();
+            if (files != null) {
+                int count = 0;
+                for (int i = 0; i < files.length; i++) {
+                    if (files[i].isFile()) {
+                        String name = files[i].getName().toLowerCase();
+                        if (name.endsWith(".log") || name.equals("log.txt") || name.equals("logs.txt")) {
+                            if (files[i].delete()) {
+                                count++;
+                            }
+                        }
+                    }
+                }
+                if (count > 0) {
+                    log("[AI智能绘图] 已清理日志文件，成功删除 " + count + " 个日志文件。");
+                }
+            }
+        }
+        
+        // 清理 pluginDir/logs 目录
+        File logsDir = new File(pluginDir, "logs");
+        if (logsDir.exists() && logsDir.isDirectory()) {
+            File[] files = logsDir.listFiles();
+            if (files != null) {
+                int count = 0;
+                for (int i = 0; i < files.length; i++) {
+                    if (files[i].isFile()) {
+                        if (files[i].delete()) {
+                            count++;
+                        }
+                    }
+                }
+                if (count > 0) {
+                    log("[AI智能绘图] 已清理 logs 目录，成功删除 " + count + " 个日志文件。");
+                }
+            }
+        }
+    } catch (Throwable e) {
+        log("[AI智能绘图] 清理日志文件异常: " + e.toString());
+    }
+}
+
+/**
  * 辅助方法：清除本地高速缓存目录中的所有临时图片文件，释放存储空间并清空内存队列
  */
 void clearCacheDirectory() {
     try {
+        clearLogFiles();
         File dir = new File(cacheDir);
         if (dir.exists() && dir.isDirectory()) {
             File[] files = dir.listFiles();
@@ -115,9 +169,9 @@ void clearCacheDirectory() {
 }
 
 /**
- * 辅助方法：将新图片路径加入到对应的 talker 队列，上限受 ref_image_count 约束，采取 FIFO 策略
+ * 辅助方法：将新图片路径与对应的消息 ID 绑定并加入到 talker 队列，上限受 ref_image_count 约束，采取 FIFO 策略
  */
-void addCachedImage(String talker, String path) {
+void addCachedImage(String talker, String path, long msgId) {
     if (talker == null || path == null) return;
     
     int limit = 1;
@@ -135,9 +189,21 @@ void addCachedImage(String talker, String path) {
         lastImages.put(talker, list);
     }
     
+    // 用 JSONObject 承载路径、msgId 以及时间戳，用于多维时效性校验
+    JSONObject node = new JSONObject();
+    node.put("path", path);
+    node.put("msgId", msgId);
+    node.put("timestamp", System.currentTimeMillis());
+    
     // 排重，把最新的移到队尾
-    list.remove(path);
-    list.add(path);
+    for (int i = 0; i < list.size(); i++) {
+        JSONObject temp = (JSONObject) list.get(i);
+        if (path.equals(temp.optString("path"))) {
+            list.remove(i);
+            break;
+        }
+    }
+    list.add(node);
     
     // 强制截断队首，保持在设定上限以内
     while (list.size() > limit) {
@@ -147,22 +213,76 @@ void addCachedImage(String talker, String path) {
 }
 
 /**
- * 辅助方法：获取某个 talker 目前所有依然有效存在的本地参考图路径列表
+ * 辅助方法：获取某个 talker 目前所有依然有效存在、符合「5分钟时效」且属于用户最近消息内的本地参考图路径列表
  */
 java.util.List getCachedImages(String talker) {
     java.util.List result = new java.util.ArrayList();
     if (talker == null) return result;
     
     java.util.List list = (java.util.List) lastImages.get(talker);
+    java.util.List recentIds = (java.util.List) recentMessageIds.get(talker);
     if (list != null) {
+        java.util.List toRemove = new java.util.ArrayList();
         for (int i = 0; i < list.size(); i++) {
-            String path = (String) list.get(i);
-            if (isValidLocalFile(path)) {
+            JSONObject node = (JSONObject) list.get(i);
+            String path = node.optString("path");
+            long msgId = node.optLong("msgId");
+            long timestamp = node.optLong("timestamp", 0);
+            
+            // 校验 1：5分钟绝对时间范围限制 (300,000毫秒)
+            boolean isExpired = false;
+            if (timestamp > 0 && (System.currentTimeMillis() - timestamp > 300000)) {
+                isExpired = true;
+            }
+            
+            // 校验 2：动态读取消息滑窗限制
+            boolean isRecent = false;
+            int maxMsgs = 10;
+            try {
+                maxMsgs = Integer.parseInt(config.getProperty("recent_msg_limit", "10").trim());
+            } catch (Exception e) {}
+            
+            if (maxMsgs >= 99999) {
+                isRecent = true; // 不限制消息条数时效
+            } else if (recentIds != null) {
+                for (int j = 0; j < recentIds.size(); j++) {
+                    Long rId = (Long) recentIds.get(j);
+                    if (rId.longValue() == msgId) {
+                        isRecent = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!isExpired && isRecent && isValidLocalFile(path)) {
                 result.add(path);
+            } else {
+                toRemove.add(node);
             }
         }
+        // 从缓存库中剥离已过期失效的图片节点
+        list.removeAll(toRemove);
     }
     return result;
+}
+
+/**
+ * 辅助方法：生成全局唯一的会话 Key，实现群聊按微信 ID 隔离，私聊按好友 ID 隔离
+ */
+String getSessionKey(Object msgInfoBean) {
+    if (msgInfoBean == null) return "";
+    try {
+        String talker = msgInfoBean.getTalker();
+        if (msgInfoBean.isGroupChat() || msgInfoBean.isChatroom() || msgInfoBean.isImChatroom()) {
+            String sender = msgInfoBean.getSendTalker();
+            if (sender != null && !sender.trim().isEmpty()) {
+                return talker + "_" + sender;
+            }
+        }
+        return talker;
+    } catch (Throwable e) {
+        return msgInfoBean.getTalker();
+    }
 }
 
 /**
@@ -174,17 +294,49 @@ void onHandleMsg(Object msgInfoBean) {
         return;
     }
     
+    // 0. 记录消息滑窗：全局维护当前会话最近消息 ID
+    final long currentMsgId = msgInfoBean.getMsgId();
+    final String talker = msgInfoBean.getTalker();
+    final String sessionKey = getSessionKey(msgInfoBean);
+    try {
+        if (sessionKey != null && !sessionKey.isEmpty() && currentMsgId != 0) {
+            java.util.List msgList = (java.util.List) recentMessageIds.get(sessionKey);
+            if (msgList == null) {
+                msgList = new java.util.ArrayList();
+                recentMessageIds.put(sessionKey, msgList);
+            }
+            if (!msgList.contains(Long.valueOf(currentMsgId))) {
+                msgList.add(Long.valueOf(currentMsgId));
+            }
+            
+            // 动态读取设置的滑窗上限
+            int maxMsgs = 10;
+            try {
+                maxMsgs = Integer.parseInt(config.getProperty("recent_msg_limit", "10").trim());
+            } catch (Exception e) {}
+            if (maxMsgs < 1) maxMsgs = 10;
+            
+            while (msgList.size() > maxMsgs) {
+                msgList.remove(0);
+            }
+        }
+    } catch (Throwable e) {
+        log("[AI智能绘图] 记录滑动窗口消息异常: " + e.toString());
+    }
+    
     // 1. 如果收到的是图片消息，引导异步延时下载并缓存 (三重策略)
     if (msgInfoBean.isImage()) {
         final String talker = msgInfoBean.getTalker();
+        final long msgId = msgInfoBean.getMsgId();
         final Object finalMsgInfo = msgInfoBean;
+        final String sessionKey = getSessionKey(msgInfoBean);
         
         // 同步立即尝试读取 getImgPath (有些版本在回调时已就绪)
         try {
             String immPath = finalMsgInfo.getImgPath();
             log("[AI智能绘图] 同步 getImgPath() = " + immPath);
             if (isValidLocalFile(immPath)) {
-                addCachedImage(talker, immPath);
+                addCachedImage(sessionKey, immPath, msgId);
                 log("[AI智能绘图] 同步物理路径缓存成功: " + immPath);
             }
         } catch (Throwable e) {
@@ -273,7 +425,7 @@ void onHandleMsg(Object msgInfoBean) {
                     
                     // 存入缓存
                     if (path != null) {
-                        addCachedImage(talker, path);
+                        addCachedImage(sessionKey, path, msgId);
                     } else {
                         log("[AI智能绘图] 警告：三重策略全部失败，未获取到图片路径！");
                     }
@@ -291,6 +443,7 @@ void onHandleMsg(Object msgInfoBean) {
         
         String trigger = config.getProperty("trigger_word", "#生图");
         String editTrigger = config.getProperty("edit_trigger_word", "#编辑图");
+        final String sessionKey = getSessionKey(msgInfoBean);
         
         // ==================== 场景 C：触发统一设置界面 ====================
         // 安全检测：仅限主人发送“ai绘图设置”时弹出弹窗，其他人输入忽略
@@ -388,13 +541,12 @@ void onHandleMsg(Object msgInfoBean) {
                         // 统一接口调度系统 (内部智能识别 Gemini / Imagen / OpenAI 变图协议)
                         String imageUrl = callUnifiedApi(finalPrompt, baseUrl, apiKey, finalModel, finalSize, finalRatio, finalLevel, null);
                         if (imageUrl == null || imageUrl.trim().isEmpty()) {
-                            sendText(talker, "【AI绘图】调用生图接口失败，请检查您的中转 API 配置或余额。");
-                            return;
+                            throw new Exception("接口未返回有效的图片数据。");
                         }
                         
                         sendAndDownloadImg(imageUrl, talker);
                     } catch (Exception e) {
-                        sendText(talker, "【AI绘图】文生图程序异常: " + e.getMessage());
+                        sendText(talker, "【AI绘图】失败：" + e.getMessage());
                     }
                 }
             }).start();
@@ -434,7 +586,7 @@ void onHandleMsg(Object msgInfoBean) {
                 return;
             }
             
-            java.util.List imagePaths = getCachedImages(talker);
+            java.util.List imagePaths = getCachedImages(sessionKey);
             if (imagePaths.isEmpty()) {
                 sendText(talker, "【AI编辑】未在当前窗口找到可用的参考图片。请先发送图片，然后再发送编辑指令。");
                 return;
@@ -461,6 +613,7 @@ void onHandleMsg(Object msgInfoBean) {
             final String finalRatio = resolveAspectRatio(ratio, primaryImagePath);
             final String finalLevel = level;
             final java.util.List finalImagePaths = imagePaths;
+            final String finalSessionKey = sessionKey;
             new Thread(new Runnable() {
                 public void run() {
                     try {
@@ -476,13 +629,19 @@ void onHandleMsg(Object msgInfoBean) {
                         // 统一接口调度系统 (内部智能识别 Gemini / Imagen / OpenAI 变图协议)
                         String imageUrl = callUnifiedApi(finalPrompt, baseUrl, apiKey, finalModel, finalSize, finalRatio, finalLevel, finalImagePaths);
                         if (imageUrl == null || imageUrl.trim().isEmpty()) {
-                            sendText(talker, "【AI编辑】图片处理接口失败。请检查中转 API 是否支持模型 " + finalModel + " 并且格式正确。");
-                            return;
+                            throw new Exception("图片处理失败，未返回有效的图片数据。");
                         }
                         
                         sendAndDownloadImg(imageUrl, talker);
+                        
+                        // 生成并发送成功后，自动清空该会话窗口的参考图缓存队列，确保下次编辑不冲突
+                        java.util.List list = (java.util.List) lastImages.get(finalSessionKey);
+                        if (list != null) {
+                            list.clear();
+                            log("[AI智能绘图] 图片生成完成，已清空会话 [" + finalSessionKey + "] 的参考图缓存队列。");
+                        }
                     } catch (Exception e) {
-                        sendText(talker, "【AI编辑】程序异常: " + e.getMessage());
+                        sendText(talker, "【AI编辑】失败：" + e.getMessage());
                     }
                 }
             }).start();
@@ -771,6 +930,7 @@ void showSettingsDialog(final android.app.Activity activity) {
                 
                 // ==================== 多参考图融合控制 ====================
                 final android.widget.Spinner spRefImageCount = addRefImageCountSelector(activity, layout, "🌟 变图参考图缓存上限数 (进行多图融合参考):", config.getProperty("ref_image_count", "1"));
+                final android.widget.Spinner spRecentMsgLimit = addRecentMsgLimitSelector(activity, layout, "⏳ 参考图时效范围限制 (从最近第X条消息内提取):", config.getProperty("recent_msg_limit", "10"));
                 
                 // ==================== 指令触发词设置 ====================
                 final android.widget.EditText etTrigger = addField(activity, layout, "💬 文生图触发词 (trigger_word):", config.getProperty("trigger_word", "#生图"));
@@ -811,6 +971,17 @@ void showSettingsDialog(final android.app.Activity activity) {
                             else if (countPos == 4) countVal = "5";
                             else if (countPos == 5) countVal = "10";
                             config.setProperty("ref_image_count", countVal);
+                            
+                            // 读取参考图提取消息上限范围限制 (滑窗)
+                            int limitPos = spRecentMsgLimit.getSelectedItemPosition();
+                            String limitVal = "10";
+                            if (limitPos == 0) limitVal = "5";
+                            else if (limitPos == 1) limitVal = "10";
+                            else if (limitPos == 2) limitVal = "15";
+                            else if (limitPos == 3) limitVal = "20";
+                            else if (limitPos == 4) limitVal = "30";
+                            else if (limitPos == 5) limitVal = "99999";
+                            config.setProperty("recent_msg_limit", limitVal);
                             
                             // 保存到本地 config.prop
                             File configFile = new File(pluginDir, "config.prop");
@@ -969,6 +1140,55 @@ android.widget.Spinner addRefImageCountSelector(final android.app.Activity activ
     return spinner;
 }
 
+android.widget.Spinner addRecentMsgLimitSelector(final android.app.Activity activity, android.widget.LinearLayout parent, String labelText, String currentLimit) {
+    android.widget.TextView tv = new android.widget.TextView(activity);
+    tv.setText(labelText);
+    tv.setTextSize(13);
+    tv.setTextColor(android.graphics.Color.parseColor("#4B5563"));
+    tv.setPadding(0, 20, 0, 8);
+    parent.addView(tv);
+    
+    final String[] options = new String[]{
+        "最近 5 条消息内",
+        "最近 10 条消息内 (默认)",
+        "最近 15 条消息内",
+        "最近 20 条消息内",
+        "最近 30 条消息内",
+        "不限制时效 (从全部缓存提取)"
+    };
+    
+    android.widget.ArrayAdapter adapter = new android.widget.ArrayAdapter(
+        activity, 
+        android.R.layout.simple_spinner_item, 
+        options
+    );
+    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+    
+    android.widget.Spinner spinner = new android.widget.Spinner(activity);
+    spinner.setAdapter(adapter);
+    spinner.setPadding(10, 10, 10, 10);
+    
+    android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+    gd.setColor(android.graphics.Color.parseColor("#F3F4F6"));
+    gd.setCornerRadius(12);
+    spinner.setBackground(gd);
+    parent.addView(spinner);
+    
+    int selectedIndex = 1; // 默认 10 条
+    try {
+        int limit = Integer.parseInt(currentLimit.trim());
+        if (limit == 5) selectedIndex = 0;
+        else if (limit == 10) selectedIndex = 1;
+        else if (limit == 15) selectedIndex = 2;
+        else if (limit == 20) selectedIndex = 3;
+        else if (limit == 30) selectedIndex = 4;
+        else if (limit >= 9999) selectedIndex = 5;
+    } catch (Exception e) {}
+    spinner.setSelection(selectedIndex);
+    
+    return spinner;
+}
+
 /**
  * 辅助生成专用于自定义尺寸的手动输入框
  */
@@ -1056,6 +1276,41 @@ android.widget.Spinner addAspectSelector(final android.app.Activity activity, an
     });
     
     return spinner;
+}
+
+/**
+ * 辅助方法：从 JSON 报错信息中提取具体错误描述
+ */
+String extractErrorMessage(String rawJson, int responseCode) {
+    try {
+        if (rawJson == null || rawJson.trim().isEmpty()) {
+            return "HTTP 状态码 " + responseCode;
+        }
+        JSONObject obj = new JSONObject(rawJson);
+        if (obj.has("error")) {
+            Object errObj = obj.get("error");
+            if (errObj instanceof JSONObject) {
+                JSONObject errJson = (JSONObject) errObj;
+                if (errJson.has("message")) {
+                    return errJson.getString("message");
+                }
+            } else if (errObj instanceof String) {
+                return (String) errObj;
+            }
+        }
+        if (obj.has("message")) {
+            return obj.getString("message");
+        }
+    } catch (Throwable e) {
+        if (rawJson.length() > 150) {
+            return rawJson.substring(0, 150) + "...";
+        }
+        return rawJson;
+    }
+    if (rawJson.length() > 150) {
+        return rawJson.substring(0, 150) + "...";
+    }
+    return rawJson;
 }
 
 /**
@@ -1159,6 +1414,23 @@ String callUnifiedApi(String prompt, String apiBaseUrl, String apiKey, String mo
                 genConfig.put("imageConfig", imgConfig);
                 
                 payload.put("generationConfig", genConfig);
+                
+                // 注入最高的安全阈值豁免，防御误判拦截 (MALFORMED_FUNCTION_CALL/Safety Blocks)
+                JSONArray safetySettings = new JSONArray();
+                String[] categories = new String[]{
+                    "HARM_CATEGORY_HARASSMENT",
+                    "HARM_CATEGORY_HATE_SPEECH",
+                    "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "HARM_CATEGORY_CIVIC_INTEGRITY"
+                };
+                for (int i = 0; i < categories.length; i++) {
+                    JSONObject setting = new JSONObject();
+                    setting.put("category", categories[i]);
+                    setting.put("threshold", "BLOCK_NONE");
+                    safetySettings.put(setting);
+                }
+                payload.put("safetySettings", safetySettings);
             } else {
                 // 构建 Google v1beta predict (Imagen) 负荷
                 JSONArray instances = new JSONArray();
@@ -1215,12 +1487,15 @@ String callUnifiedApi(String prompt, String apiBaseUrl, String apiKey, String mo
                     err.append(line);
                 }
                 br.close();
-                log("[AI智能绘图] Gemini/Imagen 报错 (" + responseCode + "): " + err.toString());
+                String errStr = err.toString();
+                log("[AI智能绘图] Gemini/Imagen 报错 (" + responseCode + "): " + errStr);
+                String errMsg = extractErrorMessage(errStr, responseCode);
+                throw new Exception(errMsg);
             }
         } catch (Exception e) {
             log("[AI智能绘图] Gemini/Imagen 请求异常: " + e.getMessage());
+            throw e;
         }
-        return null;
     }
     
     // -------------------------------------------------------------
@@ -1467,6 +1742,8 @@ String callImageGenApi(String prompt, String apiBaseUrl, String apiKey, String m
             JSONArray dataArray = respObj.getJSONArray("data");
             if (dataArray.length() > 0) {
                 return "url:" + dataArray.getJSONObject(0).getString("url");
+            } else {
+                throw new Exception("接口未返回有效的图片数据。");
             }
         } else {
             BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), "UTF-8"));
@@ -1476,12 +1753,15 @@ String callImageGenApi(String prompt, String apiBaseUrl, String apiKey, String m
                 err.append(line);
             }
             br.close();
-            log("[AI智能绘图] API 报错 (" + responseCode + "): " + err.toString());
+            String errStr = err.toString();
+            log("[AI智能绘图] API 报错 (" + responseCode + "): " + errStr);
+            String errMsg = extractErrorMessage(errStr, responseCode);
+            throw new Exception(errMsg);
         }
     } catch (Exception e) {
         log("[AI智能绘图] 网络请求异常: " + e.getMessage());
+        throw e;
     }
-    return null;
 }
 
 /**
@@ -1576,6 +1856,8 @@ String callImageEditApi(String localPath, String prompt, String apiBaseUrl, Stri
             JSONArray dataArray = respObj.getJSONArray("data");
             if (dataArray.length() > 0) {
                 return "url:" + dataArray.getJSONObject(0).getString("url");
+            } else {
+                throw new Exception("接口未返回有效的图片数据。");
             }
         } else {
             BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), "UTF-8"));
@@ -1585,12 +1867,15 @@ String callImageEditApi(String localPath, String prompt, String apiBaseUrl, Stri
                 err.append(line);
             }
             br.close();
-            log("[AI智能绘图] 变图 API 报错 (" + responseCode + "): " + err.toString());
+            String errStr = err.toString();
+            log("[AI智能绘图] 变图 API 报错 (" + responseCode + "): " + errStr);
+            String errMsg = extractErrorMessage(errStr, responseCode);
+            throw new Exception(errMsg);
         }
     } catch (Exception e) {
         log("[AI智能绘图] 变图请求异常: " + e.getMessage());
+        throw e;
     }
-    return null;
 }
 
 /**

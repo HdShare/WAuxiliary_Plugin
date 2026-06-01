@@ -1,0 +1,4 @@
+name=文字转语音
+author=小米线
+version=1.0
+desc=基于 Fish Audio API 的文字转语音插件，支持多音色选择

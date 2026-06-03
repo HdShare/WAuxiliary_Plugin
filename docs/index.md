@@ -6,6 +6,11 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: 文字转语音(1)
+    details: 作者 小米线
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%B0%8F%E7%B1%B3%E7%BA%BF%2FFishTTS&filename=%E6%96%87%E5%AD%97%E8%BD%AC%E8%AF%AD%E9%9F%B3_1
+    linkText: 更新于 20260603
+
   - title: 自定义通知配置版(1.3.6)
     details: 作者 SamrtinSinako & 。。 & 周杰伦
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FSamrtinSinako%2F%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88&filename=%E8%87%AA%E5%AE%9A%E4%B9%89%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E7%89%88_1.3.6

@@ -1,7 +1,15 @@
 {
-  "generatedAt": "2026-06-01",
-  "totalPlugins": 61,
+  "generatedAt": "2026-06-03",
+  "totalPlugins": 62,
   "plugins": [
+    {
+      "name": "文字转语音",
+      "author": "小米线",
+      "version": 1,
+      "updateTime": 20260603,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/小米线/FishTTS",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%B0%8F%E7%B1%B3%E7%BA%BF%2FFishTTS&filename=%E6%96%87%E5%AD%97%E8%BD%AC%E8%AF%AD%E9%9F%B3_1"
+    },
     {
       "name": "自定义通知配置版",
       "author": "SamrtinSinako & 。。 & 周杰伦",

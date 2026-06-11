@@ -6,6 +6,11 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: 微信平板模式(1.0.0)
+    details: 作者 叶昕蓝yu
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%8F%B6%E6%98%95%E8%93%9Dyu%2Fwechat_pad_mode&filename=%E5%BE%AE%E4%BF%A1%E5%B9%B3%E6%9D%BF%E6%A8%A1%E5%BC%8F_1.0.0
+    linkText: 更新于 20260611
+
   - title: 文字转语音(1)
     details: 作者 小米线
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%B0%8F%E7%B1%B3%E7%BA%BF%2FFishTTS&filename=%E6%96%87%E5%AD%97%E8%BD%AC%E8%AF%AD%E9%9F%B3_1

@@ -1,7 +1,15 @@
 {
-  "generatedAt": "2026-06-03",
-  "totalPlugins": 62,
+  "generatedAt": "2026-06-11",
+  "totalPlugins": 63,
   "plugins": [
+    {
+      "name": "微信平板模式",
+      "author": "叶昕蓝yu",
+      "version": "1.0.0",
+      "updateTime": 20260611,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/叶昕蓝yu/wechat_pad_mode",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%8F%B6%E6%98%95%E8%93%9Dyu%2Fwechat_pad_mode&filename=%E5%BE%AE%E4%BF%A1%E5%B9%B3%E6%9D%BF%E6%A8%A1%E5%BC%8F_1.0.0"
+    },
     {
       "name": "文字转语音",
       "author": "小米线",

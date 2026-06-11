@@ -1,7 +1,4 @@
-id=wechat_pad_mode
-name=微信平板模式
-author=叶昕蓝yu
-version=1.0.0
-description=强制微信以平板模式运行
-minWAuxVer=1.0.0
-updateTime=20260611
+name = 微信平板模式
+author = 叶昕蓝yu
+version = 1.0.0
+updateTime = 20260611

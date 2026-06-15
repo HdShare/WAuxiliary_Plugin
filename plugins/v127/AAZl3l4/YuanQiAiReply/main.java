@@ -809,7 +809,7 @@ void showApiKeyDialog(final Activity activity) {
 
     int currentSpeed = getVoiceSpeed();
     final int[] selectedSign = {currentSpeed >= 0 ? 1 : 0};
-    
+
     final TextView[] signChips = new TextView[2];
     for (int i = 0; i < 2; i++) {
         TextView signChip = new TextView(activity);
@@ -852,7 +852,7 @@ void showApiKeyDialog(final Activity activity) {
     speedInputParams.leftMargin = dp(8);
     speedInput.setLayoutParams(speedInputParams);
     voiceSpeedRow.addView(speedInput);
-    
+
     voiceSpeedCard.addView(voiceSpeedRow);
     content.addView(voiceSpeedCard);
 
@@ -891,6 +891,165 @@ void showApiKeyDialog(final Activity activity) {
     errorReplyInput.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     errorCard.addView(errorReplyInput);
     content.addView(errorCard);
+
+    // 先定义黑白名单卡片（初始不可见由模式决定）
+    final String currentFilterMode = getFilterMode();
+
+    final LinearLayout blacklistCard = new LinearLayout(activity);
+    blacklistCard.setOrientation(LinearLayout.VERTICAL);
+    blacklistCard.setBackground(createCardBg(activity));
+    blacklistCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+    LinearLayout.LayoutParams cardParamsBl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    cardParamsBl.bottomMargin = dp(12);
+    blacklistCard.setLayoutParams(cardParamsBl);
+    if (!"blacklist".equals(currentFilterMode)) {
+        blacklistCard.setVisibility(View.GONE);
+    }
+
+    TextView blacklistLabel = new TextView(activity);
+    blacklistLabel.setText("黑名单微信号");
+    blacklistLabel.setTextSize(12);
+    blacklistLabel.setTextColor(TEXT_SUB);
+    blacklistCard.addView(blacklistLabel);
+
+    TextView blacklistHint = new TextView(activity);
+    blacklistHint.setText("用逗号、空格或换行分隔，这些微信号无法触发AI回复");
+    blacklistHint.setTextSize(10);
+    blacklistHint.setTextColor(TEXT_HINT);
+    blacklistHint.setPadding(0, dp(4), 0, dp(8));
+    blacklistCard.addView(blacklistHint);
+
+    final EditText blacklistInput = new EditText(activity);
+    blacklistInput.setText(getBlacklistUins());
+    blacklistInput.setTextColor(TEXT_MAIN);
+    blacklistInput.setHint("例如：wxid_xxx, wxid_yyy");
+    blacklistInput.setHintTextColor(TEXT_HINT);
+    blacklistInput.setBackground(createInputBg(activity));
+    blacklistInput.setPadding(dp(16), dp(12), dp(16), dp(12));
+    blacklistInput.setFocusable(true);
+    blacklistInput.setFocusableInTouchMode(true);
+    blacklistInput.setClickable(true);
+    blacklistInput.setLongClickable(true);
+    blacklistInput.setMinLines(2);
+    blacklistInput.setGravity(Gravity.TOP | Gravity.START);
+    blacklistInput.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    blacklistCard.addView(blacklistInput);
+
+    final LinearLayout whitelistCard = new LinearLayout(activity);
+    whitelistCard.setOrientation(LinearLayout.VERTICAL);
+    whitelistCard.setBackground(createCardBg(activity));
+    whitelistCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+    LinearLayout.LayoutParams cardParamsWl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    cardParamsWl.bottomMargin = dp(12);
+    whitelistCard.setLayoutParams(cardParamsWl);
+    if (!"whitelist".equals(currentFilterMode)) {
+        whitelistCard.setVisibility(View.GONE);
+    }
+
+    TextView whitelistLabel = new TextView(activity);
+    whitelistLabel.setText("白名单微信号");
+    whitelistLabel.setTextSize(12);
+    whitelistLabel.setTextColor(TEXT_SUB);
+    whitelistCard.addView(whitelistLabel);
+
+    TextView whitelistHint = new TextView(activity);
+    whitelistHint.setText("用逗号、空格或换行分隔，开启后仅这些微信号能触发AI");
+    whitelistHint.setTextSize(10);
+    whitelistHint.setTextColor(TEXT_HINT);
+    whitelistHint.setPadding(0, dp(4), 0, dp(8));
+    whitelistCard.addView(whitelistHint);
+
+    final EditText whitelistInput = new EditText(activity);
+    whitelistInput.setText(getWhitelistUins());
+    whitelistInput.setTextColor(TEXT_MAIN);
+    whitelistInput.setHint("例如：wxid_xxx, wxid_yyy");
+    whitelistInput.setHintTextColor(TEXT_HINT);
+    whitelistInput.setBackground(createInputBg(activity));
+    whitelistInput.setPadding(dp(16), dp(12), dp(16), dp(12));
+    whitelistInput.setFocusable(true);
+    whitelistInput.setFocusableInTouchMode(true);
+    whitelistInput.setClickable(true);
+    whitelistInput.setLongClickable(true);
+    whitelistInput.setMinLines(2);
+    whitelistInput.setGravity(Gravity.TOP | Gravity.START);
+    whitelistInput.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    whitelistCard.addView(whitelistInput);
+
+    // 用户过滤模式选择卡片
+    LinearLayout filterModeCard = new LinearLayout(activity);
+    filterModeCard.setOrientation(LinearLayout.VERTICAL);
+    filterModeCard.setBackground(createCardBg(activity));
+    filterModeCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+    LinearLayout.LayoutParams cardParamsFm = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    cardParamsFm.bottomMargin = dp(12);
+    filterModeCard.setLayoutParams(cardParamsFm);
+
+    TextView filterModeLabel = new TextView(activity);
+    filterModeLabel.setText("用户过滤模式");
+    filterModeLabel.setTextSize(12);
+    filterModeLabel.setTextColor(TEXT_SUB);
+    filterModeCard.addView(filterModeLabel);
+
+    TextView filterModeHint = new TextView(activity);
+    filterModeHint.setText("关闭：不启用过滤；黑名单：仅黑名单生效；白名单：仅白名单生效\n提示：需开启WA的「显示联系详情」功能才能获取wxid");
+    filterModeHint.setTextSize(10);
+    filterModeHint.setTextColor(TEXT_HINT);
+    filterModeHint.setPadding(0, dp(4), 0, dp(8));
+    filterModeCard.addView(filterModeHint);
+
+    LinearLayout filterModeRow = new LinearLayout(activity);
+    filterModeRow.setOrientation(LinearLayout.HORIZONTAL);
+    filterModeRow.setPadding(0, dp(4), 0, 0);
+
+    final String[] filterModes = {"off", "blacklist", "whitelist"};
+    final String[] filterModeLabels = {"关闭", "黑名单", "白名单"};
+    final int[] selectedFilterModeIdx = {0};
+    for (int i = 0; i < filterModes.length; i++) {
+        if (filterModes[i].equals(currentFilterMode)) {
+            selectedFilterModeIdx[0] = i;
+            break;
+        }
+    }
+
+    final TextView[] filterModeChips = new TextView[3];
+    for (int i = 0; i < 3; i++) {
+        TextView chip = new TextView(activity);
+        chip.setText(filterModeLabels[i]);
+        chip.setTextSize(11);
+        chip.setTextColor(i == selectedFilterModeIdx[0] ? TEXT_MAIN : TEXT_SUB);
+        chip.setBackground(createChipBg(activity, i == selectedFilterModeIdx[0]));
+        chip.setPadding(dp(12), dp(8), dp(12), dp(8));
+        chip.setTag(Integer.valueOf(i));
+        LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        if (i > 0) chipParams.leftMargin = dp(6);
+        chip.setLayoutParams(chipParams);
+        chip.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                int idx = ((Integer) v.getTag()).intValue();
+                selectedFilterModeIdx[0] = idx;
+                for (int j = 0; j < 3; j++) {
+                    filterModeChips[j].setTextColor(j == idx ? TEXT_MAIN : TEXT_SUB);
+                    filterModeChips[j].setBackground(createChipBg(activity, j == idx));
+                }
+                if (idx == 0) {
+                    blacklistCard.setVisibility(View.GONE);
+                    whitelistCard.setVisibility(View.GONE);
+                } else if (idx == 1) {
+                    blacklistCard.setVisibility(View.VISIBLE);
+                    whitelistCard.setVisibility(View.GONE);
+                } else {
+                    blacklistCard.setVisibility(View.GONE);
+                    whitelistCard.setVisibility(View.VISIBLE);
+                }
+            }
+        });
+        filterModeChips[i] = chip;
+        filterModeRow.addView(chip);
+    }
+    filterModeCard.addView(filterModeRow);
+    content.addView(filterModeCard);
+    content.addView(blacklistCard);
+    content.addView(whitelistCard);
 
     LinearLayout defaultOnlyCard = new LinearLayout(activity);
     defaultOnlyCard.setOrientation(LinearLayout.VERTICAL);
@@ -1144,7 +1303,7 @@ void showApiKeyDialog(final Activity activity) {
             putString("error_reply", errorReply);
             putInt("context_rounds", contextRounds);
             putInt("pai_cooldown", cooldown);
-            
+
             String speedStr = speedInput.getText().toString().trim();
             int speedValue = 5;
             try {
@@ -1154,7 +1313,13 @@ void showApiKeyDialog(final Activity activity) {
             if (speedValue > 100) speedValue = 100;
             int finalSpeed = selectedSign[0] == 0 ? -speedValue : speedValue;
             setVoiceSpeed(finalSpeed);
-            
+
+            String blacklistUins = blacklistInput.getText().toString().trim();
+            String whitelistUins = whitelistInput.getText().toString().trim();
+            putString("blacklist_uins", blacklistUins);
+            putString("whitelist_uins", whitelistUins);
+            putString("filter_mode", filterModes[selectedFilterModeIdx[0]]);
+
             toast("设置已保存");
             dialog.dismiss();
         }
@@ -1412,6 +1577,11 @@ void onHandleMsg(Object msgInfoBean) {
 
         if (!isScopeEnabled(scopeKey)) return;
 
+        // 黑白名单过滤
+        if (!isUserAllowed(sender)) {
+            return;
+        }
+
         if (isSend) {
             if (isPrivateChat) return;
             if (!isReplySelf(scopeKey)) return;
@@ -1487,7 +1657,7 @@ void onHandleMsg(Object msgInfoBean) {
                 sendText(talker, reply);
             }
         }
-        
+
         if (isStickerReply(scopeKey) && !isEmpty(stickerUrl)) {
             try {
                 String localPath = downloadImage(stickerUrl);
@@ -1519,6 +1689,12 @@ void handlePatMessage(Object msgInfoBean) {
         String scopeKey = isGroupChat ? "group_" + talker : "private_" + fromUser;
 
         if (!isScopeEnabled(scopeKey)) return;
+
+        // 黑白名单过滤
+        if (!isUserAllowed(fromUser)) {
+            return;
+        }
+
         if (!isPaiReply(scopeKey)) return;
         if (!canPaiReply(scopeKey)) return;
 
@@ -1553,39 +1729,39 @@ void handlePatMessage(Object msgInfoBean) {
 
 String downloadImage(String urlStr) {
     if (isEmpty(urlStr)) return null;
-    
+
     urlStr = urlStr.trim();
     if (urlStr.startsWith("`") && urlStr.endsWith("`")) {
         urlStr = urlStr.substring(1, urlStr.length() - 1).trim();
     }
-    
+
     try {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setConnectTimeout(10000);
         conn.setReadTimeout(10000);
         conn.setRequestMethod("GET");
-        
+
         if (conn.getResponseCode() != 200) {
             return null;
         }
-        
+
         String fileName = "sticker_" + System.currentTimeMillis() + ".jpg";
         String savePath = pluginDir + "/" + fileName;
-        
+
         InputStream is = conn.getInputStream();
         FileOutputStream fos = new FileOutputStream(savePath);
-        
+
         byte[] buffer = new byte[4096];
         int len;
         while ((len = is.read(buffer)) != -1) {
             fos.write(buffer, 0, len);
         }
-        
+
         fos.close();
         is.close();
         conn.disconnect();
-        
+
         return savePath;
     } catch (Throwable e) {
         return null;
@@ -1608,7 +1784,7 @@ void sendImageAndDelete(String talker, String imagePath) {
         } else {
             sendImage(talker, imagePath);
         }
-        
+
         new Thread(new Runnable() {
             public void run() {
                 try {
@@ -1682,7 +1858,7 @@ String callAI(String message, String imageUrl, String sender) {
 class AIResponse {
     String text;
     String stickerUrl;
-    
+
     AIResponse(String text, String stickerUrl) {
         this.text = text;
         this.stickerUrl = stickerUrl;
@@ -1736,10 +1912,10 @@ AIResponse callAIWithSticker(String message, String imageUrl, String sender, Str
 
         Object dataObj = json.opt("data");
         if (dataObj == null) return null;
-        
+
         String text = null;
         String stickerUrl = null;
-        
+
         if (dataObj instanceof String) {
             text = (String) dataObj;
         } else if (dataObj instanceof JSONObject) {
@@ -1755,7 +1931,7 @@ AIResponse callAIWithSticker(String message, String imageUrl, String sender, Str
         } else {
             text = dataObj.toString();
         }
-        
+
         return new AIResponse(text, stickerUrl);
 
     } catch (Throwable e) {
@@ -1781,6 +1957,66 @@ String getApiKey() {
 
 String getErrorReply() {
     return getString("error_reply", "");
+}
+
+// ==================== 黑名单/白名单工具函数 ====================
+
+String[] parseUinList(String raw) {
+    if (isEmpty(raw)) return new String[0];
+    return raw.split("[,，\\n\\s]+");
+}
+
+boolean isUserInBlacklist(String uin) {
+    if (isEmpty(uin)) return false;
+    String blacklist = getString("blacklist_uins", "");
+    if (isEmpty(blacklist)) return false;
+    for (int i = 0; i < parseUinList(blacklist).length; i++) {
+        String item = parseUinList(blacklist)[i];
+        if (item.trim().equals(uin)) return true;
+    }
+    return false;
+}
+
+boolean isUserInWhitelistStrict(String uin) {
+    if (isEmpty(uin)) return false;
+    String whitelist = getString("whitelist_uins", "");
+    if (isEmpty(whitelist)) return false;
+    for (int i = 0; i < parseUinList(whitelist).length; i++) {
+        String item = parseUinList(whitelist)[i];
+        if (item.trim().equals(uin)) return true;
+    }
+    return false;
+}
+
+String getFilterMode() {
+    String mode = getString("filter_mode", "off");
+    if ("blacklist".equals(mode) || "whitelist".equals(mode)) {
+        return mode;
+    }
+    return "off";
+}
+
+boolean isUserAllowed(String uin) {
+    if (isEmpty(uin)) return false;
+    String mode = getFilterMode();
+    if ("off".equals(mode)) {
+        return true;
+    }
+    if ("blacklist".equals(mode)) {
+        return !isUserInBlacklist(uin);
+    }
+    if ("whitelist".equals(mode)) {
+        return isUserInWhitelistStrict(uin);
+    }
+    return true;
+}
+
+String getBlacklistUins() {
+    return getString("blacklist_uins", "");
+}
+
+String getWhitelistUins() {
+    return getString("whitelist_uins", "");
 }
 
 int getContextRounds() {
@@ -2002,42 +2238,42 @@ String downloadTtsVoice(String text, String voiceModel) {
         String encodedText = java.net.URLEncoder.encode(text, "UTF-8");
         String speedParam = getVoiceSpeedParam();
         String ttsUrl = "https://91yq.top/tts?text=" + encodedText + "&voice=" + voiceModel + "&rate=" + speedParam;
-        
+
         String mp3Path = pluginDir + "/tts_" + System.currentTimeMillis() + ".mp3";
-        
+
         HttpURLConnection conn = null;
         InputStream inputStream = null;
         java.io.FileOutputStream fos = null;
-        
+
         try {
             URL url = new URL(ttsUrl);
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(30000);
             conn.setReadTimeout(60000);
-            
+
             int responseCode = conn.getResponseCode();
             if (responseCode != 200) {
                 log("TTS响应码: " + responseCode);
                 return null;
             }
-            
+
             String contentType = conn.getContentType();
             if (contentType == null || !contentType.contains("audio")) {
                 log("TTS非音频响应: " + contentType);
                 return null;
             }
-            
+
             inputStream = conn.getInputStream();
             fos = new java.io.FileOutputStream(mp3Path);
-            
+
             byte[] buffer = new byte[4096];
             int len;
             while ((len = inputStream.read(buffer)) != -1) {
                 fos.write(buffer, 0, len);
             }
             fos.flush();
-            
+
             String silkPath = cacheDir + "/tts_" + System.currentTimeMillis() + ".silk";
             int convertCode = mp3ToSilk(mp3Path, silkPath);
             java.io.File silkFile = new java.io.File(silkPath);
@@ -2048,11 +2284,11 @@ String downloadTtsVoice(String text, String voiceModel) {
                 log("TTS转换异常: " + convertCode);
                 return null;
             }
-            
+
             try {
                 new java.io.File(mp3Path).delete();
             } catch (Throwable ignore) {}
-            
+
             return silkPath;
         } finally {
             if (inputStream != null) try { inputStream.close(); } catch (Throwable ignore) {}
@@ -2081,7 +2317,7 @@ void sendVoiceAndDelete(String talker, String silkPath) {
         } else {
             sendVoice(talker, silkPath);
         }
-        
+
         new Thread(new Runnable() {
             public void run() {
                 try {
@@ -2100,18 +2336,18 @@ boolean trySendVoiceReply(String scopeKey, String talker, String text) {
     if ("off".equals(voiceSetting)) {
         return false;
     }
-    
+
     if (!canVoiceReply(scopeKey)) {
         return false;
     }
-    
+
     String voiceModel = "male".equals(voiceSetting) ? "zh-CN-YunxiNeural" : "zh-CN-XiaoxiaoNeural";
-    
+
     String silkPath = downloadTtsVoice(text, voiceModel);
     if (silkPath == null) {
         return false;
     }
-    
+
     updateVoiceReplyTime(scopeKey);
     sendVoiceAndDelete(talker, silkPath);
     return true;

@@ -4,22 +4,80 @@
 本文档适用于 WAuxiliary 最新版本
 :::
 
-## 执行
+## 新手先看
+
+- 这组方法是杂项能力集合，包含日志、提示、延迟执行、导入额外文件等。
+- 最常用的是 `log(...)`、`toast(...)`、`delay(...)`。
+- `loadJava`、`loadDex`、`loadJar` 偏进阶，普通插件通常用不到。
+
+## 执行代码
+
+在当前插件运行时内继续执行一段脚本代码。
 
 ```beanshell
 void eval(String code);
 ```
 
-## 导入Java
+## 示例
+
+```beanshell
+eval("log(\"hello from eval\")");
+```
+
+## 导入 Java 源文件
 
 ```beanshell
 void loadJava(String path);
 ```
 
-## 导入Dex
+- `path`：支持绝对路径；相对路径默认相对于当前插件目录，也就是 `pluginDir`
+
+## 编译脚本快照
+
+将指定脚本编译为快照文件，便于后续用 `evalSnapshot(...)` 加载执行。
+
+```beanshell
+void compileSnapshot(String path);
+```
+
+- `path`：支持绝对路径；相对路径默认相对于当前插件目录，也就是 `pluginDir`
+- 输出文件名默认是 `path + ".bshs"`
+
+## 执行脚本快照
+
+```beanshell
+void evalSnapshot(String path);
+
+void evalSnapshot(InputStream input);
+```
+
+- `path`：快照文件路径，支持绝对路径；相对路径默认相对于当前插件目录
+- `input`：快照文件输入流
+
+## 导入 Dex
 
 ```beanshell
 void loadDex(String path);
+```
+
+- `path`：支持绝对路径；相对路径默认相对于当前插件目录，也就是 `pluginDir`
+
+## 导入 Jar
+
+```beanshell
+void loadJar(String path);
+```
+
+- `path`：支持绝对路径；相对路径默认相对于当前插件目录，也就是 `pluginDir`
+
+## 示例
+
+```beanshell
+loadJar("libs/demo.jar");
+loadDex("libs/bridge.dex");
+loadJava("extra/Main.java");
+compileSnapshot("extra/Main.java");
+evalSnapshot("extra/Main.java.bshs");
 ```
 
 ## 日志
@@ -28,16 +86,46 @@ void loadDex(String path);
 void log(Object msg);
 ```
 
-## 延迟
+- 输出调试日志到插件日志区域
+
+## 重新加载插件
 
 ```beanshell
-void delay(long millis, Runnable action);
+boolean reloadPlugin();
 ```
+
+- 返回值：重新加载是否成功
 
 ## 提示
 
 ```beanshell
 void toast(String text);
+```
+
+- 会自动带上当前插件 ID 前缀
+
+## 示例
+
+```beanshell
+toast("执行成功");
+log("done");
+```
+
+## 延迟执行
+
+```beanshell
+void delay(long millis, Runnable action);
+```
+
+- `millis`：延迟毫秒数
+- `action`：延迟后执行的回调
+
+## 示例
+
+```beanshell
+delay(3000, () -> {
+    toast("3 秒后执行");
+});
 ```
 
 ## 通知
@@ -46,14 +134,20 @@ void toast(String text);
 void notify(String title, String text);
 ```
 
-## 取顶部Activity
+- 系统通知标题会自动带上当前插件 ID 前缀
+
+## 取顶部 Activity
 
 ```beanshell
 Activity getTopActivity();
 ```
+
+- 返回值：当前顶部 `Activity`，取不到时为 `null`
 
 ## 上传设备步数
 
 ```beanshell
 void uploadDeviceStep(long step);
 ```
+
+- `step`：要上传的步数

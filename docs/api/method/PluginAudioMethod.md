@@ -4,44 +4,70 @@
 本文档适用于 WAuxiliary 最新版本
 :::
 
-## mp3 到 Silk 文件
+## 新手先看
+
+- 音频转换最常见用途是“把普通音频转成可发送的语音文件”。
+- 路径参数都要求是本地文件路径。
+- 生成的临时文件通常建议放在 `cacheDir`。
+
+## mp3 转 Silk
+
+将 MP3 音频转换为微信语音常用的 Silk 格式。
 
 ```beanshell
-File mp3ToSilkFile(String mp3Path);
+int mp3ToSilk(String mp3Path, String silkPath);
+
+int mp3ToSilk(String mp3Path, String silkPath, int hz);
 ```
 
-## mp3 到 Silk 路径
+- `mp3Path`：源 MP3 文件路径
+- `silkPath`：输出 Silk 文件路径
+- `hz`：采样率，默认 `24000`
+- 返回值：转换结果码，通常 `0` 表示成功
+
+## 示例
 
 ```beanshell
-String mp3ToSilkPath(String mp3Path);
+int code = mp3ToSilk("/sdcard/test.mp3", cacheDir + "/test.silk");
+log("convert result = " + code);
 ```
 
-## mp3 到 Silk
+## Silk 转 mp3
+
+将 Silk 语音转换为 MP3 文件，便于外部播放器或后续处理。
 
 ```beanshell
-void mp3ToSilk(String mp3Path, String silkPath);
+int silkToMp3(String silkPath, String mp3Path);
+
+int silkToMp3(String silkPath, String mp3Path, int hz);
 ```
 
-## silk 到 Mp3 文件
+- `silkPath`：源 Silk 文件路径
+- `mp3Path`：输出 MP3 文件路径
+- `hz`：采样率，默认 `24000`
+- 返回值：转换结果码，通常 `0` 表示成功
+
+## 示例
 
 ```beanshell
-File silkToMp3File(String silkPath);
+int code = silkToMp3(cacheDir + "/voice.silk", cacheDir + "/voice.mp3");
+log("convert result = " + code);
 ```
 
-## silk 到 Mp3 路径
+## 取音频时长
+
+返回音频文件时长，单位为毫秒。
 
 ```beanshell
-String silkToMp3Path(String silkPath);
+long getDuration(String filePath);
 ```
 
-## silk 到 Mp3
+- `filePath`：音频文件路径
+- 返回值：音频时长，单位毫秒
+
+## 示例
 
 ```beanshell
-void silkToMp3(String silkPath, String mp3Path);
-```
-
-## 取 silk 毫秒时长
-
-```beanshell
-void getSilkDuration(String silkPath);
+long duration = getDuration(cacheDir + "/voice.mp3");
+log("duration = " + duration + " ms");
 ```

@@ -28,7 +28,7 @@ WeChat Auxiliary Plugin
 
 <p align="center">
     <a href="https://github.com/HdShare/WAuxiliary_Plugin/graphs/contributors">
-        <img src="https://contrib.rocks/image?repo=HdShare/WAuxiliary_Plugin&columns=20"/>
+        <img src="https://contrib.rocks/image?repo=HdShare/WAuxiliary_Plugin&columns=16"/>
     </a>
 </p>
 

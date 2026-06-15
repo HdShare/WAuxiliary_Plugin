@@ -2038,7 +2038,16 @@ String downloadTtsVoice(String text, String voiceModel) {
             }
             fos.flush();
             
-            String silkPath = mp3ToSilkPath(mp3Path);
+            String silkPath = cacheDir + "/tts_" + System.currentTimeMillis() + ".silk";
+            int convertCode = mp3ToSilk(mp3Path, silkPath);
+            java.io.File silkFile = new java.io.File(silkPath);
+            if (convertCode != 0 || !silkFile.exists() || silkFile.length() <= 0) {
+                try {
+                    new java.io.File(mp3Path).delete();
+                } catch (Throwable ignore) {}
+                log("TTS转换异常: " + convertCode);
+                return null;
+            }
             
             try {
                 new java.io.File(mp3Path).delete();

@@ -48,8 +48,8 @@ function toSafeFileName(value) {
 
 function getPluginInfo(pluginPath) {
     const rel = path.relative(repoRoot, pluginPath).replace(/\\/g, '/');
-    const homeLink = `https://github.com/HdShare/WAuxiliary_Plugin/tree/main/${rel}`;
-    const encodedHomeLink = encodeURIComponent(homeLink);
+    const link = `https://github.com/HdShare/WAuxiliary_Plugin/tree/main/${rel}`;
+    const encodedHomeLink = encodeURIComponent(link);
     const props = parseInfoProp(path.join(pluginPath, 'info.prop'));
     const fileName = toSafeFileName(`${props.name}_${props.version}`);
     const encodedFileName = encodeURIComponent(fileName);
@@ -58,7 +58,7 @@ function getPluginInfo(pluginPath) {
         author: props.author,
         version: props.version,
         updateTime: props.updateTime,
-        homeLink: homeLink,
+        homeLink: link,
         downloadUrl: `https://download-directory.github.io/?url=${encodedHomeLink}&filename=${encodedFileName}`,
     };
 }
@@ -75,17 +75,13 @@ function traversePlugins(pluginDir) {
             })
             .filter(Boolean);
     });
-    return plugins.sort((a, b) => {
-        const timeA = parseInt(a.updateTime);
-        const timeB = parseInt(b.updateTime);
-        return timeB - timeA;
-    });
+    return plugins.sort((a, b) => parseInt(b.updateTime) - parseInt(a.updateTime));
 }
 
 function generateMarkdown(plugins) {
     let md = `---\nlayout: home\n\nhero:\n  name: "WAuxiliary Plugin"\n  text: "WAuxiliary 插件"\n\nfeatures:\n`;
     plugins.forEach(plugin => {
-        md += `  - title: ${plugin.name}@${plugin.author}\n    details: 版本 ${plugin.version} | 更新于 ${plugin.updateTime}\n    link: ${plugin.downloadUrl}\n\n`;
+        md += `  - title: ${plugin.name}(${plugin.version})\n    details: 作者 ${plugin.author}\n    link: ${plugin.downloadUrl}\n    linkText: 更新于 ${plugin.updateTime}\n\n`;
     });
     return md;
 }

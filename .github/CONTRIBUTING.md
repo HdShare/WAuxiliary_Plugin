@@ -4,7 +4,7 @@
 
 ## 添加插件
 
-1. 在 plugins/v126 下新建 作者名(如：Hd)
+1. 在 plugins/v127 下新建 作者名(如：Hd)
 2. 在 作者名(如：Hd) 下新建 插件名(如：DemoPlugin)
 3. 在 插件名(如：DemoPlugin) 下新建 info.prop、 main.java、readme.md 三个文件
 4. 为 info.prop、 main.java、readme.md 三个文件添加内容

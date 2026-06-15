@@ -748,8 +748,10 @@ boolean onClickSendBtn(String text) {
         download(apiUrl, mp3Path, null, file -> {
             if (file != null && file.exists() && file.length() > 0) {
                 // 使用 WAuxiliary 插件提供的 MP3 → SILK 转换方法
-                File silkFile = mp3ToSilkFile(mp3Path);
-                if (silkFile != null && silkFile.exists() && silkFile.length() > 0) {
+                String silkPath = cacheDir + "/voice_" + System.currentTimeMillis() + ".silk";
+                int convertCode = mp3ToSilk(mp3Path, silkPath);
+                File silkFile = new File(silkPath);
+                if (convertCode == 0 && silkFile.exists() && silkFile.length() > 0) {
                     var talker = getTargetTalker();
                     sendVoice(talker, silkFile.getAbsolutePath());
                     // 转换后的 SILK 文件在发送后可以删除（插件会自动清理或手动）

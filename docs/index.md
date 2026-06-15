@@ -6,6 +6,11 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: 元启Ai回复(2.2)
+    details: 作者 神明佑我
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FAAZl3l4%2FYuanQiAiReply&filename=%E5%85%83%E5%90%AFAi%E5%9B%9E%E5%A4%8D_2.2
+    linkText: 更新于 20260615
+
   - title: 微信平板模式(1.0.0)
     details: 作者 叶昕蓝yu
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%8F%B6%E6%98%95%E8%93%9Dyu%2Fwechat_pad_mode&filename=%E5%BE%AE%E4%BF%A1%E5%B9%B3%E6%9D%BF%E6%A8%A1%E5%BC%8F_1.0.0
@@ -70,11 +75,6 @@ features:
     details: 作者 。。
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%88%86%E7%BB%84%E7%AE%A1%E7%90%86&filename=%E5%88%86%E7%BB%84%E7%AE%A1%E7%90%86_1.2.0
     linkText: 更新于 20260514
-
-  - title: 元启Ai回复(2.1)
-    details: 作者 神明佑我
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FAAZl3l4%2FYuanQiAiReply&filename=%E5%85%83%E5%90%AFAi%E5%9B%9E%E5%A4%8D_2.1
-    linkText: 更新于 20260508
 
   - title: 群管助手(1.0.0)
     details: 作者 Alickra

@@ -6,6 +6,11 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: AI聊天总结(1.2.1)
+    details: 作者 hjkl950217
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fhjkl950217%2Fai%E6%80%BB%E7%BB%93&filename=AI%E8%81%8A%E5%A4%A9%E6%80%BB%E7%BB%93_1.1.1
+    linkText: 更新于 20260625
+
   - title: 元启Ai回复(2.2)
     details: 作者 神明佑我
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FAAZl3l4%2FYuanQiAiReply&filename=%E5%85%83%E5%90%AFAi%E5%9B%9E%E5%A4%8D_2.2
@@ -106,6 +111,11 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%9D%A4%2FAI%E7%BB%98%E5%9B%BE%E5%8A%A9%E6%89%8B&filename=AI%E7%BB%98%E5%9B%BE%E5%8A%A9%E6%89%8B_1.0.0
     linkText: 更新于 20260428
 
+  - title: 抖音链接解析(1.0.2)
+    details: 作者 coderpwh
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fcoderpwh%2Fdouyin&filename=%E6%8A%96%E9%9F%B3%E9%93%BE%E6%8E%A5%E8%A7%A3%E6%9E%90_1.0.2
+    linkText: 更新于 20260427
+
   - title: ChatLab(1.0.0)
     details: 作者 Hd
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FChatLab&filename=ChatLab_1.0.0
@@ -114,11 +124,6 @@ features:
   - title: 表情合成(1.0.2)
     details: 作者 Kyo
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FKyo%2FEmojiKitchen&filename=%E8%A1%A8%E6%83%85%E5%90%88%E6%88%90_1.0.2
-    linkText: 更新于 20260427
-
-  - title: 抖音链接解析(1.0.2)
-    details: 作者 coderpwh
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fcoderpwh%2Fdouyin&filename=%E6%8A%96%E9%9F%B3%E9%93%BE%E6%8E%A5%E8%A7%A3%E6%9E%90_1.0.2
     linkText: 更新于 20260427
 
   - title: 摸头插件(1.0.2)
@@ -134,6 +139,16 @@ features:
   - title: 历史今天(1.0.2)
     details: 作者 Hd
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FHistoryToday&filename=%E5%8E%86%E5%8F%B2%E4%BB%8A%E5%A4%A9_1.0.2
+    linkText: 更新于 20260426
+
+  - title: 语录插件(1.0.2)
+    details: 作者 Hd
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2Fmsg-q&filename=%E8%AF%AD%E5%BD%95%E6%8F%92%E4%BB%B6_1.0.2
+    linkText: 更新于 20260426
+
+  - title: 语录Pro插件(1.0.2)
+    details: 作者 Hd
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2Fmsg-q-pro&filename=%E8%AF%AD%E5%BD%95Pro%E6%8F%92%E4%BB%B6_1.0.2
     linkText: 更新于 20260426
 
   - title: 点歌插件(1.0.2)
@@ -164,16 +179,6 @@ features:
   - title: 视频插件(1.0.2)
     details: 作者 Hd
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FVideoPlugin&filename=%E8%A7%86%E9%A2%91%E6%8F%92%E4%BB%B6_1.0.2
-    linkText: 更新于 20260426
-
-  - title: 语录插件(1.0.2)
-    details: 作者 Hd
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2Fmsg-q&filename=%E8%AF%AD%E5%BD%95%E6%8F%92%E4%BB%B6_1.0.2
-    linkText: 更新于 20260426
-
-  - title: 语录Pro插件(1.0.2)
-    details: 作者 Hd
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2Fmsg-q-pro&filename=%E8%AF%AD%E5%BD%95Pro%E6%8F%92%E4%BB%B6_1.0.2
     linkText: 更新于 20260426
 
   - title: 龙图(1.0.2)
@@ -320,4 +325,3 @@ features:
     details: 作者 晚药
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E6%B2%B9%E4%BB%B7%E6%9F%A5%E8%AF%A2&filename=%E6%B2%B9%E4%BB%B7%E5%AE%9E%E6%97%B6%E6%9F%A5%E8%AF%A2_1.0.0
     linkText: 更新于 2026520
-

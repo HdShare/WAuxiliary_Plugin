@@ -54,15 +54,18 @@ void sendVoice(String talker, String sendPath, int duration);
 sendVoice(getTargetTalker(), cacheDir + "/voice.silk", 3);
 ```
 
-## 发送图片消息
+## 发送图片消息/图片引用
 
 ```beanshell
 void sendImage(String talker, String sendPath);
+
+void sendImage(String talker, String sendPath, long msgId);
 
 void sendImage(String talker, String sendPath, String appId);
 ```
 
 - `sendPath`：本地图片路径
+- `msgId`：引用消息 ID
 - `appId`：应用标识
 
 ## 示例
@@ -79,13 +82,16 @@ void sendVideo(String talker, String sendPath);
 
 - `sendPath`：本地视频路径
 
-## 发送表情消息
+## 发送表情消息/表情引用
 
 ```beanshell
 void sendEmoji(String talker, String sendPath);
+
+void sendEmoji(String talker, String sendPath, long msgId);
 ```
 
 - `sendPath`：表情文件路径
+- `msgId`：引用消息 ID
 
 ## 发送拍一拍
 
@@ -145,19 +151,19 @@ void sendAppBrandMsg(String talker, String title, String pagePath, String ghName
 void sendNoteMsg(String talker, String content);
 ```
 
-## 发送引用消息
+## 发送文本引用
 
 ```beanshell
-void sendQuoteMsg(String talker, long msgId, String content);
+void sendQuoteMsg(String talker, String content, long msgId);
 ```
 
-- `msgId`：被引用消息 ID
+- `msgId`：引用消息 ID
 
 ## 示例
 
 ```beanshell
 long msgId = 123456L;
-sendQuoteMsg(getTargetTalker(), msgId, "这是引用回复");
+sendQuoteMsg(getTargetTalker(), "这是引用回复", msgId);
 ```
 
 ## 撤回指定消息
@@ -187,17 +193,18 @@ log("system msgId = " + msgId);
 ## 查询历史消息
 
 ```beanshell
-List<MsgInfoBean> queryHistoryMsg(String talker, long startTime, int count);
+List<MsgInfoBean> queryHistoryMsg(String talker, long startTime, boolean isAsc, int count);
 ```
 
 - `startTime`：起始时间戳
+- `isAsc`：是否按时间正序查询
 - `count`：查询条数
 - 返回值：历史消息列表
 
 ## 示例
 
 ```beanshell
-var list = queryHistoryMsg(getTargetTalker(), 0L, 10);
+var list = queryHistoryMsg(getTargetTalker(), 0L, true, 10);
 log("history size = " + list.size());
 ```
 

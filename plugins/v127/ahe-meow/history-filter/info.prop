@@ -1,0 +1,7 @@
+name = 历史消息过滤器
+author = ahe-meow
+version = 1.1.0
+desc = 支持按时间、关键词、发送者等条件筛选历史消息，支持图形化界面配置，支持图片下载和上下文收集
+updateTime = 20260706
+minVersion = 1.2.7
+source = https://github.com/ahe-meow/wechat-history-filter

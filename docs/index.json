@@ -1,7 +1,15 @@
 {
-  "generatedAt": "2026-06-25",
-  "totalPlugins": 64,
+  "generatedAt": "2026-07-06",
+  "totalPlugins": 65,
   "plugins": [
+    {
+      "name": "历史消息过滤器",
+      "author": "ahe-meow",
+      "version": "1.1.0",
+      "updateTime": 20260706,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/ahe-meow/history-filter",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fahe-meow%2Fhistory-filter&filename=%E5%8E%86%E5%8F%B2%E6%B6%88%E6%81%AF%E8%BF%87%E6%BB%A4%E5%99%A8_1.1.0"
+    },
     {
       "name": "AI聊天总结",
       "author": "hjkl950217",

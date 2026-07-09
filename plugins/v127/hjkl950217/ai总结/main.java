@@ -1,5 +1,8 @@
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.text.InputType;
 import android.text.TextUtils;
@@ -13,6 +16,9 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.ArrayList;
@@ -28,22 +34,15 @@ String CFG_API_KEY = "api_key";
 String CFG_MODEL = "model";
 String CFG_SUMMARY_COUNT = "summary_count";
 String CFG_SUMMARY_PROMPT = "summary_prompt";
+String CFG_ASK_SYSTEM_PROMPT = "ask_system_prompt";
+String CFG_ASK_TEMPLATE = "ask_template";
 String CFG_LOG_ENABLE = "log_enable";
 boolean DEFAULT_LOG_ENABLE = false;
 String DEFAULT_API_URL = "https://api.openai.com/v1/chat/completions";
 String DEFAULT_MODEL = "gpt-4o-mini";
-String DEFAULT_SUMMARY_PROMPT = "你是一个聊天记录总结助手。请基于用户提供的聊天记录，用简短、客观、清晰的中文总结最近聊天内容。\n\n" +
-        "格式要求：\n" +
-        "1. 第一行是标题，用【】包裹，例如【6月25日群聊摘要】\n" +
-        "2. 标题后空一行，再写正文\n" +
-        "3. 正文按要点分行，每行一个要点\n" +
-        "4. 涉及人名时用【】包裹，例如【张三】说...\n\n" +
-        "内容要求：\n" +
-        "1. 控制在 200 字以内\n" +
-        "2. 优先总结事实、结论、待办和重要分歧\n" +
-        "3. 不要编造聊天记录中没有的信息\n" +
-        "4. 如果聊天内容太少或无有效文本，请直接说明无法总结\n" +
-        "5. 只输出最终总结，不要输出推理过程、分析过程或草稿";
+String DEFAULT_SUMMARY_PROMPT = "请基于聊天记录生成简短中文总结，只输出最终总结。";
+String DEFAULT_ASK_SYSTEM_PROMPT = "回答时言简意赅，直接回答结论即可。控制在300字以下。";
+String DEFAULT_ASK_TEMPLATE = "问：{问题原文}\n---------\n{回答正文}\n--\n(以上回答由[{模型名称}]回答，仅供参考)";
 
 boolean mLogEnabled = false;
 
@@ -107,6 +106,17 @@ void handleCommand(String talker, String cmd, boolean intercepted) {
             return;
         }
 
+        if ("/ai 日志".equals(cmd) || "/ai log".equalsIgnoreCase(cmd) || "/ai logs".equalsIgnoreCase(cmd)) {
+            showLogDialog();
+            return;
+        }
+
+        if (isAskCommand(cmd)) {
+            String question = parseAskQuestion(cmd);
+            askAi(talker, question);
+            return;
+        }
+
         if (isSummaryCommand(cmd)) {
             int count = parseSummaryCount(cmd);
             summarizeChat(talker, count);
@@ -127,6 +137,36 @@ boolean isSummaryCommand(String cmd) {
         return arg.matches("\\d+");
     }
     return false;
+}
+
+boolean isAskCommand(String cmd) {
+    if (TextUtils.isEmpty(cmd)) return false;
+    return cmd.equals("/ai 提问") || cmd.startsWith("/ai 提问 ");
+}
+
+String parseAskQuestion(String cmd) {
+    if (TextUtils.isEmpty(cmd)) return "";
+    if (cmd.length() <= "/ai 提问".length()) return "";
+    return cmd.substring("/ai 提问".length()).trim();
+}
+
+void askAi(final String talker, final String question) {
+    try {
+        if (TextUtils.isEmpty(question)) {
+            toast("请输入要提问的内容");
+            return;
+        }
+        if (!hasApiConfig()) {
+            showConfigDialog();
+            return;
+        }
+
+        toast("AI 正在回答，请稍候...");
+        callAskApi(talker, question);
+    } catch (Throwable e) {
+        logx("[AI提问] 启动提问失败: " + e.getMessage());
+        toast("AI提问失败：" + e.getMessage());
+    }
 }
 
 int parseSummaryCount(String cmd) {
@@ -510,6 +550,86 @@ void callSummaryApi(final String talker, String historyText, int count) {
     }
 }
 
+void callAskApi(final String talker, final String question) {
+    try {
+        String apiUrl = getApiUrl();
+        String apiKey = getApiKey();
+        String model = getModel();
+        String systemPrompt = getAskSystemPrompt();
+
+        Map params = new HashMap();
+        Map headers = new HashMap();
+        headers.put("Content-Type", "application/json");
+
+        if (isClaudeNativeApi(apiUrl)) {
+            params.put("model", model);
+            params.put("system", systemPrompt);
+            params.put("messages", buildSingleUserMessages(question));
+            params.put("max_tokens", Integer.valueOf(1500));
+            if (!TextUtils.isEmpty(apiKey)) {
+                headers.put("x-api-key", apiKey.trim());
+            }
+            headers.put("anthropic-version", "2023-06-01");
+        } else {
+            params.put("model", model);
+
+            JSONArray messages = new JSONArray();
+            JSONObject system = new JSONObject();
+            system.put("role", "system");
+            system.put("content", systemPrompt);
+            messages.put(system);
+
+            JSONObject user = new JSONObject();
+            user.put("role", "user");
+            user.put("content", question);
+            messages.put(user);
+
+            params.put("messages", jsonArrayToList(messages));
+            params.put("max_tokens", Integer.valueOf(1500));
+            if (!TextUtils.isEmpty(apiKey)) {
+                headers.put("Authorization", normalizeAuthHeader(apiKey));
+            }
+        }
+
+        final String maskedKey = maskApiKey(apiKey);
+        final String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
+        final String finalApiUrl = apiUrl;
+        final String finalModel = model;
+
+        post(apiUrl, params, headers, 90L, body -> {
+            try {
+                if (TextUtils.isEmpty(body)) {
+                    logx("[AI提问] 接口返回为空 时间=" + timestamp + " 地址=" + finalApiUrl + " key=" + maskedKey + " model=" + finalModel);
+                    toast("AI提问失败：接口返回为空");
+                    return;
+                }
+                String answer = parseSummaryResponse(body);
+                if (TextUtils.isEmpty(answer)) {
+                    logx("[AI提问] 无法解析返回内容 时间=" + timestamp + " 地址=" + finalApiUrl + " key=" + maskedKey + " model=" + finalModel + " 响应前200字=" + body.substring(0, Math.min(200, body.length())));
+                    toast("AI提问失败：接口没有返回可用内容");
+                    return;
+                }
+                sendText(talker, formatAskAnswer(question, answer.trim(), finalModel));
+            } catch (Throwable e) {
+                logx("[AI提问] 解析响应异常 时间=" + timestamp + " 地址=" + finalApiUrl + " key=" + maskedKey + " 错误=" + e.getMessage());
+                toast("AI提问失败：解析接口响应异常");
+            }
+        });
+    } catch (Throwable e) {
+        logx("[AI提问] 调用接口异常: " + e.getMessage());
+        toast("AI提问失败：调用接口异常");
+    }
+}
+
+String formatAskAnswer(String question, String answer, String model) {
+    String template = getAskTemplate();
+    if (TextUtils.isEmpty(template)) template = DEFAULT_ASK_TEMPLATE;
+    return template
+            .replace("{问题原文}", safeString(question))
+            .replace("{回答正文}", safeString(answer))
+            .replace("{模型名称}", safeString(model));
+}
+
 List jsonArrayToList(JSONArray arr) {
     java.util.ArrayList out = new java.util.ArrayList();
     if (arr == null) return out;
@@ -607,6 +727,89 @@ void logx(Object msg) {
     }
 }
 
+File getHostLogFile() {
+    try {
+        Object file = getLogFile();
+        if (file instanceof File) return (File) file;
+    } catch (Throwable ignored) {}
+    return null;
+}
+
+String readLogContent() {
+    BufferedReader reader = null;
+    try {
+        File file = getHostLogFile();
+        if (file == null || !file.exists() || file.length() <= 0) return "";
+
+        StringBuilder sb = new StringBuilder();
+        reader = new BufferedReader(new FileReader(file));
+        String line;
+        int count = 0;
+        while ((line = reader.readLine()) != null && count < 3000) {
+            sb.append(line).append("\n");
+            count++;
+        }
+        return sb.toString().trim();
+    } catch (Throwable e) {
+        return "读取日志失败：" + e.getMessage();
+    } finally {
+        try {
+            if (reader != null) reader.close();
+        } catch (Throwable ignored) {}
+    }
+}
+
+void showLogDialog() {
+    final Activity ctx = getTopActivity();
+    if (ctx == null) {
+        toast("无法获取当前界面");
+        return;
+    }
+
+    ctx.runOnUiThread(new Runnable() {
+        public void run() {
+            final String logContent = readLogContent();
+            final String displayText = TextUtils.isEmpty(logContent) ? "当前没有日志" : logContent;
+
+            TextView tv = new TextView(ctx);
+            tv.setText(displayText);
+            tv.setTextSize(12);
+            tv.setTextIsSelectable(true);
+            tv.setPadding(36, 24, 36, 24);
+
+            ScrollView scroll = new ScrollView(ctx);
+            scroll.setVerticalScrollBarEnabled(true);
+            scroll.setScrollbarFadingEnabled(false);
+            scroll.addView(tv);
+
+            new AlertDialog.Builder(ctx)
+                    .setTitle("AI聊天总结日志")
+                    .setView(scroll)
+                    .setPositiveButton("复制", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int which) {
+                            copyTextToClipboard("AI聊天总结日志", displayText);
+                        }
+                    })
+                    .setNegativeButton("关闭", null)
+                    .show();
+        }
+    });
+}
+
+void copyTextToClipboard(String label, String text) {
+    try {
+        ClipboardManager cm = (ClipboardManager) hostContext.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm != null) {
+            cm.setPrimaryClip(ClipData.newPlainText(label, text));
+            toast("日志已复制");
+        } else {
+            toast("复制失败：无法获取剪贴板");
+        }
+    } catch (Throwable e) {
+        toast("复制失败：" + e.getMessage());
+    }
+}
+
 void showConfigDialog() {
     final Activity ctx = getTopActivity();
     if (ctx == null) {
@@ -632,6 +835,10 @@ void showConfigDialog() {
             countInput.setInputType(InputType.TYPE_CLASS_NUMBER);
             final EditText promptInput = createInput(ctx, "总结提示词", getSummaryPrompt(), false, true);
             promptInput.setMinLines(4);
+            final EditText askSystemPromptInput = createInput(ctx, "提问系统提示词", getAskSystemPrompt(), false, true);
+            askSystemPromptInput.setMinLines(3);
+            final EditText askTemplateInput = createInput(ctx, "提问回答模板", getAskTemplate(), false, true);
+            askTemplateInput.setMinLines(4);
 
             final Switch logSwitch = new Switch(ctx);
             logSwitch.setText("开启运行日志");
@@ -652,6 +859,10 @@ void showConfigDialog() {
             root.addView(countInput);
             root.addView(label(ctx, "总结提示词"));
             root.addView(promptInput);
+            root.addView(label(ctx, "提问系统提示词"));
+            root.addView(askSystemPromptInput);
+            root.addView(label(ctx, "提问回答模板"));
+            root.addView(askTemplateInput);
             root.addView(label(ctx, "日志设置"));
             root.addView(logSwitch);
             root.addView(logTip);
@@ -668,6 +879,8 @@ void showConfigDialog() {
                             String apiKey = apiKeyInput.getText().toString().trim();
                             String model = modelInput.getText().toString().trim();
                             String prompt = promptInput.getText().toString().trim();
+                            String askSystemPrompt = askSystemPromptInput.getText().toString().trim();
+                            String askTemplate = askTemplateInput.getText().toString().trim();
                             int count = safeParseInt(countInput.getText().toString().trim(), 100);
 
                             putString(CFG_API_URL, TextUtils.isEmpty(apiUrl) ? DEFAULT_API_URL : apiUrl);
@@ -675,6 +888,8 @@ void showConfigDialog() {
                             putString(CFG_MODEL, TextUtils.isEmpty(model) ? DEFAULT_MODEL : model);
                             putInt(CFG_SUMMARY_COUNT, clampCount(count));
                             putString(CFG_SUMMARY_PROMPT, TextUtils.isEmpty(prompt) ? DEFAULT_SUMMARY_PROMPT : prompt);
+                            putString(CFG_ASK_SYSTEM_PROMPT, TextUtils.isEmpty(askSystemPrompt) ? DEFAULT_ASK_SYSTEM_PROMPT : askSystemPrompt);
+                            putString(CFG_ASK_TEMPLATE, TextUtils.isEmpty(askTemplate) ? DEFAULT_ASK_TEMPLATE : askTemplate);
                             putBoolean(CFG_LOG_ENABLE, logSwitch.isChecked());
                             mLogEnabled = logSwitch.isChecked();
                             toast("AI聊天总结配置已保存");
@@ -720,11 +935,15 @@ String buildHelpText() {
             "   总结当前聊天最近默认条数的消息。\n" +
             "2. /ai 总结 120\n" +
             "   临时总结最近 120 条消息，范围 50~200。\n" +
-            "3. /ai 配置\n" +
-            "   配置 API 地址、Key、模型名称、默认条数和提示词。\n" +
-            "4. /ai 帮助\n" +
+            "3. /ai 提问 问题内容\n" +
+            "   直接调用 AI 回答问题。\n" +
+            "4. /ai 配置\n" +
+            "   配置 API 地址、Key、模型名称、默认条数、提示词和回答模板。\n" +
+            "5. /ai 日志\n" +
+            "   查看当前插件日志。\n" +
+            "6. /ai 帮助\n" +
             "   显示本帮助。\n\n" +
-            "提示：总结结果会直接发送到当前群聊或私聊。";
+            "提示：总结和提问结果会直接发送到当前群聊或私聊。";
 }
 
 void showHelpDialog() {
@@ -749,6 +968,8 @@ void ensureDefaultConfig() {
     if (TextUtils.isEmpty(getString(CFG_MODEL, ""))) putString(CFG_MODEL, DEFAULT_MODEL);
     if (getInt(CFG_SUMMARY_COUNT, 0) <= 0) putInt(CFG_SUMMARY_COUNT, 100);
     if (TextUtils.isEmpty(getString(CFG_SUMMARY_PROMPT, ""))) putString(CFG_SUMMARY_PROMPT, DEFAULT_SUMMARY_PROMPT);
+    if (TextUtils.isEmpty(getString(CFG_ASK_SYSTEM_PROMPT, ""))) putString(CFG_ASK_SYSTEM_PROMPT, DEFAULT_ASK_SYSTEM_PROMPT);
+    if (TextUtils.isEmpty(getString(CFG_ASK_TEMPLATE, ""))) putString(CFG_ASK_TEMPLATE, DEFAULT_ASK_TEMPLATE);
 }
 
 boolean hasApiConfig() {
@@ -773,6 +994,19 @@ int getSummaryCount() {
 
 String getSummaryPrompt() {
     return getString(CFG_SUMMARY_PROMPT, DEFAULT_SUMMARY_PROMPT);
+}
+
+String getAskSystemPrompt() {
+    return getString(CFG_ASK_SYSTEM_PROMPT, DEFAULT_ASK_SYSTEM_PROMPT);
+}
+
+String getAskTemplate() {
+    return decodeConfigText(getString(CFG_ASK_TEMPLATE, DEFAULT_ASK_TEMPLATE));
+}
+
+String decodeConfigText(String text) {
+    if (text == null) return "";
+    return text.replace("\\n", "\n");
 }
 
 String safeString(Object value) {

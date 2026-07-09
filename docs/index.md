@@ -11,10 +11,10 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fahe-meow%2Fhistory-filter&filename=%E5%8E%86%E5%8F%B2%E6%B6%88%E6%81%AF%E8%BF%87%E6%BB%A4%E5%99%A8_1.1.0
     linkText: 更新于 20260706
 
-  - title: AI聊天总结(1.2.1)
+  - title: AI聊天总结(1.3.1)
     details: 作者 hjkl950217
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fhjkl950217%2Fai%E6%80%BB%E7%BB%93&filename=AI%E8%81%8A%E5%A4%A9%E6%80%BB%E7%BB%93_1.2.1
-    linkText: 更新于 20260625
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fhjkl950217%2Fai%E6%80%BB%E7%BB%93&filename=AI%E8%81%8A%E5%A4%A9%E6%80%BB%E7%BB%93_1.3.1
+    linkText: 更新于 20260707
 
   - title: 元启Ai回复(2.2)
     details: 作者 神明佑我

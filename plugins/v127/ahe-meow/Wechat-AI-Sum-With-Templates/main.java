@@ -1,3 +1,16 @@
+/**
+ * AI多模板聊天总结插件
+ * 
+ * 原作者: 长空X (hjkl950217)
+ * 原始项目: https://github.com/hjkl950217/WAuxiliary_Plugin
+ * 
+ * 改进维护: ahe-meow
+ * 当前项目: https://github.com/ahe-meow/Wechat-AI-Sum-With-Templates
+ * 
+ * 版本: v1.3.1
+ * 更新时间: 20260715
+ */
+
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;

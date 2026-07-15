@@ -240,3 +240,18 @@ Claude 原生接口要求 `max_tokens`，即使关闭开关仍会发送该参数
 ## 结束原因
 
 每次总结完成后，插件的运行日志会记录模型返回的结束原因（如正常结束、达到 Token 限制等），并通过 Toast 提示用户。
+
+---
+
+## 致谢
+
+本项目基于 [hjkl950217](https://github.com/hjkl950217) 的 [AI总结插件](https://github.com/hjkl950217/WAuxiliary_Plugin/tree/main/plugins/v127/hjkl950217/ai%E6%80%BB%E7%BB%93) 改进开发。
+
+在原有功能基础上新增：
+- OpenAI 兼容与 Claude 原生 API 支持
+- 多模板管理与自定义提示词
+- 模型思考控制（参数+提示词双开关）
+- 灵活的发送目标配置
+- 完整的日志与结束原因提示
+
+感谢原作者 **长空X** 的开源贡献。

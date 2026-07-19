@@ -1,7 +1,5 @@
 import android.app.AlertDialog;
 import android.widget.*;
-import android.view.*;
-import android.content.DialogInterface;
 import android.graphics.Color;
 
 String apiKey = "";
@@ -345,27 +343,18 @@ void openSettings() {
 
     // 标题
     var title = new TextView(a);
-    title.setText("天气Pro 设置 v1.2");
+    title.setText("天气Pro 设置 v1.3");
     title.setTextSize(20);
     title.setTextColor(Color.parseColor("#333333"));
     root.addView(title);
 
     // API Key
-    var tl1 = new TextView(a);
-    tl1.setText("");
-    tl1.setHeight(20);
-    root.addView(tl1);
-
     var kl = new TextView(a);
     kl.setText("和风天气 API Key:");
+    kl.setPadding(0, 24, 0, 6);
     kl.setTextSize(14);
     kl.setTextColor(Color.parseColor("#666666"));
     root.addView(kl);
-
-    var tl2 = new TextView(a);
-    tl2.setText("");
-    tl2.setHeight(5);
-    root.addView(tl2);
 
     var keyInput = new EditText(a);
     keyInput.setText(apiKey);
@@ -374,182 +363,100 @@ void openSettings() {
     root.addView(keyInput);
 
     // 每日推送
-    var tl3 = new TextView(a);
-    tl3.setText("");
-    tl3.setHeight(20);
-    root.addView(tl3);
-
     var pl = new TextView(a);
     pl.setText("每日推送:");
+    pl.setPadding(0, 24, 0, 6);
     pl.setTextSize(14);
     pl.setTextColor(Color.parseColor("#666666"));
     root.addView(pl);
 
-    var tl4 = new TextView(a);
-    tl4.setText("");
-    tl4.setHeight(5);
-    root.addView(tl4);
-
-    var pushRow = new LinearLayout(a);
-    pushRow.setOrientation(LinearLayout.HORIZONTAL);
-    pushRow.setGravity(Gravity.CENTER_VERTICAL);
-
     var pushSwitch = new Switch(a);
     pushSwitch.setChecked(dailyPushEnabled);
-    pushRow.addView(pushSwitch);
+    root.addView(pushSwitch);
 
     var timeInput = new EditText(a);
     timeInput.setText(pushTime);
     timeInput.setHint("08:00");
     timeInput.setSingleLine(true);
-    timeInput.setWidth(120);
-    var timeLp = new LinearLayout.LayoutParams(-2, -2);
-    timeLp.leftMargin = 16;
-    pushRow.addView(timeInput, timeLp);
-    root.addView(pushRow);
+    root.addView(timeInput);
 
     // 聊天过滤
-    var tl5 = new TextView(a);
-    tl5.setText("");
-    tl5.setHeight(20);
-    root.addView(tl5);
-
     var fl = new TextView(a);
-    fl.setText("聊天过滤:");
+    fl.setText("聊天过滤 (开启后仅以下聊天响应):");
+    fl.setPadding(0, 24, 0, 6);
     fl.setTextSize(14);
     fl.setTextColor(Color.parseColor("#666666"));
     root.addView(fl);
 
-    var tl6 = new TextView(a);
-    tl6.setText("");
-    tl6.setHeight(5);
-    root.addView(tl6);
-
-    var filterRow = new LinearLayout(a);
-    filterRow.setOrientation(LinearLayout.HORIZONTAL);
-    filterRow.setGravity(Gravity.CENTER_VERTICAL);
-
     var filterSwitch = new Switch(a);
     filterSwitch.setChecked(filterEnabled);
-    filterRow.addView(filterSwitch);
-
-    var fh = new TextView(a);
-    fh.setText("  开启后仅启用聊天响应");
-    fh.setTextSize(12);
-    fh.setTextColor(Color.parseColor("#888888"));
-    filterRow.addView(fh);
-    root.addView(filterRow);
-
-    var tl7 = new TextView(a);
-    tl7.setText("");
-    tl7.setHeight(12);
-    root.addView(tl7);
-
-    var cl = new TextView(a);
-    cl.setText("启用聊天列表 (每行一个 wxid):");
-    cl.setTextSize(12);
-    cl.setTextColor(Color.parseColor("#666666"));
-    root.addView(cl);
-
-    var tl8 = new TextView(a);
-    tl8.setText("");
-    tl8.setHeight(5);
-    root.addView(tl8);
+    root.addView(filterSwitch);
 
     var chatInput = new EditText(a);
     var chats = getStringSet("enabled_chats", new java.util.HashSet());
     var csb = "";
     for (var wxid : chats) csb += wxid + "\n";
     chatInput.setText(csb);
-    chatInput.setMinLines(4);
-    chatInput.setGravity(Gravity.TOP);
+    chatInput.setHint("每行一个 wxid，添加后生效");
+    chatInput.setHeight(200);
     root.addView(chatInput);
 
-    // 按钮行
-    var tl9 = new TextView(a);
-    tl9.setText("");
-    tl9.setHeight(15);
-    root.addView(tl9);
-
-    var btnRow = new LinearLayout(a);
-    btnRow.setOrientation(LinearLayout.HORIZONTAL);
-
+    // 添加当前聊天按钮
     var addBtn = new Button(a);
     addBtn.setText("添加当前聊天");
-    addBtn.setTextSize(12);
-    addBtn.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            var t = getTargetTalker();
-            if (t == null || t.isEmpty()) { toast("请先打开一个聊天"); return; }
-            addEnabledChat(t);
-            var c2 = getStringSet("enabled_chats", new java.util.HashSet());
-            var s2 = "";
-            for (var w : c2) s2 += w + "\n";
-            chatInput.setText(s2);
-            toast("已添加: " + t);
-        }
+    addBtn.setOnClickListener(v -> {
+        var t = getTargetTalker();
+        if (t == null || t.isEmpty()) { toast("请先打开一个聊天"); return; }
+        addEnabledChat(t);
+        var c2 = getStringSet("enabled_chats", new java.util.HashSet());
+        var s2 = "";
+        for (var w : c2) s2 += w + "\n";
+        chatInput.setText(s2);
+        toast("已添加");
     });
-    btnRow.addView(addBtn);
+    root.addView(addBtn);
 
-    var space = new TextView(a);
-    space.setWidth(10);
-    btnRow.addView(space);
-
+    // 清空按钮
     var clrBtn = new Button(a);
     clrBtn.setText("清空列表");
-    clrBtn.setTextSize(12);
-    clrBtn.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            clearEnabledChats();
-            chatInput.setText("");
-            toast("已清空");
-        }
+    clrBtn.setOnClickListener(v -> {
+        clearEnabledChats();
+        chatInput.setText("");
+        toast("已清空");
     });
-    btnRow.addView(clrBtn);
-    root.addView(btnRow);
+    root.addView(clrBtn);
 
-    // 保存按钮
-    var tl10 = new TextView(a);
-    tl10.setText("");
-    tl10.setHeight(30);
-    root.addView(tl10);
-
+    // 保存
     var saveBtn = new Button(a);
     saveBtn.setText("保存设置");
-    saveBtn.setTextSize(14);
-    saveBtn.setOnClickListener(new View.OnClickListener() {
-        public void onClick(View v) {
-            apiKey = keyInput.getText().toString().trim();
-            dailyPushEnabled = pushSwitch.isChecked();
-            pushTime = timeInput.getText().toString().trim();
-            if (pushTime.isEmpty()) pushTime = "08:00";
-            filterEnabled = filterSwitch.isChecked();
-            putString("api_key", apiKey);
-            putBoolean("daily_push_enabled", dailyPushEnabled);
-            putString("push_time", pushTime);
-            putBoolean("filter_enabled", filterEnabled);
-            saveConfig();
-            var text = chatInput.getText().toString().trim();
-            var newChats = new java.util.HashSet();
-            if (!text.isEmpty()) {
-                var lines = text.split("\n");
-                for (var i = 0; i < lines.length; i++) {
-                    var line = lines[i].trim();
-                    if (!line.isEmpty()) newChats.add(line);
-                }
+    saveBtn.setOnClickListener(v -> {
+        apiKey = keyInput.getText().toString().trim();
+        dailyPushEnabled = pushSwitch.isChecked();
+        pushTime = timeInput.getText().toString().trim();
+        if (pushTime.isEmpty()) pushTime = "08:00";
+        filterEnabled = filterSwitch.isChecked();
+        putString("api_key", apiKey);
+        putBoolean("daily_push_enabled", dailyPushEnabled);
+        putString("push_time", pushTime);
+        putBoolean("filter_enabled", filterEnabled);
+        saveConfig();
+        var text = chatInput.getText().toString().trim();
+        var newChats = new java.util.HashSet();
+        if (!text.isEmpty()) {
+            var lines = text.split("\n");
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i].trim();
+                if (!line.isEmpty()) newChats.add(line);
             }
-            putStringSet("enabled_chats", newChats);
-            toast("设置已保存");
         }
+        putStringSet("enabled_chats", newChats);
+        toast("设置已保存");
     });
     root.addView(saveBtn);
 
     var builder = new AlertDialog.Builder(a);
     var dialog = builder.create();
     dialog.setView(root);
-    dialog.setButton(DialogInterface.BUTTON_POSITIVE, "关闭", new DialogInterface.OnClickListener() {
-        public void onClick(DialogInterface d, int w) {}
-    });
     dialog.show();
 }
 

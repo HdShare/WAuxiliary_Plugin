@@ -1,3 +1,9 @@
+import android.app.AlertDialog;
+import android.widget.*;
+import android.view.*;
+import android.content.DialogInterface;
+import android.graphics.Color;
+
 String apiKey = "";
 String subscribedCities = "";
 String pushTime = "08:00";
@@ -12,8 +18,8 @@ void onLoad() {
     dailyPushEnabled = getBoolean("daily_push_enabled", false);
     lastPushDate = getString("last_push_date", "");
     filterEnabled = getBoolean("filter_enabled", false);
-    log("天气Pro v1.1 key=" + (apiKey.isEmpty() ? "无" : "有") + " 订阅=" + subscribedCities + " 过滤=" + filterEnabled);
-    toast(filterEnabled ? "天气Pro 已加载 (聊天过滤:开)" : "天气Pro 已加载");
+    log("天气Pro v1.2 key=" + (apiKey.isEmpty() ? "无" : "有") + " 订阅=" + subscribedCities + " 过滤=" + filterEnabled);
+    toast(filterEnabled ? "天气Pro 已加载 (过滤:开)" : "天气Pro 已加载");
 }
 
 void onUnload() {
@@ -74,7 +80,6 @@ void onHandleMsg(Object msgInfoBean) {
         reply(talker, "聊天过滤已关闭");
         return;
     }
-
     if (content.equals("取消订阅") || content.equals("取消天气")) {
         if (subscribedCities.isEmpty()) { reply(talker, "当前没有订阅"); return; }
         subscribedCities = "";
@@ -114,13 +119,12 @@ void onHandleMsg(Object msgInfoBean) {
                 return;
             }
         }
-        var sk = apiKey.isEmpty() ? "未设置" : apiKey.substring(0, 4) + "****" + apiKey.substring(apiKey.length() - 4);
-        var ec = countEnabledChats();
-        reply(talker, "设置:\nKey: " + sk + "\n推送: " + (dailyPushEnabled ? "开" : "关") + "\n时间: " + pushTime + "\n过滤: " + (filterEnabled ? "开" : "关") + " (" + ec + "个聊天)\n订阅: " + (subscribedCities.isEmpty() ? "0" : ("" + subscribedCities.split(";").length)) + "个城");
+        // 无参数 = 打开UI面板
+        openSettings();
         return;
     }
     if (content.equals("天气帮助") || content.equals("天气Pro") || content.equals("天气pro")) {
-        reply(talker, "命令:\n天气 <城市>  查询天气\n预报 <城市>  3日预报\n订阅 <城市>  订阅推送\n天气设置    查看/修改设置\n天气启用    启用当前聊天\n天气停用    停用当前聊天\n天气过滤 开/关  开关过滤\n取消订阅/我的订阅\n天气帮助 帮助");
+        reply(talker, "命令:\n天气 <城市>  查询天气\n预报 <城市>  3日预报\n订阅 <城市>  订阅推送\n天气设置    打开设置面板\n天气启用    启用当前聊天\n天气停用    停用当前聊天\n天气过滤 开/关  开关过滤\n取消订阅/我的订阅\n天气帮助 帮助");
         return;
     }
 
@@ -156,16 +160,11 @@ void removeEnabledChat(String talker) {
     log("天气Pro 停用: " + talker);
 }
 
-int countEnabledChats() {
-    var chats = getStringSet("enabled_chats", new java.util.HashSet());
-    return chats.size();
-}
-
 void clearEnabledChats() {
     putStringSet("enabled_chats", new java.util.HashSet());
 }
 
-// ==================== 全角/半角空格兼容 ====================
+// ==================== 全角/半角空格 ====================
 
 boolean matchCmd(String content, String prefix) {
     if (content.startsWith(prefix)) return true;
@@ -187,7 +186,6 @@ boolean onClickSendBtn(String text) {
 
 void doWeatherQuery(String talker, String city) {
     var url = "https://geoapi.qweather.com/v2/city/lookup?location=" + urlEncode(city) + "&key=" + apiKey;
-    log("天气Pro GEO: " + url);
     get(url, null, 60, geoResp -> {
         if (geoResp == null || geoResp.isEmpty()) {
             reply(talker, "网络请求失败，请检查网络后重试");
@@ -334,120 +332,153 @@ void doPushOne(String name, String cityId) {
     });
 }
 
-// ==================== UI 设置面板 ====================
+// ==================== UI 设置面板 (完全内联) ====================
 
 void openSettings() {
+    log("天气Pro: openSettings 被调用");
     var a = getTopActivity();
     if (a == null) { toast("无法打开设置面板"); return; }
 
-    var scroll = new android.widget.ScrollView(a);
-    var root = new android.widget.LinearLayout(a);
-    root.setOrientation(1); // VERTICAL
-    root.setPadding(40, 30, 40, 30);
+    var root = new LinearLayout(a);
+    root.setOrientation(LinearLayout.VERTICAL);
+    root.setPadding(50, 40, 50, 40);
 
-    var title = new android.widget.TextView(a);
-    title.setText("天气Pro 设置 v1.1");
-    title.setTextSize(18);
+    // 标题
+    var title = new TextView(a);
+    title.setText("天气Pro 设置 v1.2");
+    title.setTextSize(20);
+    title.setTextColor(Color.parseColor("#333333"));
     root.addView(title);
 
-    addPad(root, 20);
+    // API Key
+    var tl1 = new TextView(a);
+    tl1.setText("");
+    tl1.setHeight(20);
+    root.addView(tl1);
 
-    // === API Key ===
-    var kl = new android.widget.TextView(a);
-    kl.setText("API Key (和风天气):");
+    var kl = new TextView(a);
+    kl.setText("和风天气 API Key:");
     kl.setTextSize(14);
-    kl.setTextColor(0xFF333333);
+    kl.setTextColor(Color.parseColor("#666666"));
     root.addView(kl);
-    addPad(root, 4);
 
-    var keyInput = new android.widget.EditText(a);
+    var tl2 = new TextView(a);
+    tl2.setText("");
+    tl2.setHeight(5);
+    root.addView(tl2);
+
+    var keyInput = new EditText(a);
     keyInput.setText(apiKey);
-    keyInput.setHint("免费注册: dev.qweather.com");
+    keyInput.setHint("免费获取: dev.qweather.com");
     keyInput.setSingleLine(true);
     root.addView(keyInput);
 
-    addPad(root, 20);
+    // 每日推送
+    var tl3 = new TextView(a);
+    tl3.setText("");
+    tl3.setHeight(20);
+    root.addView(tl3);
 
-    // === 推送设置 ===
-    var pl = new android.widget.TextView(a);
+    var pl = new TextView(a);
     pl.setText("每日推送:");
     pl.setTextSize(14);
-    pl.setTextColor(0xFF333333);
+    pl.setTextColor(Color.parseColor("#666666"));
     root.addView(pl);
-    addPad(root, 4);
 
-    var pushRow = new android.widget.LinearLayout(a);
-    pushRow.setOrientation(0); // HORIZONTAL
-    pushRow.setGravity(16); // CENTER_VERTICAL
+    var tl4 = new TextView(a);
+    tl4.setText("");
+    tl4.setHeight(5);
+    root.addView(tl4);
 
-    var pushSwitch = new android.widget.Switch(a);
+    var pushRow = new LinearLayout(a);
+    pushRow.setOrientation(LinearLayout.HORIZONTAL);
+    pushRow.setGravity(Gravity.CENTER_VERTICAL);
+
+    var pushSwitch = new Switch(a);
     pushSwitch.setChecked(dailyPushEnabled);
     pushRow.addView(pushSwitch);
 
-    var timeInput = new android.widget.EditText(a);
+    var timeInput = new EditText(a);
     timeInput.setText(pushTime);
     timeInput.setHint("08:00");
     timeInput.setSingleLine(true);
     timeInput.setWidth(120);
-    var tl = new android.widget.LinearLayout.LayoutParams(-2, -2); // WRAP_CONTENT
-    tl.leftMargin = 16;
-    pushRow.addView(timeInput, tl);
+    var timeLp = new LinearLayout.LayoutParams(-2, -2);
+    timeLp.leftMargin = 16;
+    pushRow.addView(timeInput, timeLp);
     root.addView(pushRow);
 
-    addPad(root, 20);
+    // 聊天过滤
+    var tl5 = new TextView(a);
+    tl5.setText("");
+    tl5.setHeight(20);
+    root.addView(tl5);
 
-    // === 聊天过滤 ===
-    var fl = new android.widget.TextView(a);
+    var fl = new TextView(a);
     fl.setText("聊天过滤:");
     fl.setTextSize(14);
-    fl.setTextColor(0xFF333333);
+    fl.setTextColor(Color.parseColor("#666666"));
     root.addView(fl);
-    addPad(root, 4);
 
-    var filterRow = new android.widget.LinearLayout(a);
-    filterRow.setOrientation(0);
-    filterRow.setGravity(16);
+    var tl6 = new TextView(a);
+    tl6.setText("");
+    tl6.setHeight(5);
+    root.addView(tl6);
 
-    var filterSwitch = new android.widget.Switch(a);
+    var filterRow = new LinearLayout(a);
+    filterRow.setOrientation(LinearLayout.HORIZONTAL);
+    filterRow.setGravity(Gravity.CENTER_VERTICAL);
+
+    var filterSwitch = new Switch(a);
     filterSwitch.setChecked(filterEnabled);
     filterRow.addView(filterSwitch);
 
-    var flHint = new android.widget.TextView(a);
-    flHint.setText("  开启后仅启用列表中的聊天响应");
-    flHint.setTextSize(12);
-    flHint.setTextColor(0xFF888888);
-    filterRow.addView(flHint);
+    var fh = new TextView(a);
+    fh.setText("  开启后仅启用聊天响应");
+    fh.setTextSize(12);
+    fh.setTextColor(Color.parseColor("#888888"));
+    filterRow.addView(fh);
     root.addView(filterRow);
 
-    addPad(root, 8);
+    var tl7 = new TextView(a);
+    tl7.setText("");
+    tl7.setHeight(12);
+    root.addView(tl7);
 
-    var cl = new android.widget.TextView(a);
+    var cl = new TextView(a);
     cl.setText("启用聊天列表 (每行一个 wxid):");
     cl.setTextSize(12);
-    cl.setTextColor(0xFF666666);
+    cl.setTextColor(Color.parseColor("#666666"));
     root.addView(cl);
-    addPad(root, 4);
 
-    var chatInput = new android.widget.EditText(a);
+    var tl8 = new TextView(a);
+    tl8.setText("");
+    tl8.setHeight(5);
+    root.addView(tl8);
+
+    var chatInput = new EditText(a);
     var chats = getStringSet("enabled_chats", new java.util.HashSet());
     var csb = "";
     for (var wxid : chats) csb += wxid + "\n";
     chatInput.setText(csb);
     chatInput.setMinLines(4);
-    chatInput.setGravity(48); // TOP
+    chatInput.setGravity(Gravity.TOP);
     root.addView(chatInput);
 
-    addPad(root, 12);
+    // 按钮行
+    var tl9 = new TextView(a);
+    tl9.setText("");
+    tl9.setHeight(15);
+    root.addView(tl9);
 
-    // 快速添加按钮行
-    var btnRow = new android.widget.LinearLayout(a);
-    btnRow.setOrientation(0);
+    var btnRow = new LinearLayout(a);
+    btnRow.setOrientation(LinearLayout.HORIZONTAL);
 
-    var addCurBtn = new android.widget.Button(a);
-    addCurBtn.setText("添加当前聊天");
-    addCurBtn.setTextSize(12);
-    addCurBtn.setOnClickListener(new android.view.View.OnClickListener() {
-        public void onClick(android.view.View v) {
+    var addBtn = new Button(a);
+    addBtn.setText("添加当前聊天");
+    addBtn.setTextSize(12);
+    addBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
             var t = getTargetTalker();
             if (t == null || t.isEmpty()) { toast("请先打开一个聊天"); return; }
             addEnabledChat(t);
@@ -458,31 +489,36 @@ void openSettings() {
             toast("已添加: " + t);
         }
     });
-    btnRow.addView(addCurBtn);
+    btnRow.addView(addBtn);
 
-    addPadH(btnRow, 8);
+    var space = new TextView(a);
+    space.setWidth(10);
+    btnRow.addView(space);
 
-    var clearBtn = new android.widget.Button(a);
-    clearBtn.setText("清空列表");
-    clearBtn.setTextSize(12);
-    clearBtn.setOnClickListener(new android.view.View.OnClickListener() {
-        public void onClick(android.view.View v) {
+    var clrBtn = new Button(a);
+    clrBtn.setText("清空列表");
+    clrBtn.setTextSize(12);
+    clrBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
             clearEnabledChats();
             chatInput.setText("");
             toast("已清空");
         }
     });
-    btnRow.addView(clearBtn);
+    btnRow.addView(clrBtn);
     root.addView(btnRow);
 
-    addPad(root, 24);
+    // 保存按钮
+    var tl10 = new TextView(a);
+    tl10.setText("");
+    tl10.setHeight(30);
+    root.addView(tl10);
 
-    // === 保存 ===
-    var saveBtn = new android.widget.Button(a);
+    var saveBtn = new Button(a);
     saveBtn.setText("保存设置");
     saveBtn.setTextSize(14);
-    saveBtn.setOnClickListener(new android.view.View.OnClickListener() {
-        public void onClick(android.view.View v) {
+    saveBtn.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
             apiKey = keyInput.getText().toString().trim();
             dailyPushEnabled = pushSwitch.isChecked();
             pushTime = timeInput.getText().toString().trim();
@@ -493,7 +529,6 @@ void openSettings() {
             putString("push_time", pushTime);
             putBoolean("filter_enabled", filterEnabled);
             saveConfig();
-
             var text = chatInput.getText().toString().trim();
             var newChats = new java.util.HashSet();
             if (!text.isEmpty()) {
@@ -509,27 +544,13 @@ void openSettings() {
     });
     root.addView(saveBtn);
 
-    scroll.addView(root);
-
-    var listener = new android.content.DialogInterface.OnClickListener() {
-        public void onClick(android.content.DialogInterface dialog, int which) {}
-    };
-    new android.app.AlertDialog.Builder(a)
-        .setView(scroll)
-        .setPositiveButton("关闭", listener)
-        .show();
-}
-
-void addPad(android.widget.LinearLayout parent, int h) {
-    var v = new android.widget.TextView(parent.getContext());
-    v.setHeight(h);
-    parent.addView(v);
-}
-
-void addPadH(android.widget.LinearLayout parent, int w) {
-    var v = new android.widget.TextView(parent.getContext());
-    v.setWidth(w);
-    parent.addView(v);
+    var builder = new AlertDialog.Builder(a);
+    var dialog = builder.create();
+    dialog.setView(root);
+    dialog.setButton(DialogInterface.BUTTON_POSITIVE, "关闭", new DialogInterface.OnClickListener() {
+        public void onClick(DialogInterface d, int w) {}
+    });
+    dialog.show();
 }
 
 // ==================== 工具方法 ====================

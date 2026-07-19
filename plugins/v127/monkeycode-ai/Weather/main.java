@@ -15,9 +15,14 @@ void onHandleMsg(Object msgInfoBean) {
             sendText(talker, "请输入城市名，如: 天气 北京");
             return;
         }
-        var url = "https://wttr.in/" + city + "?format=j1&lang=zh";
+        var encCity = java.net.URLEncoder.encode(city, "UTF-8");
+        var url = "https://wttr.in/" + encCity + "?format=j1&lang=zh";
         log("查询: " + url);
-        get(url, null, resp -> {
+        get(url, null, 60, resp -> {
+            if (resp == null || resp.isEmpty()) {
+                sendText(talker, "网络请求失败，请重试");
+                return;
+            }
             try {
                 var json = new org.json.JSONObject(resp);
                 var now = json.optJSONArray("current_condition").optJSONObject(0);

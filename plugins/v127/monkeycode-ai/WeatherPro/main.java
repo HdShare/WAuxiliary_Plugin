@@ -137,15 +137,8 @@ void onHandleMsg(Object msgInfoBean) {
 boolean onClickSendBtn(String text) {
     var content = text.trim();
     writeLog("天气Pro onClickSendBtn: [" + content + "]");
-    if (content.startsWith("天气 ") || content.startsWith("天气查询 ") ||
-        content.startsWith("预报 ") || content.startsWith("天气预报 ") ||
-        content.startsWith("订阅 ") || content.startsWith("订阅天气 ") ||
-        content.startsWith("天气设置") ||
-        content.equals("取消订阅") || content.equals("取消天气") ||
-        content.equals("我的订阅") || content.equals("订阅列表") ||
-        content.equals("天气帮助") || content.equals("天气Pro") || content.equals("天气pro")) {
-        return true;
-    }
+    return false;
+}
     return false;
 }
 

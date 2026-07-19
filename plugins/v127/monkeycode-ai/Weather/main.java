@@ -1,12 +1,25 @@
 import org.json.JSONObject;
 
+void onLoad() {
+    log("===== 天气查询插件 v1.0.0 已加载 =====");
+}
+
 void onHandleMsg(Object msgInfoBean) {
-    if (msgInfoBean.isSend()) return;
-    if (!msgInfoBean.isText()) return;
+    log("天气插件 onHandleMsg 触发");
+    if (msgInfoBean.isSend()) { log("天气插件: 跳过自己发送的消息"); return; }
+    if (!msgInfoBean.isText()) { log("天气插件: 跳过非文本消息"); return; }
     var content = msgInfoBean.getContent();
     var talker = msgInfoBean.getTalker();
+    log("天气插件: 收到消息 = [" + content + "] from=" + talker);
 
-    if (!content.startsWith("天气 ") && !content.startsWith("天气查询 ")) return;
+    if (content.startsWith("天气 ")) {
+        log("天气插件: 匹配到「天气 」命令");
+    } else if (content.startsWith("天气查询 ")) {
+        log("天气插件: 匹配到「天气查询 」命令");
+    } else {
+        log("天气插件: 未匹配任何命令，跳过");
+        return;
+    }
 
     var city = content.substring(content.indexOf(" ") + 1).trim();
     if (city.isEmpty()) {
@@ -15,14 +28,16 @@ void onHandleMsg(Object msgInfoBean) {
     }
 
     var url = "https://wttr.in/" + encodeURI(city) + "?format=j1&lang=zh";
-    log("天气查询: " + city + " -> " + url);
+    log("天气插件: 查询城市=" + city + " url=" + url);
 
     get(url, null, respContent -> {
+        log("天气插件: 收到 wttr.in 响应");
         try {
             var json = new JSONObject(respContent);
             var current = json.optJSONArray("current_condition").optJSONObject(0);
 
             if (current == null) {
+                log("天气插件: 未找到城市数据");
                 sendText(talker, "未查询到「" + city + "」的天气信息，请检查城市名");
                 return;
             }
@@ -55,11 +70,22 @@ void onHandleMsg(Object msgInfoBean) {
             result += "紫外线: " + uvIndex;
 
             sendText(talker, result);
+            log("天气插件: 发送天气结果成功");
         } catch (Exception e) {
-            log("天气查询失败: " + e.toString());
+            log("天气插件: 解析失败 " + e.toString());
             sendText(talker, "天气查询失败，请检查城市名是否正确");
         }
     });
+}
+
+void openSettings() {
+    log("天气插件: openSettings 被调用");
+    var activity = getTopActivity();
+    if (activity == null) {
+        toast("无法打开设置");
+        return;
+    }
+    toast("天气查询插件 v1.0.0 - 发送「天气 城市名」查询天气");
 }
 
 String encodeURI(String s) {

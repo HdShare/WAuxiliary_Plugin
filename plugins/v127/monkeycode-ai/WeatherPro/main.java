@@ -1,17 +1,8 @@
-import android.app.AlertDialog;
-import android.widget.*;
-import android.graphics.*;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.io.FileWriter;
-import org.json.JSONObject;
-
 String apiKey = "";
 String subscribedCities = "";
 String pushTime = "08:00";
 boolean dailyPushEnabled = false;
 String lastPushDate = "";
-String logFile = "";
 
 void onLoad() {
     apiKey = getString("api_key", "");
@@ -19,552 +10,310 @@ void onLoad() {
     pushTime = getString("push_time", "08:00");
     dailyPushEnabled = getBoolean("daily_push_enabled", false);
     lastPushDate = getString("last_push_date", "");
-    logFile = pluginDir + "/weather_pro.log";
-    writeLog("===== 天气Pro v1.0.0 已加载 ===== apiKey=" + (apiKey.isEmpty() ? "未设置" : "已设置") + " 订阅=" + (subscribedCities.isEmpty() ? "0" : String.valueOf(subscribedCities.split(";").length)) + "个 日志文件=" + logFile);
+    log("天气Pro v1.0 已加载 key=" + (apiKey.isEmpty() ? "无" : "有") + " 订阅=" + subscribedCities);
+    toast("天气Pro 已加载");
 }
 
 void onUnload() {
-    writeLog("天气Pro 已卸载");
+    log("天气Pro 已卸载");
 }
 
-void writeLog(String msg) {
-    try {
-        var now = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
-        var line = "[" + now + "] " + msg + "\n";
-        var fw = new FileWriter(logFile, true);
-        fw.write(line);
-        fw.close();
-    } catch (Exception e) {}
-    log(msg);
-}
-
-// ==================== 消息处理入口 ====================
-
-boolean onClickSendBtn(String text) {
-    var content = text.trim();
-    writeLog("天气Pro onClickSendBtn: [" + content + "]");
-
-    if (content.startsWith("天气 ") || content.startsWith("天气查询 ")) {
-        writeLog("天气Pro: 长按发送「天气」命令");
-        handleWeatherQuerySelf(content);
-        return true;
-    }
-    if (content.equals("天气帮助") || content.equals("天气Pro") || content.equals("天气pro")) {
-        writeLog("天气Pro: 长按发送「天气帮助」");
-        showHelpSelf();
-        return true;
-    }
-    if (content.equals("天气设置")) {
-        writeLog("天气Pro: 长按发送「天气设置」");
-        showCurrentSettingsSelf();
-        return true;
-    }
-    if (content.startsWith("订阅 ") || content.startsWith("订阅天气 ")) {
-        writeLog("天气Pro: 长按发送「订阅」命令");
-        handleSubscribeSelf(content);
-        return true;
-    }
-    if (content.equals("取消订阅") || content.equals("取消天气")) {
-        writeLog("天气Pro: 长按发送「取消订阅」");
-        cancelAllSubscriptionsSelf();
-        return true;
-    }
-    if (content.equals("我的订阅") || content.equals("订阅列表")) {
-        writeLog("天气Pro: 长按发送「我的订阅」");
-        showSubscriptionListSelf();
-        return true;
-    }
-    if (content.startsWith("预报 ") || content.startsWith("天气预报 ")) {
-        writeLog("天气Pro: 长按发送「预报」命令");
-        handleForecastSelf(content);
-        return true;
-    }
-    if (content.startsWith("天气设置 ")) {
-        writeLog("天气Pro: 长按发送「天气设置」命令");
-        handleSettingsCommandSelf(content);
-        return true;
-    }
-    return false;
-}
+// ==================== 消息处理 ====================
 
 void onHandleMsg(Object msgInfoBean) {
-    if (!msgInfoBean.isText()) { return; }
-
+    if (!msgInfoBean.isText()) return;
     var content = msgInfoBean.getContent().trim();
     var talker = msgInfoBean.getTalker();
-    writeLog("天气Pro onHandleMsg: content=[" + content + "] talker=" + talker + " isSend=" + msgInfoBean.isSend());
+    log("天气Pro msg=[" + content + "] talker=" + talker + " isSend=" + msgInfoBean.isSend());
 
-    if (content.startsWith("订阅天气 ") || content.startsWith("订阅 ")) {
-        writeLog("天气Pro: 匹配「订阅」命令");
-        handleSubscribe(talker, content);
+    if (matchCmd(content, "天气 ") || matchCmd(content, "天气查询 ")) {
+        var city = getArgAfter(content);
+        log("天气Pro 天气查询: " + city);
+        if (city.isEmpty()) { reply(talker, "请输入城市名，如：天气 北京"); return; }
+        if (apiKey.isEmpty()) { reply(talker, "请先设置 API Key。发送「天气设置 key <Key>」免费获取: dev.qweather.com"); return; }
+        doWeatherQuery(talker, city);
+        return;
+    }
+    if (matchCmd(content, "预报 ") || matchCmd(content, "天气预报 ")) {
+        var city = getArgAfter(content);
+        log("天气Pro 预报查询: " + city);
+        if (city.isEmpty()) { reply(talker, "请输入城市名，如：预报 北京"); return; }
+        if (apiKey.isEmpty()) { reply(talker, "请先设置 API Key"); return; }
+        doForecastQuery(talker, city);
+        return;
+    }
+    if (matchCmd(content, "订阅 ") || matchCmd(content, "订阅天气 ")) {
+        var city = getArgAfter(content);
+        log("天气Pro 订阅城市: " + city);
+        if (city.isEmpty()) { reply(talker, "请输入城市名，如：订阅 北京"); return; }
+        if (apiKey.isEmpty()) { reply(talker, "请先设置 API Key"); return; }
+        doSubscribeCity(talker, city);
         return;
     }
     if (content.equals("取消订阅") || content.equals("取消天气")) {
-        writeLog("天气Pro: 匹配「取消订阅」命令");
-        cancelAllSubscriptions(talker);
+        log("天气Pro 取消订阅");
+        if (subscribedCities.isEmpty()) { reply(talker, "当前没有订阅任何城市"); return; }
+        subscribedCities = "";
+        dailyPushEnabled = false;
+        saveConfig();
+        reply(talker, "已取消所有订阅");
         return;
     }
     if (content.equals("我的订阅") || content.equals("订阅列表")) {
-        writeLog("天气Pro: 匹配「我的订阅」命令");
-        showSubscriptionList(talker);
-        return;
-    }
-    if (content.startsWith("预报 ") || content.startsWith("天气预报 ")) {
-        writeLog("天气Pro: 匹配「预报」命令");
-        handleForecast(talker, content);
-        return;
-    }
-    if (content.startsWith("天气 ") || content.startsWith("天气查询 ")) {
-        writeLog("天气Pro: 匹配「天气」命令");
-        handleWeatherQuery(talker, content);
+        log("天气Pro 查看订阅");
+        if (subscribedCities.isEmpty()) { reply(talker, "当前没有订阅。发「订阅 城市名」订阅"); return; }
+        var cities = subscribedCities.split(";");
+        var sb = "订阅列表(" + cities.length + "):\n";
+        for (var i = 0; i < cities.length; i++) sb += (i + 1) + ". " + cities[i].split("\\|")[0] + "\n";
+        sb += "推送: " + (dailyPushEnabled ? "开" : "关") + " | 时间: " + pushTime;
+        reply(talker, sb);
         return;
     }
     if (content.startsWith("天气设置")) {
-        writeLog("天气Pro: 匹配「天气设置」命令");
-        handleSettingsCommand(talker, content);
+        var parts = content.split("\\s+");
+        if (parts.length >= 3) {
+            if (parts[1].equals("key")) {
+                apiKey = parts[2];
+                putString("api_key", apiKey);
+                reply(talker, "API Key 已设置");
+                return;
+            }
+            if (parts[1].equals("推送时间") || parts[1].equals("时间")) {
+                pushTime = parts[2];
+                putString("push_time", pushTime);
+                reply(talker, "推送时间已设为 " + pushTime);
+                return;
+            }
+            if (parts[1].equals("推送") || parts[1].equals("开关")) {
+                dailyPushEnabled = "开,开启,on,1".contains(parts[2]);
+                saveConfig();
+                reply(talker, "每日推送已" + (dailyPushEnabled ? "开启" : "关闭"));
+                return;
+            }
+        }
+        var sk = apiKey.isEmpty() ? "未设置" : apiKey.substring(0, 4) + "****" + apiKey.substring(apiKey.length() - 4);
+        reply(talker, "设置:\nKey: " + sk + "\n推送: " + (dailyPushEnabled ? "开" : "关") + "\n时间: " + pushTime + "\n订阅: " + (subscribedCities.isEmpty() ? "0" : subscribedCities.split(";").length) + "个\n\n命令: 天气设置 key/time/推送");
         return;
     }
     if (content.equals("天气帮助") || content.equals("天气Pro") || content.equals("天气pro")) {
-        writeLog("天气Pro: 匹配「天气帮助」命令");
-        showHelp(talker);
+        reply(talker, "命令:\n天气 <城市>  查询天气\n预报 <城市>  3日预报\n订阅 <城市>  订阅推送\n取消订阅  取消\n我的订阅  查看\n天气设置  设置\n天气帮助  帮助");
         return;
     }
 
-    writeLog("天气Pro: 未匹配任何命令，检查每日推送");
     checkDailyPush();
 }
 
-boolean onClickSendBtn(String text) {
-    var content = text.trim();
-    writeLog("天气Pro onClickSendBtn: [" + content + "]");
-    return false;
+// ==================== 兼容全角/半角空格 ====================
+
+boolean matchCmd(String content, String prefix) {
+    if (content.startsWith(prefix)) return true;
+    return content.startsWith(prefix.replace(' ', '\u3000'));
 }
+
+String getArgAfter(String content) {
+    var idx = content.indexOf(" ");
+    if (idx < 0) idx = content.indexOf('\u3000');
+    if (idx < 0) return "";
+    return content.substring(idx + 1).trim();
+}
+
+// ==================== onClickSendBtn ====================
+
+boolean onClickSendBtn(String text) {
     return false;
 }
 
 // ==================== 天气查询 ====================
 
-void handleWeatherQuery(String talker, String content) {
-    var city = content.substring(content.indexOf(" ") + 1).trim();
-    writeLog("天气Pro: 查询城市=" + city);
-    if (city.isEmpty()) {
-        sendText(talker, "[天气Pro] 请输入城市名，如：天气 北京");
-        return;
-    }
-    if (apiKey.isEmpty()) {
-        sendText(talker, "[天气Pro] 请先设置和风天气 API Key。免费获取: https://dev.qweather.com\n发送「天气设置 key 你的Key」进行设置");
-        return;
-    }
-    doWeatherQuery(talker, city);
-}
-
 void doWeatherQuery(String talker, String city) {
-    var geoUrl = "https://geoapi.qweather.com/v2/city/lookup?location=" + encodeURI(city) + "&key=" + apiKey;
-    get(geoUrl, null, geoResp -> {
-        writeLog("天气Pro: 城市搜索返回 code=" + new JSONObject(geoResp).optString("code"));
+    var url = "https://geoapi.qweather.com/v2/city/lookup?location=" + encodeURI(city) + "&key=" + apiKey;
+    log("天气Pro GEO: " + url);
+    get(url, null, geoResp -> {
         try {
-            var geoJson = new JSONObject(geoResp);
-            if (!geoJson.optString("code").equals("200")) {
-                sendText(talker, "[天气Pro] 未找到城市「" + city + "」");
-                return;
-            }
-            var loc = geoJson.optJSONArray("location").optJSONObject(0);
+            var j = new org.json.JSONObject(geoResp);
+            if (!j.optString("code").equals("200")) { reply(talker, "未找到城市: " + city); return; }
+            var loc = j.optJSONArray("location").optJSONObject(0);
             var cityId = loc.optString("id");
-            var cityFullName = loc.optString("name") + ", " + loc.optString("adm1") + ", " + loc.optString("country");
-
+            var name = loc.optString("name") + "," + loc.optString("adm1");
             var nowUrl = "https://devapi.qweather.com/v7/weather/now?location=" + cityId + "&key=" + apiKey;
-            writeLog("天气Pro: 查询天气 cityId=" + cityId);
+            log("天气Pro NOW: " + nowUrl);
             get(nowUrl, null, nowResp -> {
                 try {
-                    var now = new JSONObject(nowResp).optJSONObject("now");
-                    if (now == null) { sendText(talker, "[天气Pro] 查询失败"); return; }
-                    var sb = "[天气Pro] " + cityFullName + "\n";
-                    sb += "天气: " + now.optString("text") + "\n";
-                    sb += "温度: " + now.optString("temp") + "°C (体感 " + now.optString("feelsLike") + "°C)\n";
-                    sb += "风向: " + now.optString("windDir") + " " + now.optString("windScale") + "级\n";
-                    sb += "风速: " + now.optString("windSpeed") + " km/h\n";
-                    sb += "湿度: " + now.optString("humidity") + "%\n";
-                    sb += "能见度: " + now.optString("vis") + " km\n";
-                    sb += "气压: " + now.optString("pressure") + " hPa\n";
-                    sb += "云量: " + now.optString("cloud") + "%\n";
-                    sb += "发送「预报 " + city + "」查看3日预报";
-                    sendText(talker, sb);
-                } catch (Exception e) {
-                    sendText(talker, "[天气Pro] 查询失败: " + e.getMessage());
-                }
+                    var n = new org.json.JSONObject(nowResp).optJSONObject("now");
+                    if (n == null) { reply(talker, "查询失败"); return; }
+                    var sb = "[天气] " + name + "\n";
+                    sb += n.optString("text") + " " + n.optString("temp") + "°C (体感" + n.optString("feelsLike") + "°C)\n";
+                    sb += "风向 " + n.optString("windDir") + " " + n.optString("windScale") + "级 风速" + n.optString("windSpeed") + "km/h\n";
+                    sb += "湿度 " + n.optString("humidity") + "% 能见度" + n.optString("vis") + "km 气压" + n.optString("pressure") + "hPa";
+                    reply(talker, sb);
+                } catch (Exception e) { reply(talker, "查询失败: " + e.getMessage()); }
             });
-        } catch (Exception e) {
-            sendText(talker, "[天气Pro] 查询失败: " + e.getMessage());
-        }
+        } catch (Exception e) { reply(talker, "查询失败: " + e.getMessage()); }
     });
 }
 
 // ==================== 多日预报 ====================
 
-void handleForecast(String talker, String content) {
-    var prefix = content.startsWith("预报 ") ? "预报 " : "天气预报 ";
-    var city = content.substring(prefix.length()).trim();
-    if (city.isEmpty()) {
-        sendText(talker, "[天气Pro] 请输入城市名，如：预报 北京");
-        return;
-    }
-    if (apiKey.isEmpty()) {
-        sendText(talker, "[天气Pro] 请先设置和风天气 API Key");
-        return;
-    }
-    doForecastQuery(talker, city);
-}
-
 void doForecastQuery(String talker, String city) {
-    var geoUrl = "https://geoapi.qweather.com/v2/city/lookup?location=" + encodeURI(city) + "&key=" + apiKey;
-    get(geoUrl, null, geoResp -> {
+    var url = "https://geoapi.qweather.com/v2/city/lookup?location=" + encodeURI(city) + "&key=" + apiKey;
+    log("天气Pro GEO: " + url);
+    get(url, null, geoResp -> {
         try {
-            var geoJson = new JSONObject(geoResp);
-            if (!geoJson.optString("code").equals("200")) {
-                sendText(talker, "[天气Pro] 未找到城市「" + city + "」");
-                return;
-            }
-            var loc = geoJson.optJSONArray("location").optJSONObject(0);
-            var cityId = loc.optString("id");
-            var cityFullName = loc.optString("name") + ", " + loc.optString("adm1") + ", " + loc.optString("country");
-
-            var fcUrl = "https://devapi.qweather.com/v7/weather/3d?location=" + cityId + "&key=" + apiKey;
+            var j = new org.json.JSONObject(geoResp);
+            if (!j.optString("code").equals("200")) { reply(talker, "未找到: " + city); return; }
+            var loc = j.optJSONArray("location").optJSONObject(0);
+            var name = loc.optString("name") + "," + loc.optString("adm1");
+            var fcUrl = "https://devapi.qweather.com/v7/weather/3d?location=" + loc.optString("id") + "&key=" + apiKey;
             get(fcUrl, null, fcResp -> {
                 try {
-                    var daily = new JSONObject(fcResp).optJSONArray("daily");
-                    if (daily == null || daily.length() == 0) {
-                        sendText(talker, "[天气Pro] 预报数据获取失败");
-                        return;
-                    }
-                    var sb = "[天气Pro] " + cityFullName + " 3 日预报";
+                    var daily = new org.json.JSONObject(fcResp).optJSONArray("daily");
+                    if (daily == null || daily.length() == 0) { reply(talker, "预报失败"); return; }
+                    var sb = "[3日预报] " + name;
                     for (var i = 0; i < daily.length(); i++) {
-                        var day = daily.optJSONObject(i);
-                        var date = day.optString("fxDate");
-                        sb += "\n\n" + date + " " + getWeekDay(date);
-                        sb += "\n  白天: " + day.optString("textDay") + " " + day.optString("tempMax") + "°C";
-                        sb += "\n  夜间: " + day.optString("textNight") + " " + day.optString("tempMin") + "°C";
-                        sb += "\n  风向: " + day.optString("windDirDay") + " " + day.optString("windScaleDay") + "级";
-                        sb += "\n  湿度: " + day.optString("humidity") + "% | 降水: " + day.optString("precip") + "mm";
-                        sb += "\n  紫外线: " + day.optString("uvIndex") + " | 日出 " + day.optString("sunrise") + " 日落 " + day.optString("sunset");
+                        var d = daily.optJSONObject(i);
+                        sb += "\n\n" + d.optString("fxDate") + " " + getWeekDay(d.optString("fxDate"));
+                        sb += "\n  白天 " + d.optString("textDay") + " " + d.optString("tempMax") + "°C";
+                        sb += "\n  夜间 " + d.optString("textNight") + " " + d.optString("tempMin") + "°C";
+                        sb += "\n  " + d.optString("windDirDay") + d.optString("windScaleDay") + "级 湿度" + d.optString("humidity") + "%";
+                        sb += "\n  紫外" + d.optString("uvIndex") + " 日出" + d.optString("sunrise") + " 日落" + d.optString("sunset");
                     }
-                    sendText(talker, sb);
-                } catch (Exception e) {
-                    sendText(talker, "[天气Pro] 预报查询失败");
-                }
+                    reply(talker, sb);
+                } catch (Exception e) { reply(talker, "预报失败"); }
             });
-        } catch (Exception e) {
-            sendText(talker, "[天气Pro] 查询失败: " + e.getMessage());
-        }
+        } catch (Exception e) { reply(talker, "查询失败"); }
     });
 }
 
-// ==================== 城市订阅管理 ====================
-
-void handleSubscribe(String talker, String content) {
-    var prefix = content.startsWith("订阅天气 ") ? "订阅天气 " : "订阅 ";
-    var city = content.substring(prefix.length()).trim();
-    if (city.isEmpty()) {
-        sendText(talker, "[天气Pro] 请输入城市名，如：订阅 北京");
-        return;
-    }
-    if (apiKey.isEmpty()) {
-        sendText(talker, "[天气Pro] 请先设置和风天气 API Key");
-        return;
-    }
-    doSubscribeCity(talker, city);
-}
+// ==================== 城市订阅 ====================
 
 void doSubscribeCity(String talker, String city) {
-    var geoUrl = "https://geoapi.qweather.com/v2/city/lookup?location=" + encodeURI(city) + "&key=" + apiKey;
-    get(geoUrl, null, geoResp -> {
+    var url = "https://geoapi.qweather.com/v2/city/lookup?location=" + encodeURI(city) + "&key=" + apiKey;
+    get(url, null, geoResp -> {
         try {
-            var geoJson = new JSONObject(geoResp);
-            if (!geoJson.optString("code").equals("200")) {
-                sendText(talker, "[天气Pro] 未找到城市「" + city + "」");
-                return;
-            }
-            var loc = geoJson.optJSONArray("location").optJSONObject(0);
+            var j = new org.json.JSONObject(geoResp);
+            if (!j.optString("code").equals("200")) { reply(talker, "未找到: " + city); return; }
+            var loc = j.optJSONArray("location").optJSONObject(0);
             var cityId = loc.optString("id");
-            var cityFullName = loc.optString("name") + ", " + loc.optString("adm1") + ", " + loc.optString("country");
-
-            if (subscribedCities.contains(cityId)) {
-                sendText(talker, "[天气Pro] 已订阅过 " + cityFullName);
-                return;
-            }
-            var entry = cityFullName + "|" + cityId;
-            subscribedCities = subscribedCities.isEmpty() ? entry : subscribedCities + ";" + entry;
+            var name = loc.optString("name") + "," + loc.optString("adm1");
+            if (subscribedCities.contains(cityId)) { reply(talker, "已订阅 " + name); return; }
+            subscribedCities = subscribedCities.isEmpty() ? name + "|" + cityId : subscribedCities + ";" + name + "|" + cityId;
             dailyPushEnabled = true;
-            saveSubscriptions();
-            sendText(talker, "[天气Pro] 已订阅 " + cityFullName + " 每日 " + pushTime + " 推送");
-        } catch (Exception e) {
-            sendText(talker, "[天气Pro] 订阅失败: " + e.getMessage());
-        }
+            saveConfig();
+            reply(talker, "已订阅 " + name + " 每日" + pushTime + "推送");
+        } catch (Exception e) { reply(talker, "订阅失败"); }
     });
 }
 
-void cancelAllSubscriptions(String talker) {
-    if (subscribedCities.isEmpty()) {
-        sendText(talker, "[天气Pro] 当前没有订阅任何城市");
-        return;
-    }
-    subscribedCities = "";
-    dailyPushEnabled = false;
-    saveSubscriptions();
-    sendText(talker, "[天气Pro] 已取消所有订阅");
-}
-
-void showSubscriptionList(String talker) {
-    if (subscribedCities.isEmpty()) {
-        sendText(talker, "[天气Pro] 当前没有订阅。发送「订阅 城市名」进行订阅");
-        return;
-    }
-    var cities = subscribedCities.split(";");
-    var sb = "[天气Pro] 订阅列表 (" + cities.length + "):\n";
-    for (var i = 0; i < cities.length; i++) {
-        sb += (i + 1) + ". " + cities[i].split("\\|")[0] + "\n";
-    }
-    sb += "推送时间: " + pushTime + " | 状态: " + (dailyPushEnabled ? "开启" : "关闭");
-    sendText(talker, sb);
-}
-
-// ==================== 每日定时推送 ====================
+// ==================== 每日推送 ====================
 
 void checkDailyPush() {
-    if (!dailyPushEnabled) return;
-    if (subscribedCities.isEmpty()) return;
-    if (apiKey.isEmpty()) return;
-
-    var today = new SimpleDateFormat("yyyyMMdd").format(new Date());
+    if (!dailyPushEnabled || subscribedCities.isEmpty() || apiKey.isEmpty()) return;
+    var today = new java.text.SimpleDateFormat("yyyyMMdd").format(new java.util.Date());
     if (today.equals(lastPushDate)) return;
-    if (new SimpleDateFormat("HH:mm").format(new Date()).compareTo(pushTime) < 0) return;
-
+    if (new java.text.SimpleDateFormat("HH:mm").format(new java.util.Date()).compareTo(pushTime) < 0) return;
     lastPushDate = today;
     putString("last_push_date", today);
-
     var cities = subscribedCities.split(";");
     for (var i = 0; i < cities.length; i++) {
         var parts = cities[i].split("\\|");
         if (parts.length < 2) continue;
-        doPushSingleCity(parts[0], parts[1]);
+        doPushOne(parts[0], parts[1]);
     }
-    writeLog("天气Pro 每日推送完成，共 " + cities.length + " 个城市");
+    log("每日推送完成 " + cities.length + "城");
 }
 
-void doPushSingleCity(String cityName, String cityId) {
+void doPushOne(String name, String cityId) {
     var url = "https://devapi.qweather.com/v7/weather/now?location=" + cityId + "&key=" + apiKey;
     get(url, null, resp -> {
         try {
-            var now = new JSONObject(resp).optJSONObject("now");
-            if (now == null) return;
-            var msg = "[天气Pro] " + cityName + "\n";
-            msg += now.optString("text") + " " + now.optString("temp") + "°C";
-            msg += " | 体感 " + now.optString("feelsLike") + "°C";
-            msg += " | " + now.optString("windDir") + " " + now.optString("windScale") + "级";
-            msg += "\n湿度 " + now.optString("humidity") + "%";
-            msg += " | 能见度 " + now.optString("vis") + "km";
-            notify("天气Pro", cityName + " " + now.optString("text") + " " + now.optString("temp") + "°C");
-        } catch (Exception e) {
-            writeLog("推送失败 " + cityName + ": " + e.getMessage());
-        }
+            var n = new org.json.JSONObject(resp).optJSONObject("now");
+            if (n == null) return;
+            notify("天气Pro", name + " " + n.optString("text") + " " + n.optString("temp") + "°C");
+        } catch (Exception e) {}
     });
 }
 
-// ==================== 设置命令 ====================
-
-void handleSettingsCommand(String talker, String content) {
-    var parts = content.trim().split("\\s+");
-
-    if (parts.length == 1) {
-        showCurrentSettings(talker);
-        return;
-    }
-
-    var cmd = parts[1];
-
-    if (cmd.equals("key") && parts.length >= 3) {
-        apiKey = parts[2].trim();
-        putString("api_key", apiKey);
-        sendText(talker, "[天气Pro] API Key 已设置");
-        return;
-    }
-    if ((cmd.equals("推送时间") || cmd.equals("时间")) && parts.length >= 3) {
-        pushTime = parts[2].trim();
-        putString("push_time", pushTime);
-        sendText(talker, "[天气Pro] 推送时间已设置为 " + pushTime);
-        return;
-    }
-    if ((cmd.equals("推送") || cmd.equals("开关")) && parts.length >= 3) {
-        var val = parts[2];
-        dailyPushEnabled = val.equals("开") || val.equals("开启") || val.equals("on") || val.equals("1");
-        saveSubscriptions();
-        sendText(talker, "[天气Pro] 每日推送已" + (dailyPushEnabled ? "开启" : "关闭"));
-        return;
-    }
-
-    showCurrentSettings(talker);
-}
-
-void showCurrentSettings(String talker) {
-    var maskedKey = apiKey.isEmpty() ? "未设置"
-        : (apiKey.length() > 8 ? apiKey.substring(0, 4) + "****" + apiKey.substring(apiKey.length() - 4) : "****");
-    var subCount = subscribedCities.isEmpty() ? 0 : subscribedCities.split(";").length;
-    var sb = "[天气Pro] 当前设置:\n";
-    sb += "API Key: " + maskedKey + "\n";
-    sb += "每日推送: " + (dailyPushEnabled ? "开启" : "关闭") + "\n";
-    sb += "推送时间: " + pushTime + "\n";
-    sb += "订阅城市: " + subCount + " 个\n";
-    sb += "\n命令:\n";
-    sb += "天气设置 key <Key>          设置 API Key\n";
-    sb += "天气设置 推送时间 <HH:mm>   设置推送时间\n";
-    sb += "天气设置 推送 开/关         开关每日推送";
-    sendText(talker, sb);
-}
-
-// ==================== 帮助 ====================
-
-void showHelp(String talker) {
-    var help = "[天气Pro] 使用帮助:\n\n";
-    help += "天气 <城市>     查询实时天气\n";
-    help += "预报 <城市>     查看 3 日预报\n";
-    help += "订阅 <城市>     订阅每日推送\n";
-    help += "取消订阅        取消所有订阅\n";
-    help += "我的订阅        查看订阅列表\n";
-    help += "天气设置        查看/修改设置\n";
-    help += "天气帮助        显示此帮助\n";
-    help += "\n免费获取 API Key: https://dev.qweather.com";
-    sendText(talker, help);
-}
-
-// ==================== UI 设置面板 ====================
+// ==================== UI 面板 ====================
 
 void openSettings() {
-    writeLog("天气Pro: openSettings 被调用");
-    var activity = getTopActivity();
-    if (activity == null) { toast("无法打开设置面板"); return; }
+    var a = getTopActivity();
+    if (a == null) { toast("无法打开面板"); return; }
+    try {
+        var root = new android.widget.LinearLayout(a);
+        root.setOrientation(android.widget.LinearLayout.VERTICAL);
+        root.setPadding(50, 40, 50, 40);
 
-    var root = new LinearLayout(activity);
-    root.setOrientation(LinearLayout.VERTICAL);
-    root.setPadding(50, 40, 50, 40);
+        var keyInput = new android.widget.EditText(a);
+        keyInput.setText(apiKey);
+        keyInput.setHint("API Key");
 
-    var title = new TextView(activity);
-    title.setText("天气Pro 设置");
-    title.setTextSize(20);
-    title.setTextColor(Color.parseColor("#333333"));
-    root.addView(title);
+        var pushSwitch = new android.widget.Switch(a);
+        pushSwitch.setChecked(dailyPushEnabled);
 
-    var keyLabel = new TextView(activity);
-    keyLabel.setText("和风天气 API Key:");
-    keyLabel.setPadding(0, 20, 0, 5);
-    keyLabel.setTextColor(Color.parseColor("#666666"));
-    root.addView(keyLabel);
+        var timeInput = new android.widget.EditText(a);
+        timeInput.setText(pushTime);
 
-    var keyInput = new EditText(activity);
-    keyInput.setText(apiKey);
-    keyInput.setHint("免费获取: dev.qweather.com");
-    root.addView(keyInput);
+        var title = new android.widget.TextView(a);
+        title.setText("天气Pro 设置");
+        title.setTextSize(18);
+        root.addView(title);
 
-    var pushLabel = new TextView(activity);
-    pushLabel.setText("每日推送:");
-    pushLabel.setPadding(0, 20, 0, 5);
-    pushLabel.setTextColor(Color.parseColor("#666666"));
-    root.addView(pushLabel);
+        var kl = new android.widget.TextView(a);
+        kl.setText("和风天气 API Key:");
+        root.addView(kl);
+        root.addView(keyInput);
 
-    var pushSwitch = new Switch(activity);
-    pushSwitch.setChecked(dailyPushEnabled);
-    pushSwitch.setText(dailyPushEnabled ? "已开启" : "已关闭");
-    pushSwitch.setOnCheckedChangeListener((btn, checked) -> {
-        pushSwitch.setText(checked ? "已开启" : "已关闭");
-    });
-    root.addView(pushSwitch);
+        var pl = new android.widget.TextView(a);
+        pl.setText("每日推送:");
+        root.addView(pl);
+        root.addView(pushSwitch);
 
-    var timeLabel = new TextView(activity);
-    timeLabel.setText("推送时间:");
-    timeLabel.setPadding(0, 15, 0, 5);
-    timeLabel.setTextColor(Color.parseColor("#666666"));
-    root.addView(timeLabel);
+        var tl = new android.widget.TextView(a);
+        tl.setText("推送时间 (HH:mm):");
+        root.addView(tl);
+        root.addView(timeInput);
 
-    var timeInput = new EditText(activity);
-    timeInput.setText(pushTime);
-    timeInput.setHint("08:00");
-    root.addView(timeInput);
+        var saveBtn = new android.widget.Button(a);
+        saveBtn.setText("保存");
+        saveBtn.setOnClickListener(v -> {
+            apiKey = keyInput.getText().toString().trim();
+            dailyPushEnabled = pushSwitch.isChecked();
+            pushTime = timeInput.getText().toString().trim();
+            if (pushTime.isEmpty()) pushTime = "08:00";
+            putString("api_key", apiKey);
+            putBoolean("daily_push_enabled", dailyPushEnabled);
+            putString("push_time", pushTime);
+            saveConfig();
+            toast("已保存");
+        });
+        root.addView(saveBtn);
 
-    var subLabel = new TextView(activity);
-    subLabel.setText("订阅城市 (逗号分隔):");
-    subLabel.setPadding(0, 15, 0, 5);
-    subLabel.setTextColor(Color.parseColor("#666666"));
-    root.addView(subLabel);
-
-    var subInput = new EditText(activity);
-    var cityNames = "";
-    if (!subscribedCities.isEmpty()) {
-        var cities = subscribedCities.split(";");
-        for (var i = 0; i < cities.length; i++) {
-            if (i > 0) cityNames += ", ";
-            cityNames += cities[i].split("\\|")[0];
-        }
-    }
-    subInput.setText(cityNames);
-    subInput.setHint("北京, 上海");
-    root.addView(subInput);
-
-    var btnLayout = new LinearLayout(activity);
-    btnLayout.setOrientation(LinearLayout.HORIZONTAL);
-    btnLayout.setPadding(0, 30, 0, 0);
-
-    var saveBtn = new Button(activity);
-    saveBtn.setText("保存设置");
-    saveBtn.setOnClickListener(v -> {
-        apiKey = keyInput.getText().toString().trim();
-        dailyPushEnabled = pushSwitch.isChecked();
-        pushTime = timeInput.getText().toString().trim();
-        if (pushTime.isEmpty()) pushTime = "08:00";
-        putString("api_key", apiKey);
-        putBoolean("daily_push_enabled", dailyPushEnabled);
-        putString("push_time", pushTime);
-
-        var newCities = subInput.getText().toString().trim();
-        if (!newCities.isEmpty() && !newCities.equals(cityNames)) {
-            var names = newCities.split(",");
-            var entry = "";
-            for (var i = 0; i < names.length; i++) {
-                var n = names[i].trim();
-                if (n.isEmpty()) continue;
-                if (entry.length() > 0) entry += ";";
-                entry += n + "|" + n;
-            }
-            subscribedCities = entry;
-        }
-        saveSubscriptions();
-        toast("设置已保存");
-    });
-    btnLayout.addView(saveBtn);
-
-    root.addView(btnLayout);
-
-    var builder = new AlertDialog.Builder(activity);
-    var dialog = builder.create();
-    dialog.setView(root);
-    dialog.show();
+        var dlg = new android.app.AlertDialog.Builder(a).create();
+        dlg.setView(root);
+        dlg.show();
+    } catch (Exception e) { toast("面板错误: " + e.getMessage()); }
 }
 
 // ==================== 工具方法 ====================
 
-void saveSubscriptions() {
+void reply(String talker, String msg) {
+    if (talker != null && !talker.isEmpty()) sendText(talker, msg);
+    else toast(msg);
+}
+
+void saveConfig() {
     putString("subscribed_cities", subscribedCities);
     putBoolean("daily_push_enabled", dailyPushEnabled);
 }
 
 String getWeekDay(String dateStr) {
     try {
-        var sdf = new SimpleDateFormat("yyyy-MM-dd");
-        var date = sdf.parse(dateStr);
+        var sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
         var cal = java.util.Calendar.getInstance();
-        cal.setTime(date);
-        var days = new String[]{"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
+        cal.setTime(sdf.parse(dateStr));
+        var days = new String[]{"周日","周一","周二","周三","周四","周五","周六"};
         return days[cal.get(java.util.Calendar.DAY_OF_WEEK) - 1];
-    } catch (Exception e) {
-        return "";
-    }
+    } catch (Exception e) { return ""; }
 }
 
 String encodeURI(String s) {
@@ -572,17 +321,12 @@ String encodeURI(String s) {
     var sb = "";
     for (var i = 0; i < s.length(); i++) {
         var ch = s.charAt(i);
-        if (Character.isLetterOrDigit(ch) || "-_.~".indexOf(ch) >= 0) {
-            sb += ch;
-        } else {
+        if (Character.isLetterOrDigit(ch) || "-_.~".indexOf(ch) >= 0) sb += ch;
+        else {
             try {
                 var bytes = ch.toString().getBytes("UTF-8");
-                for (var j = 0; j < bytes.length; j++) {
-                    sb += "%" + String.format("%02X", bytes[j] & 0xFF);
-                }
-            } catch (Exception e) {
-                sb += ch;
-            }
+                for (var j = 0; j < bytes.length; j++) sb += "%" + String.format("%02X", bytes[j] & 0xFF);
+            } catch (Exception e2) { sb += ch; }
         }
     }
     return sb;

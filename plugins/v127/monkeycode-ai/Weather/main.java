@@ -1,25 +1,43 @@
 import org.json.JSONObject;
+import java.io.FileWriter;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
+String logFile = "";
 
 void onLoad() {
+    logFile = pluginDir + "/weather.log";
     log("===== 天气查询插件 v1.0.0 已加载 =====");
+    writeLog("插件已加载，日志文件: " + logFile);
+}
+
+void onUnload() {
+    writeLog("插件已卸载");
+}
+
+void writeLog(String msg) {
+    try {
+        var now = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+        var line = "[" + now + "] " + msg + "\n";
+        var fw = new FileWriter(logFile, true);
+        fw.write(line);
+        fw.close();
+    } catch (Exception e) {}
+    log(msg);
 }
 
 void onHandleMsg(Object msgInfoBean) {
-    log("天气插件 onHandleMsg 触发");
-    if (msgInfoBean.isSend()) { log("天气插件: 跳过自己发送的消息"); return; }
-    if (!msgInfoBean.isText()) { log("天气插件: 跳过非文本消息"); return; }
+    if (msgInfoBean.isSend()) return;
+    if (!msgInfoBean.isText()) return;
     var content = msgInfoBean.getContent();
     var talker = msgInfoBean.getTalker();
-    log("天气插件: 收到消息 = [" + content + "] from=" + talker);
+    writeLog("收到消息: [" + content + "] from=" + talker);
 
-    if (content.startsWith("天气 ")) {
-        log("天气插件: 匹配到「天气 」命令");
-    } else if (content.startsWith("天气查询 ")) {
-        log("天气插件: 匹配到「天气查询 」命令");
-    } else {
-        log("天气插件: 未匹配任何命令，跳过");
+    if (!content.startsWith("天气 ") && !content.startsWith("天气查询 ")) {
+        writeLog("未匹配命令，跳过");
         return;
     }
+    writeLog("匹配天气查询命令");
 
     var city = content.substring(content.indexOf(" ") + 1).trim();
     if (city.isEmpty()) {
@@ -28,16 +46,16 @@ void onHandleMsg(Object msgInfoBean) {
     }
 
     var url = "https://wttr.in/" + encodeURI(city) + "?format=j1&lang=zh";
-    log("天气插件: 查询城市=" + city + " url=" + url);
+    writeLog("查询城市=" + city + " url=" + url);
 
     get(url, null, respContent -> {
-        log("天气插件: 收到 wttr.in 响应");
         try {
+            writeLog("API 响应已收到");
             var json = new JSONObject(respContent);
             var current = json.optJSONArray("current_condition").optJSONObject(0);
 
             if (current == null) {
-                log("天气插件: 未找到城市数据");
+                writeLog("未找到城市数据: " + city);
                 sendText(talker, "未查询到「" + city + "」的天气信息，请检查城市名");
                 return;
             }
@@ -70,16 +88,16 @@ void onHandleMsg(Object msgInfoBean) {
             result += "紫外线: " + uvIndex;
 
             sendText(talker, result);
-            log("天气插件: 发送天气结果成功");
+            writeLog("天气结果已发送 城市=" + areaName + " 温度=" + temp + "°C");
         } catch (Exception e) {
-            log("天气插件: 解析失败 " + e.toString());
+            writeLog("异常: " + e.toString());
             sendText(talker, "天气查询失败，请检查城市名是否正确");
         }
     });
 }
 
 void openSettings() {
-    log("天气插件: openSettings 被调用");
+    writeLog("openSettings 被调用");
     var activity = getTopActivity();
     if (activity == null) {
         toast("无法打开设置");

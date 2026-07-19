@@ -3,6 +3,7 @@ import android.widget.*;
 import android.graphics.*;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.io.FileWriter;
 import org.json.JSONObject;
 
 String apiKey = "";
@@ -10,6 +11,7 @@ String subscribedCities = "";
 String pushTime = "08:00";
 boolean dailyPushEnabled = false;
 String lastPushDate = "";
+String logFile = "";
 
 void onLoad() {
     apiKey = getString("api_key", "");
@@ -17,11 +19,23 @@ void onLoad() {
     pushTime = getString("push_time", "08:00");
     dailyPushEnabled = getBoolean("daily_push_enabled", false);
     lastPushDate = getString("last_push_date", "");
-    log("===== 天气Pro v1.0.0 已加载 ===== apiKey=" + (apiKey.isEmpty() ? "未设置" : "已设置") + " 订阅=" + (subscribedCities.isEmpty() ? "0" : String.valueOf(subscribedCities.split(";").length)) + "个");
+    logFile = pluginDir + "/weather_pro.log";
+    writeLog("===== 天气Pro v1.0.0 已加载 ===== apiKey=" + (apiKey.isEmpty() ? "未设置" : "已设置") + " 订阅=" + (subscribedCities.isEmpty() ? "0" : String.valueOf(subscribedCities.split(";").length)) + "个 日志文件=" + logFile);
 }
 
 void onUnload() {
-    log("天气Pro 已卸载");
+    writeLog("天气Pro 已卸载");
+}
+
+void writeLog(String msg) {
+    try {
+        var now = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+        var line = "[" + now + "] " + msg + "\n";
+        var fw = new FileWriter(logFile, true);
+        fw.write(line);
+        fw.close();
+    } catch (Exception e) {}
+    log(msg);
 }
 
 // ==================== 消息处理入口 ====================
@@ -32,45 +46,45 @@ void onHandleMsg(Object msgInfoBean) {
 
     var content = msgInfoBean.getContent().trim();
     var talker = msgInfoBean.getTalker();
-    log("天气Pro onHandleMsg: content=[" + content + "] talker=" + talker);
+    writeLog("天气Pro onHandleMsg: content=[" + content + "] talker=" + talker);
 
     if (content.startsWith("订阅天气 ") || content.startsWith("订阅 ")) {
-        log("天气Pro: 匹配「订阅」命令");
+        writeLog("天气Pro: 匹配「订阅」命令");
         handleSubscribe(talker, content);
         return;
     }
     if (content.equals("取消订阅") || content.equals("取消天气")) {
-        log("天气Pro: 匹配「取消订阅」命令");
+        writeLog("天气Pro: 匹配「取消订阅」命令");
         cancelAllSubscriptions(talker);
         return;
     }
     if (content.equals("我的订阅") || content.equals("订阅列表")) {
-        log("天气Pro: 匹配「我的订阅」命令");
+        writeLog("天气Pro: 匹配「我的订阅」命令");
         showSubscriptionList(talker);
         return;
     }
     if (content.startsWith("预报 ") || content.startsWith("天气预报 ")) {
-        log("天气Pro: 匹配「预报」命令");
+        writeLog("天气Pro: 匹配「预报」命令");
         handleForecast(talker, content);
         return;
     }
     if (content.startsWith("天气 ") || content.startsWith("天气查询 ")) {
-        log("天气Pro: 匹配「天气」命令");
+        writeLog("天气Pro: 匹配「天气」命令");
         handleWeatherQuery(talker, content);
         return;
     }
     if (content.startsWith("天气设置")) {
-        log("天气Pro: 匹配「天气设置」命令");
+        writeLog("天气Pro: 匹配「天气设置」命令");
         handleSettingsCommand(talker, content);
         return;
     }
     if (content.equals("天气帮助") || content.equals("天气Pro") || content.equals("天气pro")) {
-        log("天气Pro: 匹配「天气帮助」命令");
+        writeLog("天气Pro: 匹配「天气帮助」命令");
         showHelp(talker);
         return;
     }
 
-    log("天气Pro: 未匹配任何命令，检查每日推送");
+    writeLog("天气Pro: 未匹配任何命令，检查每日推送");
     checkDailyPush();
 }
 
@@ -78,7 +92,7 @@ void onHandleMsg(Object msgInfoBean) {
 
 void handleWeatherQuery(String talker, String content) {
     var city = content.substring(content.indexOf(" ") + 1).trim();
-    log("天气Pro: 查询城市=" + city);
+    writeLog("天气Pro: 查询城市=" + city);
     if (city.isEmpty()) {
         sendText(talker, "[天气Pro] 请输入城市名，如：天气 北京");
         return;
@@ -93,7 +107,7 @@ void handleWeatherQuery(String talker, String content) {
 void doWeatherQuery(String talker, String city) {
     var geoUrl = "https://geoapi.qweather.com/v2/city/lookup?location=" + encodeURI(city) + "&key=" + apiKey;
     get(geoUrl, null, geoResp -> {
-        log("天气Pro: 城市搜索返回 code=" + new JSONObject(geoResp).optString("code"));
+        writeLog("天气Pro: 城市搜索返回 code=" + new JSONObject(geoResp).optString("code"));
         try {
             var geoJson = new JSONObject(geoResp);
             if (!geoJson.optString("code").equals("200")) {
@@ -105,7 +119,7 @@ void doWeatherQuery(String talker, String city) {
             var cityFullName = loc.optString("name") + ", " + loc.optString("adm1") + ", " + loc.optString("country");
 
             var nowUrl = "https://devapi.qweather.com/v7/weather/now?location=" + cityId + "&key=" + apiKey;
-            log("天气Pro: 查询天气 cityId=" + cityId);
+            writeLog("天气Pro: 查询天气 cityId=" + cityId);
             get(nowUrl, null, nowResp -> {
                 try {
                     var now = new JSONObject(nowResp).optJSONObject("now");
@@ -279,7 +293,7 @@ void checkDailyPush() {
         if (parts.length < 2) continue;
         doPushSingleCity(parts[0], parts[1]);
     }
-    log("天气Pro 每日推送完成，共 " + cities.length + " 个城市");
+    writeLog("天气Pro 每日推送完成，共 " + cities.length + " 个城市");
 }
 
 void doPushSingleCity(String cityName, String cityId) {
@@ -296,7 +310,7 @@ void doPushSingleCity(String cityName, String cityId) {
             msg += " | 能见度 " + now.optString("vis") + "km";
             notify("天气Pro", cityName + " " + now.optString("text") + " " + now.optString("temp") + "°C");
         } catch (Exception e) {
-            log("推送失败 " + cityName + ": " + e.getMessage());
+            writeLog("推送失败 " + cityName + ": " + e.getMessage());
         }
     });
 }
@@ -370,7 +384,7 @@ void showHelp(String talker) {
 // ==================== UI 设置面板 ====================
 
 void openSettings() {
-    log("天气Pro: openSettings 被调用");
+    writeLog("天气Pro: openSettings 被调用");
     var activity = getTopActivity();
     if (activity == null) { toast("无法打开设置面板"); return; }
 

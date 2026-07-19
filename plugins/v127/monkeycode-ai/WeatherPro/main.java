@@ -40,13 +40,59 @@ void writeLog(String msg) {
 
 // ==================== 消息处理入口 ====================
 
+boolean onClickSendBtn(String text) {
+    var content = text.trim();
+    writeLog("天气Pro onClickSendBtn: [" + content + "]");
+
+    if (content.startsWith("天气 ") || content.startsWith("天气查询 ")) {
+        writeLog("天气Pro: 长按发送「天气」命令");
+        handleWeatherQuerySelf(content);
+        return true;
+    }
+    if (content.equals("天气帮助") || content.equals("天气Pro") || content.equals("天气pro")) {
+        writeLog("天气Pro: 长按发送「天气帮助」");
+        showHelpSelf();
+        return true;
+    }
+    if (content.equals("天气设置")) {
+        writeLog("天气Pro: 长按发送「天气设置」");
+        showCurrentSettingsSelf();
+        return true;
+    }
+    if (content.startsWith("订阅 ") || content.startsWith("订阅天气 ")) {
+        writeLog("天气Pro: 长按发送「订阅」命令");
+        handleSubscribeSelf(content);
+        return true;
+    }
+    if (content.equals("取消订阅") || content.equals("取消天气")) {
+        writeLog("天气Pro: 长按发送「取消订阅」");
+        cancelAllSubscriptionsSelf();
+        return true;
+    }
+    if (content.equals("我的订阅") || content.equals("订阅列表")) {
+        writeLog("天气Pro: 长按发送「我的订阅」");
+        showSubscriptionListSelf();
+        return true;
+    }
+    if (content.startsWith("预报 ") || content.startsWith("天气预报 ")) {
+        writeLog("天气Pro: 长按发送「预报」命令");
+        handleForecastSelf(content);
+        return true;
+    }
+    if (content.startsWith("天气设置 ")) {
+        writeLog("天气Pro: 长按发送「天气设置」命令");
+        handleSettingsCommandSelf(content);
+        return true;
+    }
+    return false;
+}
+
 void onHandleMsg(Object msgInfoBean) {
-    if (msgInfoBean.isSend()) { return; }
     if (!msgInfoBean.isText()) { return; }
 
     var content = msgInfoBean.getContent().trim();
     var talker = msgInfoBean.getTalker();
-    writeLog("天气Pro onHandleMsg: content=[" + content + "] talker=" + talker);
+    writeLog("天气Pro onHandleMsg: content=[" + content + "] talker=" + talker + " isSend=" + msgInfoBean.isSend());
 
     if (content.startsWith("订阅天气 ") || content.startsWith("订阅 ")) {
         writeLog("天气Pro: 匹配「订阅」命令");
@@ -86,6 +132,21 @@ void onHandleMsg(Object msgInfoBean) {
 
     writeLog("天气Pro: 未匹配任何命令，检查每日推送");
     checkDailyPush();
+}
+
+boolean onClickSendBtn(String text) {
+    var content = text.trim();
+    writeLog("天气Pro onClickSendBtn: [" + content + "]");
+    if (content.startsWith("天气 ") || content.startsWith("天气查询 ") ||
+        content.startsWith("预报 ") || content.startsWith("天气预报 ") ||
+        content.startsWith("订阅 ") || content.startsWith("订阅天气 ") ||
+        content.startsWith("天气设置") ||
+        content.equals("取消订阅") || content.equals("取消天气") ||
+        content.equals("我的订阅") || content.equals("订阅列表") ||
+        content.equals("天气帮助") || content.equals("天气Pro") || content.equals("天气pro")) {
+        return true;
+    }
+    return false;
 }
 
 // ==================== 天气查询 ====================

@@ -1,0 +1,14 @@
+# 和风天气 API Key (免费获取: https://dev.qweather.com)
+api_key=
+
+# 订阅城市列表 (格式: 城市名|城市ID;城市名|城市ID)
+subscribed_cities=
+
+# 每日推送时间 (HH:mm)
+push_time=08:00
+
+# 是否开启每日推送
+daily_push_enabled=false
+
+# 上次推送日期 (自动管理)
+last_push_date=

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const propReader = require('properties-reader');
+const { propertiesReader } = require('properties-reader');
 
 const repoRoot = process.cwd();
 const pluginsDirs = [
@@ -22,7 +22,7 @@ function isValidPlugin(pluginPath) {
 
 function parseInfoProp(filePath) {
     try {
-        const props = propReader(filePath);
+        const props = propertiesReader({ sourceFile: filePath });
         return {
             name: props.get('name'),
             author: props.get('author'),
@@ -105,7 +105,7 @@ function generateJSON(plugins) {
 const plugins = pluginsDirs
     .filter(dir => fs.existsSync(dir))
     .flatMap(dir => traversePlugins(dir))
-    .sort((a, b) => parseInt(b.updateTime) - parseInt(a.updateTime));
+    .sort((a, b) => parseInt(b.updateTime) - parseInt(a.updateTime) || a.name.localeCompare(b.name, 'zh-CN'));
 console.log(`正在处理 ${plugins.length} 个插件`);
 
 const markdown = generateMarkdown(plugins);

@@ -1,13 +1,14 @@
 {
   "scripts": {
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
+    "docs:generate": "node .github/scripts/generate.js",
+    "docs:dev": "npm run docs:generate && vitepress dev docs",
+    "docs:build": "npm run docs:generate && vitepress build docs",
     "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
-    "vitepress": "^1.3.1"
+    "vitepress": "^1.6.4"
   },
   "dependencies": {
-    "properties-reader": "^2.3.0"
+    "properties-reader": "^3.0.1"
   }
 }

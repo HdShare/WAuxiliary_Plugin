@@ -131,11 +131,6 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%9D%A4%2FAI%E7%BB%98%E5%9B%BE%E5%8A%A9%E6%89%8B&filename=AI%E7%BB%98%E5%9B%BE%E5%8A%A9%E6%89%8B_1.0.0
     linkText: 更新于 20260428
 
-  - title: ChatLab(1.0.0)
-    details: 作者 Hd
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FChatLab&filename=ChatLab_1.0.0
-    linkText: 更新于 20260427
-
   - title: 表情合成(1.0.2)
     details: 作者 Kyo
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FKyo%2FEmojiKitchen&filename=%E8%A1%A8%E6%83%85%E5%90%88%E6%88%90_1.0.2
@@ -146,19 +141,14 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fcoderpwh%2Fdouyin&filename=%E6%8A%96%E9%9F%B3%E9%93%BE%E6%8E%A5%E8%A7%A3%E6%9E%90_1.0.2
     linkText: 更新于 20260427
 
-  - title: 摸头插件(1.0.2)
+  - title: ChatLab(1.0.0)
     details: 作者 Hd
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FAvatar-rua&filename=%E6%91%B8%E5%A4%B4%E6%8F%92%E4%BB%B6_1.0.2
-    linkText: 更新于 20260426
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FChatLab&filename=ChatLab_1.0.0
+    linkText: 更新于 20260427
 
   - title: 表情合成(1.0.2)
     details: 作者 Hd
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FEmojiMix&filename=%E8%A1%A8%E6%83%85%E5%90%88%E6%88%90_1.0.2
-    linkText: 更新于 20260426
-
-  - title: 历史今天(1.0.2)
-    details: 作者 Hd
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FHistoryToday&filename=%E5%8E%86%E5%8F%B2%E4%BB%8A%E5%A4%A9_1.0.2
     linkText: 更新于 20260426
 
   - title: 点歌插件(1.0.2)
@@ -166,14 +156,34 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FMusicPlugin&filename=%E7%82%B9%E6%AD%8C%E6%8F%92%E4%BB%B6_1.0.2
     linkText: 更新于 20260426
 
-  - title: 智能聊天(1.0.2)
-    details: 作者 Hd
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FOpenAiChat&filename=%E6%99%BA%E8%83%BD%E8%81%8A%E5%A4%A9_1.0.2
+  - title: 举牌(1.0.2)
+    details: 作者 周芷越
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%91%A8%E8%8A%B7%E8%B6%8A%2Fjupai&filename=%E4%B8%BE%E7%89%8C_1.0.2
     linkText: 更新于 20260426
 
-  - title: 综合示例插件(1.0.2)
+  - title: 看看腿(1.0.2)
+    details: 作者 yfishyon
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fyfishyon%2Fsese&filename=%E7%9C%8B%E7%9C%8B%E8%85%BF_1.0.2
+    linkText: 更新于 20260426
+
+  - title: 历史今天(1.0.2)
     details: 作者 Hd
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FPluginDemo&filename=%E7%BB%BC%E5%90%88%E7%A4%BA%E4%BE%8B%E6%8F%92%E4%BB%B6_1.0.2
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FHistoryToday&filename=%E5%8E%86%E5%8F%B2%E4%BB%8A%E5%A4%A9_1.0.2
+    linkText: 更新于 20260426
+
+  - title: 龙图(1.0.2)
+    details: 作者 yfishyon
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fyfishyon%2Flong&filename=%E9%BE%99%E5%9B%BE_1.0.2
+    linkText: 更新于 20260426
+
+  - title: 摸头插件(1.0.2)
+    details: 作者 Hd
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FAvatar-rua&filename=%E6%91%B8%E5%A4%B4%E6%8F%92%E4%BB%B6_1.0.2
+    linkText: 更新于 20260426
+
+  - title: 视频插件(1.0.2)
+    details: 作者 Hd
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FVideoPlugin&filename=%E8%A7%86%E9%A2%91%E6%8F%92%E4%BB%B6_1.0.2
     linkText: 更新于 20260426
 
   - title: 文转图(1.0.2)
@@ -186,11 +196,6 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FTextToSpeech&filename=%E6%96%87%E8%BD%AC%E9%9F%B3_1.0.2
     linkText: 更新于 20260426
 
-  - title: 视频插件(1.0.2)
-    details: 作者 Hd
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FVideoPlugin&filename=%E8%A7%86%E9%A2%91%E6%8F%92%E4%BB%B6_1.0.2
-    linkText: 更新于 20260426
-
   - title: 语录插件(1.0.2)
     details: 作者 Hd
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2Fmsg-q&filename=%E8%AF%AD%E5%BD%95%E6%8F%92%E4%BB%B6_1.0.2
@@ -201,19 +206,14 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2Fmsg-q-pro&filename=%E8%AF%AD%E5%BD%95Pro%E6%8F%92%E4%BB%B6_1.0.2
     linkText: 更新于 20260426
 
-  - title: 龙图(1.0.2)
-    details: 作者 yfishyon
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fyfishyon%2Flong&filename=%E9%BE%99%E5%9B%BE_1.0.2
+  - title: 智能聊天(1.0.2)
+    details: 作者 Hd
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FOpenAiChat&filename=%E6%99%BA%E8%83%BD%E8%81%8A%E5%A4%A9_1.0.2
     linkText: 更新于 20260426
 
-  - title: 看看腿(1.0.2)
-    details: 作者 yfishyon
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fyfishyon%2Fsese&filename=%E7%9C%8B%E7%9C%8B%E8%85%BF_1.0.2
-    linkText: 更新于 20260426
-
-  - title: 举牌(1.0.2)
-    details: 作者 周芷越
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%91%A8%E8%8A%B7%E8%B6%8A%2Fjupai&filename=%E4%B8%BE%E7%89%8C_1.0.2
+  - title: 综合示例插件(1.0.2)
+    details: 作者 Hd
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FPluginDemo&filename=%E7%BB%BC%E5%90%88%E7%A4%BA%E4%BE%8B%E6%8F%92%E4%BB%B6_1.0.2
     linkText: 更新于 20260426
 
   - title: 进退群配置版(2.3.3)
@@ -261,14 +261,14 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2Fvhukze%2FAITextToVoice&filename=AI%E6%96%87%E5%AD%97%E8%BD%AC%E8%AF%AD%E9%9F%B3_1.0.0
     linkText: 更新于 20260303
 
-  - title: 定时发送助手(1.0.0)
-    details: 作者 冰块
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E5%86%B0%E5%9D%97%2F%E5%AE%9A%E6%97%B6%E5%8F%91%E9%80%81%E5%8A%A9%E6%89%8B&filename=%E5%AE%9A%E6%97%B6%E5%8F%91%E9%80%81%E5%8A%A9%E6%89%8B_1.0.0
-    linkText: 更新于 20260302
-
   - title: 艾特关键词自动回复(1.0.0)
     details: 作者 冰块
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E5%86%B0%E5%9D%97%2F%E8%89%BE%E7%89%B9%E5%85%B3%E9%94%AE%E8%AF%8D%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D&filename=%E8%89%BE%E7%89%B9%E5%85%B3%E9%94%AE%E8%AF%8D%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D_1.0.0
+    linkText: 更新于 20260302
+
+  - title: 定时发送助手(1.0.0)
+    details: 作者 冰块
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E5%86%B0%E5%9D%97%2F%E5%AE%9A%E6%97%B6%E5%8F%91%E9%80%81%E5%8A%A9%E6%89%8B&filename=%E5%AE%9A%E6%97%B6%E5%8F%91%E9%80%81%E5%8A%A9%E6%89%8B_1.0.0
     linkText: 更新于 20260302
 
   - title: 自动增加步数(1.0.6)
@@ -276,14 +276,14 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2FWukon%2FAutoStep&filename=%E8%87%AA%E5%8A%A8%E5%A2%9E%E5%8A%A0%E6%AD%A5%E6%95%B0_1.0.6
     linkText: 更新于 20260228
 
-  - title: 统计(1.0.0)
-    details: 作者 轻乳
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E8%BD%BB%E4%B9%B3%2F%E7%BB%9F%E8%AE%A1%E7%B4%AF%E8%AE%A1%E6%94%B6%E5%88%B0%E6%B6%88%E6%81%AF&filename=%E7%BB%9F%E8%AE%A1_1.0.0
-    linkText: 更新于 20260222
-
   - title: 记事本(1.0.0)
     details: 作者 轻乳
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E8%BD%BB%E4%B9%B3%2F%E8%AE%B0%E4%BA%8B%E6%9C%AC%E6%8F%92%E4%BB%B6&filename=%E8%AE%B0%E4%BA%8B%E6%9C%AC_1.0.0
+    linkText: 更新于 20260222
+
+  - title: 统计(1.0.0)
+    details: 作者 轻乳
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E8%BD%BB%E4%B9%B3%2F%E7%BB%9F%E8%AE%A1%E7%B4%AF%E8%AE%A1%E6%94%B6%E5%88%B0%E6%B6%88%E6%81%AF&filename=%E7%BB%9F%E8%AE%A1_1.0.0
     linkText: 更新于 20260222
 
   - title: AI作图(1.5.0)

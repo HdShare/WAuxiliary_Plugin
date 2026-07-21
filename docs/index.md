@@ -6,6 +6,16 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: 天气查询(1.0.0)
+    details: 作者 monkeycode-ai
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fmonkeycode-ai%2FWeather&filename=%E5%A4%A9%E6%B0%94%E6%9F%A5%E8%AF%A2_1.0.0
+    linkText: 更新于 20260719
+
+  - title: 天气Pro(1.0.0)
+    details: 作者 monkeycode-ai
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fmonkeycode-ai%2FWeatherPro&filename=%E5%A4%A9%E6%B0%94Pro_1.0.0
+    linkText: 更新于 20260719
+
   - title: AI多模板聊天总结(1.3.1)
     details: 作者 ahe-meow & hjkl950217
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fahe-meow%2FWechat-AI-Sum-With-Templates&filename=AI%E5%A4%9A%E6%A8%A1%E6%9D%BF%E8%81%8A%E5%A4%A9%E6%80%BB%E7%BB%93_1.3.1

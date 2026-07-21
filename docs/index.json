@@ -1,7 +1,23 @@
 {
-  "generatedAt": "2026-07-15",
-  "totalPlugins": 66,
+  "generatedAt": "2026-07-21",
+  "totalPlugins": 68,
   "plugins": [
+    {
+      "name": "天气查询",
+      "author": "monkeycode-ai",
+      "version": "1.0.0",
+      "updateTime": 20260719,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/monkeycode-ai/Weather",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fmonkeycode-ai%2FWeather&filename=%E5%A4%A9%E6%B0%94%E6%9F%A5%E8%AF%A2_1.0.0"
+    },
+    {
+      "name": "天气Pro",
+      "author": "monkeycode-ai",
+      "version": "1.0.0",
+      "updateTime": 20260719,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/monkeycode-ai/WeatherPro",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fmonkeycode-ai%2FWeatherPro&filename=%E5%A4%A9%E6%B0%94Pro_1.0.0"
+    },
     {
       "name": "AI多模板聊天总结",
       "author": "ahe-meow & hjkl950217",

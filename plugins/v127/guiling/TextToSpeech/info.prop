@@ -1,11 +1,4 @@
-id=wauxiliary.kkkeyboard.voice
-name=文字转语音
-pluginName=文字转语音
-version=1.0
-versionName=1.0
-versionCode=1
-desc=KK键盘同款恶搞语音
-description=KK键盘同款恶搞语音
-author=冷雨/归零二改
-updateTime=20260730
-update=20260730
+name = 文字转语音
+author = 冷雨/归零二改
+version = 1.0
+updateTime = 20260730

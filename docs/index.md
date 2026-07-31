@@ -6,6 +6,11 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: 文字转语音(1)
+    details: 作者 冷雨/归零二改
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fguiling%2FTextToSpeech&filename=%E6%96%87%E5%AD%97%E8%BD%AC%E8%AF%AD%E9%9F%B3_1
+    linkText: 更新于 20260730
+
   - title: 天气查询(1.0.0)
     details: 作者 monkeycode-ai
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fmonkeycode-ai%2FWeather&filename=%E5%A4%A9%E6%B0%94%E6%9F%A5%E8%AF%A2_1.0.0

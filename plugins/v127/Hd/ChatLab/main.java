@@ -11,7 +11,7 @@ void writeToFile(String filePath, String content) {
 }
 
 void exportGroup(String groupId, long startTime, int count) {
-    var msgList = queryHistoryMsg(groupId, startTime, count)
+    var msgList = queryHistoryMsg(groupId, startTime, true, count)
 
     var builder = new ChatLabJsonBuilder()
             .setChatlab("0.0.2", System.currentTimeMillis() / 1000)

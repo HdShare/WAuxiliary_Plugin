@@ -340,7 +340,7 @@ List queryRecentHistoryMsg(String talker, int count) {
 
 List queryHistoryMsgSafe(String talker, long startTime, int queryCount) {
     try {
-        List found = queryHistoryMsg(talker, startTime, queryCount);
+        List found = queryHistoryMsg(talker, startTime, true, queryCount);
         return found == null ? new ArrayList() : found;
     } catch (Throwable e) {
         logx("[AI总结] queryHistoryMsg失败 startTime=" + formatLogTime(startTime) + " 错误=" + e.getMessage());

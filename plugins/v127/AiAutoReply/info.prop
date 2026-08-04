@@ -1,0 +1,5 @@
+name=AI智能回复
+author=SauncaiyuPro，kimi，deepseek
+version=1.6.9
+updateTime = 20260804
+description=支持多API的AI自动回复插件：OpenAI/Claude/DeepSeek/自定义兼容接口，多轮对话记忆，多种触发模式，黑白名单过滤

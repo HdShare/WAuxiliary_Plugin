@@ -1,7 +1,15 @@
 {
-  "generatedAt": "2026-08-04",
-  "totalPlugins": 70,
+  "generatedAt": "2026-08-08",
+  "totalPlugins": 71,
   "plugins": [
+    {
+      "name": "AI智能回复",
+      "author": "SauncaiyuPro，kimi，deepseek",
+      "version": "1.6.9",
+      "updateTime": 20260804,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/SauncaiyuPro/AiAutoReply",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FSauncaiyuPro%2FAiAutoReply&filename=AI%E6%99%BA%E8%83%BD%E5%9B%9E%E5%A4%8D_1.6.9"
+    },
     {
       "name": "提取聊天记录",
       "author": "不愿意透露姓名",

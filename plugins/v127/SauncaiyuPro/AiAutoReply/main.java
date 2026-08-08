@@ -84,9 +84,9 @@ void showProviderPicker(){
     try{
         Activity t=getTopActivity();
         if(t==null)return;
-        String[] names={"OpenAI","Claude (Anthropic)","DeepSeek","自定义兼容接口"};
-        String[] vals={"openai","claude","deepseek","custom"};
-        String[] defModels={"gpt-4o-mini","claude-3-5-sonnet-20241022","deepseek-chat",cfgModel};
+        String[] names={"OpenAI","Claude (Anthropic)","DeepSeek","Google Gemini","自定义兼容接口"};
+        String[] vals={"openai","claude","deepseek","gemini","custom"};
+        String[] defModels={"gpt-4o-mini","claude-3-5-sonnet-20241022","deepseek-chat","gemini-2.0-flash",cfgModel};
         int sel=0;
         for(int i=0;i<vals.length;i++)if(vals[i].equals(cfgProvider)){sel=i;break;}
         final int[] picked={sel};
@@ -388,24 +388,33 @@ void showTestConnection(){
     new Thread(new Runnable(){public void run(){
         String result;
         try{
+            boolean isGemini=cfgProvider.equals("gemini");
             JSONObject body=new JSONObject();
-            body.put("model",cfgModel);
-            body.put("stream",false);
-            JSONArray arr=new JSONArray();
-            JSONObject msg=new JSONObject();
-            msg.put("role","user");
-            msg.put("content","Hi");
-            arr.put(msg);
-            body.put("messages",arr);
-            String raw=body.toString();
             Map headers=new HashMap();
-            if(cfgProvider.equals("claude")){
-                headers.put("x-api-key",cfgApiKey);
-                headers.put("anthropic-version","2023-06-01");
-            }else{
-                headers.put("Authorization","Bearer "+cfgApiKey);
-            }
             headers.put("Content-Type","application/json");
+            if(isGemini){
+                JSONObject root=body;
+                JSONObject up=new JSONObject();up.put("text","Hi");
+                JSONObject um=new JSONObject();um.put("role","user");
+                um.put("parts",new JSONArray(Arrays.asList(up)));
+                root.put("contents",new JSONArray(Arrays.asList(um)));
+            }else{
+                body.put("model",cfgModel);
+                body.put("stream",false);
+                JSONArray arr=new JSONArray();
+                JSONObject msg=new JSONObject();
+                msg.put("role","user");
+                msg.put("content","Hi");
+                arr.put(msg);
+                body.put("messages",arr);
+                if(cfgProvider.equals("claude")){
+                    headers.put("x-api-key",cfgApiKey);
+                    headers.put("anthropic-version","2023-06-01");
+                }else{
+                    headers.put("Authorization","Bearer "+cfgApiKey);
+                }
+            }
+            String raw=body.toString();
             long t0=System.currentTimeMillis();
             URL url=new URL(getApiUrl());
             HttpURLConnection c=(HttpURLConnection)url.openConnection();
@@ -538,41 +547,77 @@ boolean checkRateLimit(String talker){
 
 void callAI(String talker,String senderWxid,String senderName,String userMsg,boolean isGroup){
     try{
-        JSONObject root=new JSONObject();
-        root.put("model",cfgModel);
-        root.put("stream",false);
-        if(!cfgProvider.equals("claude"))root.put("temperature",cfgTemperature);
-        JSONArray arr=new JSONArray();
-        JSONObject sysMsg=new JSONObject();
-        sysMsg.put("role","system");
-        sysMsg.put("content",cfgSystemPrompt);
-        arr.put(sysMsg);
-        List hist=(List)chatHistoryMap.get(talker);
-        if(hist!=null){
-            int st=Math.max(0,hist.size()-cfgMaxHistory*2);
-            for(int i=st;i<hist.size();i++){
-                Map h=(Map)hist.get(i);
-                JSONObject hm=new JSONObject();
-                hm.put("role",h.get("role"));
-                hm.put("content",h.get("content"));
-                arr.put(hm);
+        boolean isGemini=cfgProvider.equals("gemini");
+        String contentLabel=(senderName!=null&&!senderName.isEmpty())?"["+senderName+"] 说: "+userMsg:userMsg;
+        String body;
+        Map headers=new HashMap();
+        headers.put("Content-Type","application/json");
+        if(isGemini){
+            // Gemini 原生 API 请求体
+            JSONObject root=new JSONObject();
+            JSONObject sysInstPart=new JSONObject();sysInstPart.put("text",cfgSystemPrompt);
+            JSONObject sysInst=new JSONObject();sysInst.put("parts",new JSONArray(Arrays.asList(sysInstPart)));
+            root.put("system_instruction",sysInst);
+            JSONArray contents=new JSONArray();
+            List hist=(List)chatHistoryMap.get(talker);
+            if(hist!=null){
+                int st=Math.max(0,hist.size()-cfgMaxHistory*2);
+                for(int i=st;i<hist.size();i++){
+                    Map h=(Map)hist.get(i);
+                    JSONObject cm=new JSONObject();
+                    String role=(String)h.get("role");
+                    cm.put("role","assistant".equals(role)?"model":role);
+                    JSONObject hp=new JSONObject();hp.put("text",(String)h.get("content"));
+                    cm.put("parts",new JSONArray(Arrays.asList(hp)));
+                    contents.put(cm);
+                }
+            }
+            JSONObject um=new JSONObject();um.put("role","user");
+            JSONObject up=new JSONObject();up.put("text",contentLabel);
+            um.put("parts",new JSONArray(Arrays.asList(up)));
+            contents.put(um);
+            root.put("contents",contents);
+            JSONObject genCfg=new JSONObject();
+            genCfg.put("maxOutputTokens",cfgMaxTokens);
+            genCfg.put("temperature",cfgTemperature);
+            root.put("generationConfig",genCfg);
+            body=root.toString();
+        }else{
+            // OpenAI / Claude / DeepSeek / custom 格式
+            JSONObject root=new JSONObject();
+            root.put("model",cfgModel);
+            root.put("stream",false);
+            if(!cfgProvider.equals("claude"))root.put("temperature",cfgTemperature);
+            JSONArray arr=new JSONArray();
+            JSONObject sysMsg=new JSONObject();
+            sysMsg.put("role","system");
+            sysMsg.put("content",cfgSystemPrompt);
+            arr.put(sysMsg);
+            List hist=(List)chatHistoryMap.get(talker);
+            if(hist!=null){
+                int st=Math.max(0,hist.size()-cfgMaxHistory*2);
+                for(int i=st;i<hist.size();i++){
+                    Map h=(Map)hist.get(i);
+                    JSONObject hm=new JSONObject();
+                    hm.put("role",h.get("role"));
+                    hm.put("content",h.get("content"));
+                    arr.put(hm);
+                }
+            }
+            JSONObject userMsgObj=new JSONObject();
+            userMsgObj.put("role","user");
+            userMsgObj.put("content",contentLabel);
+            arr.put(userMsgObj);
+            root.put("messages",arr);
+            if(cfgProvider.equals("claude"))root.put("max_tokens",cfgMaxTokens);
+            body=root.toString();
+            if(cfgProvider.equals("claude")){
+                headers.put("x-api-key",cfgApiKey);
+                headers.put("anthropic-version","2023-06-01");
+            }else{
+                headers.put("Authorization","Bearer "+cfgApiKey);
             }
         }
-        JSONObject userMsgObj=new JSONObject();
-        userMsgObj.put("role","user");
-        userMsgObj.put("content",(senderName!=null&&!senderName.isEmpty())?"["+senderName+"] 说: "+userMsg:userMsg);
-        arr.put(userMsgObj);
-        root.put("messages",arr);
-        if(cfgProvider.equals("claude"))root.put("max_tokens",cfgMaxTokens);
-        String body=root.toString();
-        Map headers=new HashMap();
-        if(cfgProvider.equals("claude")){
-            headers.put("x-api-key",cfgApiKey);
-            headers.put("anthropic-version","2023-06-01");
-        }else{
-            headers.put("Authorization","Bearer "+cfgApiKey);
-        }
-        headers.put("Content-Type","application/json");
         URL url=new URL(getApiUrl());
         HttpURLConnection c=(HttpURLConnection)url.openConnection();
         c.setRequestMethod("POST");
@@ -601,7 +646,9 @@ void callAI(String talker,String senderWxid,String senderName,String userMsg,boo
         }
         JSONObject respObj=new JSONObject(resp);
         String reply;
-        if(cfgProvider.equals("claude")){
+        if(isGemini){
+            reply=respObj.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).optString("text","");
+        }else if(cfgProvider.equals("claude")){
             reply=respObj.getJSONArray("content").getJSONObject(0).getString("text");
         }else{
             reply=respObj.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
@@ -637,6 +684,7 @@ String getApiUrl(){
     if(cfgProvider.equals("openai"))return "https://api.openai.com/v1/chat/completions";
     if(cfgProvider.equals("claude"))return "https://api.anthropic.com/v1/messages";
     if(cfgProvider.equals("deepseek"))return "https://api.deepseek.com/v1/chat/completions";
+    if(cfgProvider.equals("gemini"))return "https://generativelanguage.googleapis.com/v1beta/models/"+cfgModel+":generateContent?key="+cfgApiKey;
     return cfgApiUrl;
 }
 

@@ -1,7 +1,4 @@
-id=DailyNews
-name=每日60S新闻
-version=1.2.7
-author=ajie4979
-description=支持微信群每日60S新闻文本/图片手动推送、群列表管理和每日定时推送
-main=main.java
+name = 每日60S新闻
+author = ajie4979
+version = 1.2.7
 updateTime = 20260802

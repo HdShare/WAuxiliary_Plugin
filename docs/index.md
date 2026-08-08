@@ -6,6 +6,11 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: AI智能回复(1.6.9)
+    details: 作者 SauncaiyuPro，kimi，deepseek
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FSauncaiyuPro%2FAiAutoReply&filename=AI%E6%99%BA%E8%83%BD%E5%9B%9E%E5%A4%8D_1.6.9
+    linkText: 更新于 20260804
+
   - title: 提取聊天记录(1.3)
     details: 作者 不愿意透露姓名
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E4%B8%8D%E6%84%BF%E6%84%8F%E9%80%8F%E9%9C%B2%E5%A7%93%E5%90%8D%2F%E6%8F%90%E5%8F%96%E8%81%8A%E5%A4%A9%E8%AE%B0%E5%BD%95&filename=%E6%8F%90%E5%8F%96%E8%81%8A%E5%A4%A9%E8%AE%B0%E5%BD%95_1.3

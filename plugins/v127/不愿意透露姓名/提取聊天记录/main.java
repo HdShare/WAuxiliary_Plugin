@@ -127,18 +127,21 @@ void streamExtract(final String talker, final int targetCount, final String form
                     else { qStart = lastTime + 1L; isIncremental = true; remaining = Integer.MAX_VALUE; }
                 }
 
-                // --- 3. 一次性查询（数据库只锁一次） ---
+                // --- 3. 查询消息 ---
                 SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
                 int total = 0;
                 long maxTime = 0L;
                 List allMsgs = null;
 
                 if (remaining == Integer.MAX_VALUE && !isIncremental) {
+                    // 全量：升序一次查完
                     allMsgs = queryHistoryMsg(talker, 0L, true, 100000);
                 } else if (isIncremental) {
+                    // 增量：从上一次时间戳之后查
                     allMsgs = queryHistoryMsg(talker, qStart, true, 50000);
                 } else {
-                    allMsgs = queryHistoryMsg(talker, 0L, true, Math.min(remaining, 50000));
+                    // 指定数量：二分定位时间窗口，只查小批量，不查全量
+                    allMsgs = queryRecentCount(talker, remaining);
                 }
 
                 // --- 4. 格式化并写入 ---
@@ -153,7 +156,13 @@ void streamExtract(final String talker, final int targetCount, final String form
                         }
                     });
 
-                    for (int i = 0; i < filtered.size(); i++) {
+                    // 指定数量模式：取最后 N 条（最新 N 条）
+                    int startIndex = 0;
+                    if (remaining != Integer.MAX_VALUE && filtered.size() > remaining) {
+                        startIndex = filtered.size() - remaining;
+                    }
+
+                    for (int i = startIndex; i < filtered.size(); i++) {
                         Object msg = filtered.get(i);
                         try {
                             String line = formatMessageLine(msg, format, talker, sdf);
@@ -163,10 +172,6 @@ void streamExtract(final String talker, final int targetCount, final String form
                             }
                             long t = normalizeTime(msg.getCreateTime());
                             if (t > maxTime) maxTime = t;
-                            if (remaining != Integer.MAX_VALUE) {
-                                remaining--;
-                                if (remaining <= 0) break;
-                            }
                         } catch (Throwable e) {
                             log("formatMessageLine error: " + e.getMessage());
                         }
@@ -247,6 +252,57 @@ String formatMessageLine(Object msg, String format, String talker, SimpleDateFor
 }
 
 // ==================== 消息类型过滤 ====================
+
+// 指定数量模式：优先降序取最新 N 条；降序不可用时二分定位时间点再升序取
+List queryRecentCount(String talker, int count) {
+    long now = normalizeTime(System.currentTimeMillis());
+    int queryCount = Math.max(count * 2, 200);
+
+    // 方案一：降序查询，直接从最新往前取（最快、最准）
+    try {
+        List desc = queryHistoryMsg(talker, now, false, queryCount);
+        if (desc != null && desc.size() > 0) {
+            return desc;
+        }
+    } catch (Throwable e) {
+        log("desc query failed: " + e.getMessage());
+    }
+
+    // 方案二：二分查找起始时间点，使 [start, now] 区间内消息数 ≈ count
+    long low = 0L;
+    long high = now;
+    List best = new ArrayList();
+    for (int i = 0; i < 30; i++) {
+        long mid = low + (high - low) / 2L;
+        List found = queryHistoryMsg(talker, mid, true, queryCount);
+        int size = (found == null) ? 0 : found.size();
+        if (size >= count) {
+            best = (found == null) ? new ArrayList() : found;
+            low = mid + 1L; // 时间点太靠前，往未来逼近
+        } else {
+            high = mid - 1L; // 时间点太靠后，往过去回退
+        }
+        if (low > high) break;
+    }
+
+    // 兜底：二分失败则从最近 1 天开始扩大窗口
+    if (best.isEmpty()) {
+        long day = 24L * 60L * 60L * 1000L;
+        long window = day;
+        for (int i = 0; i < 20; i++) {
+            long start = now - window;
+            if (start < 0) start = 0;
+            List found = queryHistoryMsg(talker, start, true, queryCount);
+            if (found != null && found.size() > 0) {
+                best = found;
+                if (found.size() < queryCount) break;
+            }
+            if (start <= 0) break;
+            window *= 2;
+        }
+    }
+    return best;
+}
 
 List filterReadable(List source) {
     ArrayList out = new ArrayList();

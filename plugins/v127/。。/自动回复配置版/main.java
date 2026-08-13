@@ -2514,7 +2514,7 @@ private void initializeWebSocketConnection(final String talker, final String tex
                             boolean q = aiQuoteFlagMap.containsKey(talker) ? aiQuoteFlagMap.get(talker) : false;
                             Long qid = aiQuoteMsgIdMap.get(talker);
                             if (q && qid != null && qid.longValue() > 0L) {
-                                sendQuoteMsg(talker, qid.longValue(), replyText);
+                                sendQuoteMsg(talker, replyText, qid.longValue());
                             } else {
                                 sendText(talker, replyText);
                             }
@@ -2892,7 +2892,7 @@ private void sendZhiliaAiReply(final String talker, String userContent, final bo
 
                 debugLog("[智聊AI] 获取回复成功(" + modeUsed + ") -> " + msgContent);
                 if (replyAsQuote) {
-                    sendQuoteMsg(talker, quoteMsgId, msgContent);
+                    sendQuoteMsg(talker, msgContent, quoteMsgId);
                 } else {
                     sendText(talker, msgContent);
                 }
@@ -4243,7 +4243,7 @@ private void sendReplyDirectly(Map<String, Object> finalRule, String replyConten
                         debugLog("[执行回复] 检测到At标记，引用发送将导致字面量，改为普通发送: " + replyContent);
                         sendText(talker, replyContent);
                     } else {
-                        sendQuoteMsg(talker, msgId, replyContent);
+                        sendQuoteMsg(talker, replyContent, msgId);
                     }
                 } else {
                     sendText(talker, replyContent);

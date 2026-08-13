@@ -517,7 +517,7 @@ private void sendReplyMsg(String talker, long msgId, String content) {
     if (msgId == 0) {
         sendText(talker, content);
     } else {
-        sendQuoteMsg(talker, msgId, content);
+        sendQuoteMsg(talker, content, msgId);
     }
 }
 

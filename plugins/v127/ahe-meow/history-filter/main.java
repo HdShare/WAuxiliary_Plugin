@@ -362,7 +362,7 @@ void executeFilter(String talker, long startTime, long endTime, int maxCount,
             val batchMessages
             var querySuccess = false
             try {
-                batchMessages = queryHistoryMsg(talker, currentStart, 100)
+                batchMessages = queryHistoryMsg(talker, currentStart, true, 100)
                 querySuccess = true
             } catch (Exception e) {
                 // 捕获数据库异常并优雅降级
@@ -551,7 +551,7 @@ void executeFilter(String talker, long startTime, long endTime, int maxCount,
                     val batchMessages
                     var querySuccess = false
                     try {
-                        batchMessages = queryHistoryMsg(talker, currentStart, 100)
+                        batchMessages = queryHistoryMsg(talker, currentStart, true, 100)
                         querySuccess = true
                     } catch (Exception e) {
                         // 捕获数据库异常并优雅降级

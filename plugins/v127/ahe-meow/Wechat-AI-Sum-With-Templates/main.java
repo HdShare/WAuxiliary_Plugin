@@ -452,7 +452,7 @@ List queryHistoryMsgSafe(String talker, long startTime, int queryCount) {
         if (queryCount < 50) queryCount = 50;
         if (queryCount > 300) queryCount = 300;
 
-        List found = queryHistoryMsg(talker, startTime, queryCount);
+        List found = queryHistoryMsg(talker, startTime, true, queryCount);
         return found == null ? new ArrayList() : found;
     } catch (Throwable e) {
         logx("[AI总结] queryHistoryMsg失败 startTime=" + formatLogTime(startTime) + " queryCount=" + queryCount + " 错误=" + e.getMessage());

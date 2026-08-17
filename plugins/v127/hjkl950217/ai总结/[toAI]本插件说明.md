@@ -393,21 +393,15 @@ void callSummaryApi(final String talker, String historyText, int count)
 
 ### 历史消息查询
 
-`queryRecentHistoryMsg(...)` 用二分法尝试获取更接近当前时间的最近消息。
+`queryRecentHistoryMsg(...)` 使用新版四参数签名读取：
 
-原因：代码注释指出 `queryHistoryMsg` 按 `startTime` 正序查询，不能简单从很早时间取，否则可能拿到远古记录。
+```java
+List queryHistoryMsg(String talker, long startTime, boolean isAsc, int count);
+```
 
-二分失败后会按以下窗口兜底：
+优先以 `isAsc=false`（倒序）从 `startTime=now` 往前的取最近的 `count` 条，一步到位，最准确也最快；取 `Math.max(count * 2, 200)` 双倍量，过滤无关消息后仍够不足时取全量。
 
-- 最近 1 天
-- 最近 3 天
-- 最近 7 天
-- 最近 15 天
-- 最近 30 天
-- 最近 90 天
-- 最近 180 天
-- 最近 365 天
-- `0L`
+倒序不可用时，回退到按时间窗口扩大正序查询：从最近 1 天开始，逐步翻倍（2 天、4 天、8 天……），最多 8 轮，起点不超过 `now` 的范围。
 
 最后会过滤可读消息并按时间排序，只保留最后 `count` 条。
 

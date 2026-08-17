@@ -280,56 +280,38 @@ String buildHistoryText(String talker, int count) {
 }
 
 List queryRecentHistoryMsg(String talker, int count) {
+    int queryCount = Math.max(count * 2, 200);
     long now = currentTimeMillisSafe();
-    int queryCount = Math.max(count, 100);
-    long day = 24L * 60L * 60L * 1000L;
-    long low = 0L;
-    long high = now;
-    List best = new ArrayList();
 
-    // queryHistoryMsg 按 startTime 正序查询，不能直接从很早的时间取。
-    // 这里用二分法找一个尽量靠近当前、但还能取到 count 条消息的起点。
-    for (int i = 0; i < 18; i++) {
-        long mid = low + (high - low) / 2L;
-        if (mid <= 0L) mid = 1L;
-
-        List found = queryHistoryMsgSafe(talker, mid, queryCount);
-        int size = found == null ? 0 : found.size();
-        long firstTime = getListTime(found, true);
-        long lastTime = getListTime(found, false);
-        logx("[AI总结] 二分查询 startTime=" + formatLogTime(mid) + " 返回=" + size + " 首=" + formatLogTime(firstTime) + " 末=" + formatLogTime(lastTime));
-
-        if (size >= count) {
-            best = found;
-            low = mid + 1L;
-        } else {
-            high = mid - 1L;
-        }
-    }
-
-    if (best == null || best.size() == 0) {
-        // 二分没命中时，兜底从最近 1 年几个窗口里选择时间最新的一批，避免直接固定取 0L 的远古记录。
-        long[] fallbackTimes = new long[] {
-                now - day,
-                now - 3L * day,
-                now - 7L * day,
-                now - 15L * day,
-                now - 30L * day,
-                now - 90L * day,
-                now - 180L * day,
-                now - 365L * day,
-                0L
-        };
-        for (int i = 0; i < fallbackTimes.length; i++) {
-            List found = queryHistoryMsgSafe(talker, fallbackTimes[i], queryCount);
-            int size = found == null ? 0 : found.size();
-            long lastTime = getListTime(found, false);
-            logx("[AI总结] 兜底查询 startTime=" + formatLogTime(fallbackTimes[i]) + " 返回=" + size + " 末=" + formatLogTime(lastTime));
-            if (found != null && found.size() > 0) {
-                best = found;
-                break;
+    // 方案一：倒序从最新往前取，直接拿到最近的 count 条，最快最准
+    try {
+        List desc = queryHistoryMsgSafe(talker, now, false, queryCount);
+        if (desc != null && desc.size() > 0) {
+            List filt = filterReadableAndSortByTime(desc);
+            if (filt != null && filt.size() > 0) {
+                if (filt.size() <= count) return filt;
+                return new ArrayList(filt.subList(filt.size() - count, filt.size()));
             }
         }
+    } catch (Throwable e) {
+        logx("[AI总结] 倒序查询失败 startTime=" + formatLogTime(now) + " 错误=" + e.getMessage());
+    }
+
+    // 方案二：降序不可用时，从最近开始逐步扩大时间窗口正序兜底
+    long day = 24L * 60L * 60L * 1000L;
+    long window = day;
+    List best = new ArrayList();
+    for (int i = 0; i < 8; i++) {
+        long start = now - window;
+        if (start < 0) start = 0;
+        List found = queryHistoryMsgSafe(talker, start, true, queryCount);
+        logx("[AI总结] 兜底查询 startTime=" + formatLogTime(start) + " 返回=" + (found == null ? 0 : found.size()));
+        if (found != null && found.size() > 0) {
+            best = found;
+            if (found.size() < queryCount) break;
+        }
+        window *= 2;
+        if (start <= 0) break;
     }
 
     best = filterReadableAndSortByTime(best);
@@ -338,20 +320,14 @@ List queryRecentHistoryMsg(String talker, int count) {
     return new ArrayList(best.subList(best.size() - count, best.size()));
 }
 
-List queryHistoryMsgSafe(String talker, long startTime, int queryCount) {
+List queryHistoryMsgSafe(String talker, long startTime, boolean isAsc, int queryCount) {
     try {
-        List found = queryHistoryMsg(talker, startTime, true, queryCount);
+        List found = queryHistoryMsg(talker, startTime, isAsc, queryCount);
         return found == null ? new ArrayList() : found;
     } catch (Throwable e) {
         logx("[AI总结] queryHistoryMsg失败 startTime=" + formatLogTime(startTime) + " 错误=" + e.getMessage());
         return new ArrayList();
     }
-}
-
-long getListTime(List list, boolean first) {
-    if (list == null || list.size() == 0) return 0L;
-    Object msg = list.get(first ? 0 : list.size() - 1);
-    return normalizeTime(safeLong(callNoArg(msg, "getCreateTime")));
 }
 
 List filterReadableAndSortByTime(List source) {
@@ -769,7 +745,14 @@ void showLogDialog() {
     ctx.runOnUiThread(new Runnable() {
         public void run() {
             final String logContent = readLogContent();
-            final String displayText = TextUtils.isEmpty(logContent) ? "当前没有日志" : logContent;
+            final String displayText;
+            if (!TextUtils.isEmpty(logContent)) {
+                displayText = logContent;
+            } else if (isLogEnabled()) {
+                displayText = "当前没有日志\n当前日志记录已开启";
+            } else {
+                displayText = "当前没有日志\n当前日志记录关闭，如需打开请输入'/ai 配置'打开日志开关";
+            }
 
             TextView tv = new TextView(ctx);
             tv.setText(displayText);

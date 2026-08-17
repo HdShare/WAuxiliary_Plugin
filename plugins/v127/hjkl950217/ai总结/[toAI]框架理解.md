@@ -94,7 +94,7 @@ void putInt(String key, int value);
 void sendText(String talker, String content);
 ```
 
-`taker` 是目标会话 ID，私聊通常是好友 wxid，群聊通常是 `xxx@chatroom`。
+`talker` 是目标会话 ID，私聊通常是好友 wxid，群聊通常是 `xxx@chatroom`。
 
 当前聊天对象可通过：
 
@@ -102,19 +102,17 @@ void sendText(String talker, String content);
 String getTargetTalker();
 ```
 
-查询历史消息：
-
-```java
-List queryHistoryMsg(String talker, long startTime, int count);
-```
-
-文档中也出现过四参数签名：
+查询历史消息（r1439 起的四参数签名）：
 
 ```java
 List<MsgInfoBean> queryHistoryMsg(String talker, long startTime, boolean isAsc, int count);
 ```
 
-但仓库现有插件和本插件当前使用的是三参数版本。后续不要轻易只按文档改成四参数，除非实机确认当前 WAuxiliary 版本要求变更。
+- `startTime`：起始时间戳
+- `isAsc`：是否按时间正序查询。`false` 为倒序（从最新往前取）
+- `count`：查询条数
+
+本插件当前使用四参数版本：优先以 `isAsc=false`（倒序）直接从 `startTime=now` 往前的取最近的 `count` 条，一步到位；仅当倒序不可用时，回退到按时间窗口扩大正序查询。旧的 `(talker, startTime, count)` 三参数签名在 r1439 已废弃，旧调用会抛异常。
 
 ## 消息对象理解
 

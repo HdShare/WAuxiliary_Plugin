@@ -16,14 +16,6 @@ WeChat Auxiliary Plugin
     </a>
 </p>
 
-## 星图:
-
-<p align="center">
-    <a href="https://github.com/HdShare/WAuxiliary_Plugin">
-        <img src="https://starchart.cc/HdShare/WAuxiliary_Plugin.svg?background=%23FFFFFF&axis=%23333333&line=%2328c445" alt="starchart">
-    </a>
-</p>
-
 ## 协议:
 
 除非对应插件目录中另有单独声明，否则本仓库内提交的插件默认采用 [Apache 2.0](LICENSE) 许可证。

@@ -77,6 +77,7 @@ void onHandleMsg(Object msgInfoBean) {
 - 回调入口看 [PluginCallback.md](./PluginCallback.md)
 - 全局变量看 [PluginGlobal.md](./PluginGlobal.md)
 - 消息结构看 [PluginStruct.md](./PluginStruct.md)
-- 发消息看 [PluginMsgMethod.md](./method/PluginMsgMethod.md)
+- 添加菜单看 [PluginCoreApiMethod.md](./method/PluginCoreApiMethod.md)
+- 发送消息看 [PluginMsgMethod.md](./method/PluginMsgMethod.md)
 - 联系人和群信息看 [PluginContactMethod.md](./method/PluginContactMethod.md)
 - 网络请求看 [PluginHttpMethod.md](./method/PluginHttpMethod.md)

@@ -11,6 +11,7 @@
 - 如果你只想做自动回复，优先看 `onHandleMsg(...)`。
 - 如果你想拦截发送按钮，使用 `onClickSendBtn(...)`。
 - 如果你想做进群欢迎、退群提醒，使用 `onMemberChange(...)`。
+- 如果你想添加聊天、主页或会话列表菜单，使用对应的 `onCreate...Menu(...)`。
 - 结构体字段请配合 [PluginStruct.md](./PluginStruct.md) 一起看。
 
 ## 最小可用模板
@@ -79,6 +80,70 @@ void onUnload() {
     log("plugin unloaded");
 }
 ```
+
+下面三个菜单创建回调在菜单展示和点击匹配时都可能执行。不要直接在创建回调中执行发送消息、写配置等有副作用的业务逻辑，应将这些操作放进菜单项的点击 lambda。
+
+## 创建聊天消息长按菜单
+
+用户打开一条消息的长按菜单时触发。通过 `addChatItemMenuItem(...)` 添加菜单项。
+
+```beanshell
+void onCreateChatItemMenu(Object msgInfoBean);
+```
+
+- `msgInfoBean`：当前长按消息
+
+### 示例
+
+```beanshell
+void onCreateChatItemMenu(Object msgInfoBean) {
+    if (!msgInfoBean.isText()) return;
+
+    addChatItemMenuItem("打印消息", "info", msg -> {
+        log(msg.getContent());
+    });
+}
+```
+
+## 创建主页加号菜单
+
+主页加号菜单构建时触发。通过 `addHomePopMenuItem(...)` 添加菜单项。
+
+```beanshell
+void onCreateHomePopMenu();
+```
+
+### 示例
+
+```beanshell
+void onCreateHomePopMenu() {
+    addHomePopMenuItem("主页菜单", "info", () -> {
+        log("主页菜单被点击");
+    });
+}
+```
+
+## 创建会话列表长按菜单
+
+用户打开一个会话的长按菜单时触发。通过 `addConversationItemMenuItem(...)` 添加菜单项。
+
+```beanshell
+void onCreateConversationItemMenu(Object conversationBean);
+```
+
+- `conversationBean`：当前长按会话
+
+### 示例
+
+```beanshell
+void onCreateConversationItemMenu(Object conversationBean) {
+    addConversationItemMenuItem("打印会话", conversation -> {
+        log(conversation.getUsername());
+    });
+}
+```
+
+菜单添加方法的完整签名和限制见 [PluginCoreApiMethod.md](./method/PluginCoreApiMethod.md)。
 
 ## 监听收到消息
 

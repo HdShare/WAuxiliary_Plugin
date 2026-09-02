@@ -8,6 +8,7 @@
 
 - `msgInfoBean` 通常出现在 `onHandleMsg(Object msgInfoBean)` 里。
 - `payMsgBean` 通常出现在 `onRecvPayMsg(Object payMsgBean)` 里。
+- `conversationBean` 出现在 `onCreateConversationItemMenu(Object conversationBean)` 里。
 - 下面的示例如果直接用了 `msgInfoBean`，默认都表示“这段代码写在 `onHandleMsg(...)` 里面”。
 
 ## 消息结构
@@ -174,6 +175,37 @@ if (msgInfoBean.isFile()) {
     var fileMsg = msgInfoBean.getFileMsg();
     log("文件名: " + fileMsg.getTitle());
     log("文件大小: " + fileMsg.getSize());
+}
+```
+
+## 会话结构
+
+`onCreateConversationItemMenu(Object conversationBean)` 中的参数实际为 `ConversationBean`，可按下列结构使用。
+
+```beanshell
+ConversationBean {
+    int getMsgCount();// 消息数量
+    String getUsername();// 会话 ID
+    int getUnReadCount();// 未读数量
+    long getConversationTime();// 会话时间戳
+    String getContent();// 最近一条消息内容，可能为 null
+    String getMsgType();// 最近一条消息类型
+    long getFlag();// 会话排序标记
+    String getDigest();// 摘要，可能为 null
+    String getDigestUser();// 摘要关联用户
+    boolean isSend();// 最近一条消息是否由自己发送
+}
+```
+
+### 示例
+
+```beanshell
+void onCreateConversationItemMenu(Object conversationBean) {
+    addConversationItemMenuItem("打印会话", conversation -> {
+        log("username = " + conversation.getUsername());
+        log("unReadCount = " + conversation.getUnReadCount());
+        log("content = " + conversation.getContent());
+    });
 }
 ```
 

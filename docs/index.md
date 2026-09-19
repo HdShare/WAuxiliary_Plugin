@@ -17,12 +17,17 @@ features:
     linkText: 更新于 20260813
 
   - title: AI智能回复(1.6.9)
-    details: 作者 SauncaiyuPro，kimi，deepseek
+    details: 作者 SauncaiyuPro & kimi & deepseek
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FSauncaiyuPro%2FAiAutoReply&filename=AI%E6%99%BA%E8%83%BD%E5%9B%9E%E5%A4%8D_1.6.9
     linkText: 更新于 20260804
 
+  - title: 每日60S新闻(1.2.7)
+    details: 作者 ajie4979
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fajie4979%2FDailyNews&filename=%E6%AF%8F%E6%97%A560S%E6%96%B0%E9%97%BB_1.2.7
+    linkText: 更新于 20260802
+
   - title: 文字转语音(1)
-    details: 作者 冷雨/归零二改
+    details: 作者 冷雨 & 归零二改
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fguiling%2FTextToSpeech&filename=%E6%96%87%E5%AD%97%E8%BD%AC%E8%AF%AD%E9%9F%B3_1
     linkText: 更新于 20260730
 
@@ -46,6 +51,11 @@ features:
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fahe-meow%2Fhistory-filter&filename=%E5%8E%86%E5%8F%B2%E6%B6%88%E6%81%AF%E8%BF%87%E6%BB%A4%E5%99%A8_1.1.0
     linkText: 更新于 20260706
 
+  - title: 广东机电职业技术学院的ai服务(1.0.0)
+    details: 作者 PakLam
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FPakLam%2FgdmecAI&filename=%E5%B9%BF%E4%B8%9C%E6%9C%BA%E7%94%B5%E8%81%8C%E4%B8%9A%E6%8A%80%E6%9C%AF%E5%AD%A6%E9%99%A2%E7%9A%84ai%E6%9C%8D%E5%8A%A1_1.0.0
+    linkText: 更新于 20260621
+
   - title: 元启Ai回复(2.2)
     details: 作者 神明佑我
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FAAZl3l4%2FYuanQiAiReply&filename=%E5%85%83%E5%90%AFAi%E5%9B%9E%E5%A4%8D_2.2
@@ -60,6 +70,11 @@ features:
     details: 作者 小米线
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%B0%8F%E7%B1%B3%E7%BA%BF%2FFishTTS&filename=%E6%96%87%E5%AD%97%E8%BD%AC%E8%AF%AD%E9%9F%B3_1
     linkText: 更新于 20260603
+
+  - title: AI智能绘图与编辑(1.3.0)
+    details: 作者 vivi
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fvivi%2FAI%20%E6%99%BA%E8%83%BD%E7%BB%98%E5%9B%BE%E4%B8%8E%E7%BC%96%E8%BE%91&filename=AI%E6%99%BA%E8%83%BD%E7%BB%98%E5%9B%BE%E4%B8%8E%E7%BC%96%E8%BE%91_1.3.0
+    linkText: 更新于 20260601
 
   - title: 自定义通知配置版(1.3.6)
     details: 作者 SamrtinSinako & 。。 & 周杰伦
@@ -94,6 +109,11 @@ features:
   - title: 朋友圈自动点赞(1.3.0)
     details: 作者 。。 & 周杰伦
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E&filename=%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E_1.3.0
+    linkText: 更新于 20260520
+
+  - title: 油价实时查询(1.0.0)
+    details: 作者 晚药
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E6%B2%B9%E4%BB%B7%E6%9F%A5%E8%AF%A2&filename=%E6%B2%B9%E4%BB%B7%E5%AE%9E%E6%97%B6%E6%9F%A5%E8%AF%A2_1.0.0
     linkText: 更新于 20260520
 
   - title: 僵尸粉检测(1.0.0)
@@ -355,9 +375,4 @@ features:
     details: 作者 CkBcDD
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2FCkBcDD%2FTXT-to-IMG&filename=%E6%96%87%E7%94%9F%E5%9B%BE_1.0.0
     linkText: 更新于 20250520
-
-  - title: 油价实时查询(1.0.0)
-    details: 作者 晚药
-    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E6%B2%B9%E4%BB%B7%E6%9F%A5%E8%AF%A2&filename=%E6%B2%B9%E4%BB%B7%E5%AE%9E%E6%97%B6%E6%9F%A5%E8%AF%A2_1.0.0
-    linkText: 更新于 2026520
 

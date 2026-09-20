@@ -176,22 +176,44 @@ log("member count = " + count);
 ```beanshell
 void addChatroomMember(String chatroomId, String addMember);
 
+void addChatroomMember(String chatroomId, String addMember, String reason);
+
 void addChatroomMember(String chatroomId, List<String> addMemberList);
+
+void addChatroomMember(String chatroomId, List<String> addMemberList, String reason);
 ```
 
 - `chatroomId`：群聊 `chatroom id`
 - `addMember` / `addMemberList`：要添加的成员 `wxid`
+- `reason`：邀请该成员进群时，提交给群主或管理员审核的申请理由
+
+## 示例
+
+```beanshell
+addChatroomMember("123456@chatroom", "wxid_xxx", "项目协作需要，申请邀请该成员进群");
+```
 
 ## 邀请群成员
 
 ```beanshell
 void inviteChatroomMember(String chatroomId, String inviteMember);
 
+void inviteChatroomMember(String chatroomId, String inviteMember, String reason);
+
 void inviteChatroomMember(String chatroomId, List<String> inviteMemberList);
+
+void inviteChatroomMember(String chatroomId, List<String> inviteMemberList, String reason);
 ```
 
 - `chatroomId`：群聊 `chatroom id`
 - `inviteMember` / `inviteMemberList`：要邀请的成员 `wxid`
+- `reason`：邀请该成员进群时，提交给群主或管理员审核的申请理由
+
+## 示例
+
+```beanshell
+inviteChatroomMember("123456@chatroom", "wxid_xxx", "项目协作需要，申请邀请该成员进群");
+```
 
 ## 移除群成员
 

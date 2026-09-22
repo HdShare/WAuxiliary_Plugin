@@ -6,6 +6,11 @@ hero:
   text: "WAuxiliary 插件"
 
 features:
+  - title: 元启Jev聊天助手(1.5)
+    details: 作者 神明佑我
+    link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FAAZl3l4%2FYuanQiJev&filename=%E5%85%83%E5%90%AFJev%E8%81%8A%E5%A4%A9%E5%8A%A9%E6%89%8B_1.5
+    linkText: 更新于 20260922
+
   - title: AI聊天总结(1.5.0)
     details: 作者 hjkl950217
     link: https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fhjkl950217%2Fai%E6%80%BB%E7%BB%93&filename=AI%E8%81%8A%E5%A4%A9%E6%80%BB%E7%BB%93_1.5.0

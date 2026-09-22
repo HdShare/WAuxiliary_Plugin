@@ -22,6 +22,7 @@ export default defineConfig({
           { text: '音频方法', link: '/api/method/PluginAudioMethod' },
           { text: '配置方法', link: '/api/method/PluginConfigMethod' },
           { text: '联系方法', link: '/api/method/PluginContactMethod' },
+          { text: '菜单方法', link: '/api/method/PluginCoreApiMethod' },
           { text: '网络方法', link: '/api/method/PluginHttpMethod' },
           { text: '媒体方法', link: '/api/method/PluginMediaMsgMethod' },
           { text: '消息方法', link: '/api/method/PluginMsgMethod' },

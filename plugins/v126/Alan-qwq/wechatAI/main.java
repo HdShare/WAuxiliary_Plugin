@@ -132,7 +132,7 @@ public void onHandleMsg(Object msgInfoBean) {
             new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                 try {
                     if (ENABLE_QUOTE_REPLY && finalMsgId > 0) {
-                        sendQuoteMsg(talkerWxid, finalMsgId, finalReply);
+                        sendQuoteMsg(talkerWxid, finalReply, finalMsgId);
                         log("新对话重置回复发送成功（引用回复已启用） | 目标用户：" + talkerWxid);
                     } else {
                         sendText(talkerWxid, finalReply);
@@ -223,7 +223,7 @@ public void onHandleMsg(Object msgInfoBean) {
                                 new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                                     try {
                                         if (ENABLE_QUOTE_REPLY && finalMsgId > 0) {
-                                            sendQuoteMsg(talkerWxid, finalMsgId, finalReply);
+                                            sendQuoteMsg(talkerWxid, finalReply, finalMsgId);
                                             log("AI引用回复发送成功 | 目标：" + talkerWxid + " | 引用消息ID：" + finalMsgId);
                                         } else {
                                             sendText(talkerWxid, finalReply);

@@ -1,0 +1,6 @@
+name = 历史消息过滤器
+author = ahe-meow
+version = 1.1.0
+updateTime = 20260706
+
+source = https://github.com/ahe-meow/wechat-history-filter

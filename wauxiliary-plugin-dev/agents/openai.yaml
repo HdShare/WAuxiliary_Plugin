@@ -1,0 +1,4 @@
+interface:
+  display_name: "WAuxiliary 插件开发"
+  short_description: "基于官方接口创建、调试、分层和审核 WAuxiliary 插件"
+  default_prompt: "使用 $wauxiliary-plugin-dev，依据已验证的 WA 接口创建或审核 WAuxiliary 插件。"

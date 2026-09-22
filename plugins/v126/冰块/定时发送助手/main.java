@@ -798,11 +798,11 @@ void showScheduleDialogInternal(final Activity act){
         saveText.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){
         if(uiTalkerId==null||uiTalkerId.length()==0){ uiToast("请在某个会话页面内触发“定时设置”"); return; }
         String content=String.valueOf(etText.getText()).trim(); if(content.length()==0){ uiToast("内容不能为空"); return; }
-        long when=parseTime(String.valueOf(etTimeT.getText()).trim()); if(when<=0){ uiToast("时间格式不正确：yyyy-MM-dd HH:mm"); return; }
-        String id="T"+System.currentTimeMillis(); String line=taskLine(id, TYPE_TEXT, uiTalkerId, uiTalkerName, when, repeatText[0], content, new ArrayList());
+        long whenTime=parseTime(String.valueOf(etTimeT.getText()).trim()); if(whenTime<=0){ uiToast("时间格式不正确：yyyy-MM-dd HH:mm"); return; }
+        String id="T"+System.currentTimeMillis(); String line=taskLine(id, TYPE_TEXT, uiTalkerId, uiTalkerName, whenTime, repeatText[0], content, new ArrayList());
         synchronized(TASK_LOCK){ List ls=readTaskLines(); ls.add(line); writeTaskLines(ls); }
         rescheduleDispatcher();
-        uiToast("已保存（文本→"+(uiTalkerName!=null&&uiTalkerName.length()>0?uiTalkerName:uiTalkerId)+"）："+fmtTime(when)+(repeatText[0]?"，每天重复":"，一次性"));
+        uiToast("已保存（文本→"+(uiTalkerName!=null&&uiTalkerName.length()>0?uiTalkerName:uiTalkerId)+"）："+fmtTime(whenTime)+(repeatText[0]?"，每天重复":"，一次性"));
         }});
         TextView hint=new TextView(act); hint.setTextSize(12); styleTextSecondary(hint); hint.setText("说明：任务会绑定“当前会话”为发送目标，各会话互不影响。"); body.addView(hint);
         TextView hAll=new TextView(act); hAll.setText("【定时：媒体 / 朋友圈】"); styleHeader(hAll); body.addView(hAll);
@@ -1013,7 +1013,7 @@ cbMedia.setOnClickListener(new View.OnClickListener(){ public void onClick(View 
         }});
         saveU.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){
         try{
-        long when=parseTime(String.valueOf(etTimeU.getText()).trim()); if(when<=0){ uiToast("时间格式不正确：yyyy-MM-dd HH:mm"); return; }
+        long whenTime=parseTime(String.valueOf(etTimeU.getText()).trim()); if(whenTime<=0){ uiToast("时间格式不正确：yyyy-MM-dd HH:mm"); return; }
         java.util.List paths=new java.util.ArrayList();
         LinearLayout L = cbMoment.isChecked()? listF : listM;
         for(int i=0;i<L.getChildCount();i++){
@@ -1034,15 +1034,15 @@ cbMedia.setOnClickListener(new View.OnClickListener(){ public void onClick(View 
         String id = (cbMoment.isChecked()? "F" : "M") + System.currentTimeMillis() + "_" + (int)(Math.random()*1000000);
         if(cbMoment.isChecked()){
         String content=String.valueOf(etMomentText.getText());
-        String line=taskLine(id, TYPE_MOMENT, uiTalkerId, uiTalkerName, when, repeatU[0], content, paths);
+        String line=taskLine(id, TYPE_MOMENT, uiTalkerId, uiTalkerName, whenTime, repeatU[0], content, paths);
         synchronized(TASK_LOCK){ java.util.List ls=readTaskLines(); ls.add(line); writeTaskLines(ls); }
         rescheduleDispatcher();
-        uiToast("已保存（朋友圈）："+fmtTime(when)+(repeatU[0]?"，每天重复":"，一次性"));
+        uiToast("已保存（朋友圈）："+fmtTime(whenTime)+(repeatU[0]?"，每天重复":"，一次性"));
         }else{
-        String line=taskLine(id, TYPE_MEDIA, uiTalkerId, uiTalkerName, when, repeatU[0], "", paths);
+        String line=taskLine(id, TYPE_MEDIA, uiTalkerId, uiTalkerName, whenTime, repeatU[0], "", paths);
         synchronized(TASK_LOCK){ java.util.List ls=readTaskLines(); ls.add(line); writeTaskLines(ls); }
         rescheduleDispatcher();
-        uiToast("已保存（媒体）："+fmtTime(when)+(repeatU[0]?"，每天重复":"，一次性"));
+        uiToast("已保存（媒体）："+fmtTime(whenTime)+(repeatU[0]?"，每天重复":"，一次性"));
         }
         }catch(Throwable e){ uiToast("保存失败"); }
         }});

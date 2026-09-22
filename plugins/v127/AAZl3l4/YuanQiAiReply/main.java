@@ -1649,7 +1649,7 @@ void onHandleMsg(Object msgInfoBean) {
         if (!voiceSent) {
             if (isGroupChat) {
                 if (isAutoQuote(scopeKey) && msgId > 0) {
-                    sendQuoteMsg(talker, msgId, reply);
+                    sendQuoteMsg(talker, reply, msgId);
                 } else {
                     sendText(talker, reply);
                 }

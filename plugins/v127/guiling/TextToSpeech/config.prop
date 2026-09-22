@@ -1,0 +1,5 @@
+enable=true
+prefixes=#语音,#kk
+voiceId=
+convertSilk=true
+sampleRate=24000

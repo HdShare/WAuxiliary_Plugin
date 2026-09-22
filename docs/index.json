@@ -1,7 +1,95 @@
 {
-  "generatedAt": "2026-06-11",
-  "totalPlugins": 63,
+  "generatedAt": "2026-09-20",
+  "totalPlugins": 74,
   "plugins": [
+    {
+      "name": "AI聊天总结",
+      "author": "hjkl950217",
+      "version": "1.3.2",
+      "updateTime": 20260817,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/hjkl950217/ai总结",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fhjkl950217%2Fai%E6%80%BB%E7%BB%93&filename=AI%E8%81%8A%E5%A4%A9%E6%80%BB%E7%BB%93_1.3.2"
+    },
+    {
+      "name": "提取聊天记录",
+      "author": "不愿意透露姓名",
+      "version": 1.4,
+      "updateTime": 20260813,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/不愿意透露姓名/提取聊天记录",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E4%B8%8D%E6%84%BF%E6%84%8F%E9%80%8F%E9%9C%B2%E5%A7%93%E5%90%8D%2F%E6%8F%90%E5%8F%96%E8%81%8A%E5%A4%A9%E8%AE%B0%E5%BD%95&filename=%E6%8F%90%E5%8F%96%E8%81%8A%E5%A4%A9%E8%AE%B0%E5%BD%95_1.4"
+    },
+    {
+      "name": "AI智能回复",
+      "author": "SauncaiyuPro & kimi & deepseek",
+      "version": "1.6.9",
+      "updateTime": 20260804,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/SauncaiyuPro/AiAutoReply",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FSauncaiyuPro%2FAiAutoReply&filename=AI%E6%99%BA%E8%83%BD%E5%9B%9E%E5%A4%8D_1.6.9"
+    },
+    {
+      "name": "每日60S新闻",
+      "author": "ajie4979",
+      "version": "1.2.7",
+      "updateTime": 20260802,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/ajie4979/DailyNews",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fajie4979%2FDailyNews&filename=%E6%AF%8F%E6%97%A560S%E6%96%B0%E9%97%BB_1.2.7"
+    },
+    {
+      "name": "文字转语音",
+      "author": "冷雨 & 归零二改",
+      "version": 1,
+      "updateTime": 20260730,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/guiling/TextToSpeech",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fguiling%2FTextToSpeech&filename=%E6%96%87%E5%AD%97%E8%BD%AC%E8%AF%AD%E9%9F%B3_1"
+    },
+    {
+      "name": "天气查询",
+      "author": "monkeycode-ai",
+      "version": "1.0.0",
+      "updateTime": 20260719,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/monkeycode-ai/Weather",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fmonkeycode-ai%2FWeather&filename=%E5%A4%A9%E6%B0%94%E6%9F%A5%E8%AF%A2_1.0.0"
+    },
+    {
+      "name": "天气Pro",
+      "author": "monkeycode-ai",
+      "version": "1.0.0",
+      "updateTime": 20260719,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/monkeycode-ai/WeatherPro",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fmonkeycode-ai%2FWeatherPro&filename=%E5%A4%A9%E6%B0%94Pro_1.0.0"
+    },
+    {
+      "name": "AI多模板聊天总结",
+      "author": "ahe-meow & hjkl950217",
+      "version": "1.3.1",
+      "updateTime": 20260715,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/ahe-meow/Wechat-AI-Sum-With-Templates",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fahe-meow%2FWechat-AI-Sum-With-Templates&filename=AI%E5%A4%9A%E6%A8%A1%E6%9D%BF%E8%81%8A%E5%A4%A9%E6%80%BB%E7%BB%93_1.3.1"
+    },
+    {
+      "name": "历史消息过滤器",
+      "author": "ahe-meow",
+      "version": "1.1.0",
+      "updateTime": 20260706,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/ahe-meow/history-filter",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fahe-meow%2Fhistory-filter&filename=%E5%8E%86%E5%8F%B2%E6%B6%88%E6%81%AF%E8%BF%87%E6%BB%A4%E5%99%A8_1.1.0"
+    },
+    {
+      "name": "广东机电职业技术学院的ai服务",
+      "author": "PakLam",
+      "version": "1.0.0",
+      "updateTime": 20260621,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/PakLam/gdmecAI",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FPakLam%2FgdmecAI&filename=%E5%B9%BF%E4%B8%9C%E6%9C%BA%E7%94%B5%E8%81%8C%E4%B8%9A%E6%8A%80%E6%9C%AF%E5%AD%A6%E9%99%A2%E7%9A%84ai%E6%9C%8D%E5%8A%A1_1.0.0"
+    },
+    {
+      "name": "元启Ai回复",
+      "author": "神明佑我",
+      "version": 2.2,
+      "updateTime": 20260615,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/AAZl3l4/YuanQiAiReply",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FAAZl3l4%2FYuanQiAiReply&filename=%E5%85%83%E5%90%AFAi%E5%9B%9E%E5%A4%8D_2.2"
+    },
     {
       "name": "微信平板模式",
       "author": "叶昕蓝yu",
@@ -17,6 +105,14 @@
       "updateTime": 20260603,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/小米线/FishTTS",
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%B0%8F%E7%B1%B3%E7%BA%BF%2FFishTTS&filename=%E6%96%87%E5%AD%97%E8%BD%AC%E8%AF%AD%E9%9F%B3_1"
+    },
+    {
+      "name": "AI智能绘图与编辑",
+      "author": "vivi",
+      "version": "1.3.0",
+      "updateTime": 20260601,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/vivi/AI 智能绘图与编辑",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fvivi%2FAI%20%E6%99%BA%E8%83%BD%E7%BB%98%E5%9B%BE%E4%B8%8E%E7%BC%96%E8%BE%91&filename=AI%E6%99%BA%E8%83%BD%E7%BB%98%E5%9B%BE%E4%B8%8E%E7%BC%96%E8%BE%91_1.3.0"
     },
     {
       "name": "自定义通知配置版",
@@ -75,6 +171,14 @@
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E&filename=%E6%9C%8B%E5%8F%8B%E5%9C%88%E8%87%AA%E5%8A%A8%E7%82%B9%E8%B5%9E_1.3.0"
     },
     {
+      "name": "油价实时查询",
+      "author": "晚药",
+      "version": "1.0.0",
+      "updateTime": 20260520,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/晚药/油价查询",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E6%B2%B9%E4%BB%B7%E6%9F%A5%E8%AF%A2&filename=%E6%B2%B9%E4%BB%B7%E5%AE%9E%E6%97%B6%E6%9F%A5%E8%AF%A2_1.0.0"
+    },
+    {
       "name": "僵尸粉检测",
       "author": "。。 & 周杰伦",
       "version": "1.0.0",
@@ -105,14 +209,6 @@
       "updateTime": 20260514,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/。。/分组管理",
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E3%80%82%E3%80%82%2F%E5%88%86%E7%BB%84%E7%AE%A1%E7%90%86&filename=%E5%88%86%E7%BB%84%E7%AE%A1%E7%90%86_1.2.0"
-    },
-    {
-      "name": "元启Ai回复",
-      "author": "神明佑我",
-      "version": 2.1,
-      "updateTime": 20260508,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/AAZl3l4/YuanQiAiReply",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FAAZl3l4%2FYuanQiAiReply&filename=%E5%85%83%E5%90%AFAi%E5%9B%9E%E5%A4%8D_2.1"
     },
     {
       "name": "群管助手",
@@ -163,14 +259,6 @@
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%9D%A4%2FAI%E7%BB%98%E5%9B%BE%E5%8A%A9%E6%89%8B&filename=AI%E7%BB%98%E5%9B%BE%E5%8A%A9%E6%89%8B_1.0.0"
     },
     {
-      "name": "ChatLab",
-      "author": "Hd",
-      "version": "1.0.0",
-      "updateTime": 20260427,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/ChatLab",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FChatLab&filename=ChatLab_1.0.0"
-    },
-    {
       "name": "表情合成",
       "author": "Kyo",
       "version": "1.0.2",
@@ -187,12 +275,12 @@
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fcoderpwh%2Fdouyin&filename=%E6%8A%96%E9%9F%B3%E9%93%BE%E6%8E%A5%E8%A7%A3%E6%9E%90_1.0.2"
     },
     {
-      "name": "摸头插件",
+      "name": "ChatLab",
       "author": "Hd",
-      "version": "1.0.2",
-      "updateTime": 20260426,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/Avatar-rua",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FAvatar-rua&filename=%E6%91%B8%E5%A4%B4%E6%8F%92%E4%BB%B6_1.0.2"
+      "version": "1.0.0",
+      "updateTime": 20260427,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/ChatLab",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FChatLab&filename=ChatLab_1.0.0"
     },
     {
       "name": "表情合成",
@@ -203,14 +291,6 @@
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FEmojiMix&filename=%E8%A1%A8%E6%83%85%E5%90%88%E6%88%90_1.0.2"
     },
     {
-      "name": "历史今天",
-      "author": "Hd",
-      "version": "1.0.2",
-      "updateTime": 20260426,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/HistoryToday",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FHistoryToday&filename=%E5%8E%86%E5%8F%B2%E4%BB%8A%E5%A4%A9_1.0.2"
-    },
-    {
       "name": "点歌插件",
       "author": "Hd",
       "version": "1.0.2",
@@ -219,20 +299,52 @@
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FMusicPlugin&filename=%E7%82%B9%E6%AD%8C%E6%8F%92%E4%BB%B6_1.0.2"
     },
     {
-      "name": "智能聊天",
-      "author": "Hd",
+      "name": "举牌",
+      "author": "周芷越",
       "version": "1.0.2",
       "updateTime": 20260426,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/OpenAiChat",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FOpenAiChat&filename=%E6%99%BA%E8%83%BD%E8%81%8A%E5%A4%A9_1.0.2"
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/周芷越/jupai",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%91%A8%E8%8A%B7%E8%B6%8A%2Fjupai&filename=%E4%B8%BE%E7%89%8C_1.0.2"
     },
     {
-      "name": "综合示例插件",
+      "name": "看看腿",
+      "author": "yfishyon",
+      "version": "1.0.2",
+      "updateTime": 20260426,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/yfishyon/sese",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fyfishyon%2Fsese&filename=%E7%9C%8B%E7%9C%8B%E8%85%BF_1.0.2"
+    },
+    {
+      "name": "历史今天",
       "author": "Hd",
       "version": "1.0.2",
       "updateTime": 20260426,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/PluginDemo",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FPluginDemo&filename=%E7%BB%BC%E5%90%88%E7%A4%BA%E4%BE%8B%E6%8F%92%E4%BB%B6_1.0.2"
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/HistoryToday",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FHistoryToday&filename=%E5%8E%86%E5%8F%B2%E4%BB%8A%E5%A4%A9_1.0.2"
+    },
+    {
+      "name": "龙图",
+      "author": "yfishyon",
+      "version": "1.0.2",
+      "updateTime": 20260426,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/yfishyon/long",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fyfishyon%2Flong&filename=%E9%BE%99%E5%9B%BE_1.0.2"
+    },
+    {
+      "name": "摸头插件",
+      "author": "Hd",
+      "version": "1.0.2",
+      "updateTime": 20260426,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/Avatar-rua",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FAvatar-rua&filename=%E6%91%B8%E5%A4%B4%E6%8F%92%E4%BB%B6_1.0.2"
+    },
+    {
+      "name": "视频插件",
+      "author": "Hd",
+      "version": "1.0.2",
+      "updateTime": 20260426,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/VideoPlugin",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FVideoPlugin&filename=%E8%A7%86%E9%A2%91%E6%8F%92%E4%BB%B6_1.0.2"
     },
     {
       "name": "文转图",
@@ -251,14 +363,6 @@
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FTextToSpeech&filename=%E6%96%87%E8%BD%AC%E9%9F%B3_1.0.2"
     },
     {
-      "name": "视频插件",
-      "author": "Hd",
-      "version": "1.0.2",
-      "updateTime": 20260426,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/VideoPlugin",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FVideoPlugin&filename=%E8%A7%86%E9%A2%91%E6%8F%92%E4%BB%B6_1.0.2"
-    },
-    {
       "name": "语录插件",
       "author": "Hd",
       "version": "1.0.2",
@@ -275,28 +379,20 @@
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2Fmsg-q-pro&filename=%E8%AF%AD%E5%BD%95Pro%E6%8F%92%E4%BB%B6_1.0.2"
     },
     {
-      "name": "龙图",
-      "author": "yfishyon",
+      "name": "智能聊天",
+      "author": "Hd",
       "version": "1.0.2",
       "updateTime": 20260426,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/yfishyon/long",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fyfishyon%2Flong&filename=%E9%BE%99%E5%9B%BE_1.0.2"
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/OpenAiChat",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FOpenAiChat&filename=%E6%99%BA%E8%83%BD%E8%81%8A%E5%A4%A9_1.0.2"
     },
     {
-      "name": "看看腿",
-      "author": "yfishyon",
+      "name": "综合示例插件",
+      "author": "Hd",
       "version": "1.0.2",
       "updateTime": 20260426,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/yfishyon/sese",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2Fyfishyon%2Fsese&filename=%E7%9C%8B%E7%9C%8B%E8%85%BF_1.0.2"
-    },
-    {
-      "name": "举牌",
-      "author": "周芷越",
-      "version": "1.0.2",
-      "updateTime": 20260426,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/周芷越/jupai",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2F%E5%91%A8%E8%8A%B7%E8%B6%8A%2Fjupai&filename=%E4%B8%BE%E7%89%8C_1.0.2"
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v127/Hd/PluginDemo",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv127%2FHd%2FPluginDemo&filename=%E7%BB%BC%E5%90%88%E7%A4%BA%E4%BE%8B%E6%8F%92%E4%BB%B6_1.0.2"
     },
     {
       "name": "进退群配置版",
@@ -371,20 +467,20 @@
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2Fvhukze%2FAITextToVoice&filename=AI%E6%96%87%E5%AD%97%E8%BD%AC%E8%AF%AD%E9%9F%B3_1.0.0"
     },
     {
-      "name": "定时发送助手",
-      "author": "冰块",
-      "version": "1.0.0",
-      "updateTime": 20260302,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/定时发送助手",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E5%86%B0%E5%9D%97%2F%E5%AE%9A%E6%97%B6%E5%8F%91%E9%80%81%E5%8A%A9%E6%89%8B&filename=%E5%AE%9A%E6%97%B6%E5%8F%91%E9%80%81%E5%8A%A9%E6%89%8B_1.0.0"
-    },
-    {
       "name": "艾特关键词自动回复",
       "author": "冰块",
       "version": "1.0.0",
       "updateTime": 20260302,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/艾特关键词自动回复",
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E5%86%B0%E5%9D%97%2F%E8%89%BE%E7%89%B9%E5%85%B3%E9%94%AE%E8%AF%8D%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D&filename=%E8%89%BE%E7%89%B9%E5%85%B3%E9%94%AE%E8%AF%8D%E8%87%AA%E5%8A%A8%E5%9B%9E%E5%A4%8D_1.0.0"
+    },
+    {
+      "name": "定时发送助手",
+      "author": "冰块",
+      "version": "1.0.0",
+      "updateTime": 20260302,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/冰块/定时发送助手",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E5%86%B0%E5%9D%97%2F%E5%AE%9A%E6%97%B6%E5%8F%91%E9%80%81%E5%8A%A9%E6%89%8B&filename=%E5%AE%9A%E6%97%B6%E5%8F%91%E9%80%81%E5%8A%A9%E6%89%8B_1.0.0"
     },
     {
       "name": "自动增加步数",
@@ -395,20 +491,20 @@
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2FWukon%2FAutoStep&filename=%E8%87%AA%E5%8A%A8%E5%A2%9E%E5%8A%A0%E6%AD%A5%E6%95%B0_1.0.6"
     },
     {
-      "name": "统计",
-      "author": "轻乳",
-      "version": "1.0.0",
-      "updateTime": 20260222,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/轻乳/统计累计收到消息",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E8%BD%BB%E4%B9%B3%2F%E7%BB%9F%E8%AE%A1%E7%B4%AF%E8%AE%A1%E6%94%B6%E5%88%B0%E6%B6%88%E6%81%AF&filename=%E7%BB%9F%E8%AE%A1_1.0.0"
-    },
-    {
       "name": "记事本",
       "author": "轻乳",
       "version": "1.0.0",
       "updateTime": 20260222,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/轻乳/记事本插件",
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E8%BD%BB%E4%B9%B3%2F%E8%AE%B0%E4%BA%8B%E6%9C%AC%E6%8F%92%E4%BB%B6&filename=%E8%AE%B0%E4%BA%8B%E6%9C%AC_1.0.0"
+    },
+    {
+      "name": "统计",
+      "author": "轻乳",
+      "version": "1.0.0",
+      "updateTime": 20260222,
+      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/轻乳/统计累计收到消息",
+      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E8%BD%BB%E4%B9%B3%2F%E7%BB%9F%E8%AE%A1%E7%B4%AF%E8%AE%A1%E6%94%B6%E5%88%B0%E6%B6%88%E6%81%AF&filename=%E7%BB%9F%E8%AE%A1_1.0.0"
     },
     {
       "name": "AI作图",
@@ -497,14 +593,6 @@
       "updateTime": 20250520,
       "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/CkBcDD/TXT-to-IMG",
       "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2FCkBcDD%2FTXT-to-IMG&filename=%E6%96%87%E7%94%9F%E5%9B%BE_1.0.0"
-    },
-    {
-      "name": "油价实时查询",
-      "author": "晚药",
-      "version": "1.0.0",
-      "updateTime": 2026520,
-      "homeLink": "https://github.com/HdShare/WAuxiliary_Plugin/tree/main/plugins/v126/晚药/油价查询",
-      "downloadUrl": "https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2FHdShare%2FWAuxiliary_Plugin%2Ftree%2Fmain%2Fplugins%2Fv126%2F%E6%99%9A%E8%8D%AF%2F%E6%B2%B9%E4%BB%B7%E6%9F%A5%E8%AF%A2&filename=%E6%B2%B9%E4%BB%B7%E5%AE%9E%E6%97%B6%E6%9F%A5%E8%AF%A2_1.0.0"
     }
   ]
 }

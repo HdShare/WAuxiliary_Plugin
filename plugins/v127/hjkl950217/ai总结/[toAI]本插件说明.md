@@ -15,8 +15,8 @@ plugins/v127/hjkl950217/ai总结
 核心作用：
 
 1. 读取当前聊天最近一段历史消息，调用配置的大模型接口生成聊天总结。
-2. 直接调用配置的大模型接口回答用户提出的问题。
-3. 提供配置弹窗，允许用户配置接口、模型、提示词、回答模板和日志开关。
+2. 直接调用配置的大模型接口回答用户提出的问题，可附带最近聊天记录作参考。
+3. 提供配置弹窗，允许用户配置接口、模型、提示词、输出模板、提问参考记录条数和日志开关。
 4. 提供日志查看弹窗，方便排查接口调用或聊天记录读取问题。
 
 ## 当前文件职责
@@ -31,7 +31,7 @@ main.java
 config.prop
 ```
 
-默认配置文件。当前默认配置包含 API 地址、模型、总结条数、日志开关、总结提示词、提问系统提示词、提问回答模板。
+默认配置文件。当前默认配置包含 API 地址、模型、总结条数、提问参考记录条数、日志开关、总结提示词、提问系统提示词、输出模板。
 
 ```text
 info.prop
@@ -101,7 +101,7 @@ readme.md
 - 内容支持滑动。
 - 文本可选中。
 - 提供复制按钮。
-- 文件不存在、文件为空或取不到日志文件时显示 `当前没有日志`。
+- 文件不存在、文件为空或取不到日志文件时按日志开关区分提示：开关已开启显示 `当前没有日志／当前日志记录已开启`，开关关闭则提示如何打开。
 
 ### `/ai 总结`
 
@@ -126,7 +126,15 @@ summary_count
 
 ### `/ai 提问 <问题>`
 
-直接调用 AI 回答问题。
+调用 AI 回答问题，并按配置附带当前聊天最近若干条记录作参考。
+
+参考条数来自配置项：
+
+```properties
+ask_context_count
+```
+
+当前限制范围：`0~200`，默认 30；填 0 表示不附带聊天记录。
 
 示例：
 
@@ -195,15 +203,19 @@ void handleCommand(String talker, String cmd, boolean intercepted)
 当前 `config.prop` 默认配置包括：
 
 ```properties
+ask_context_count = 30
 api_url = https://api.openai.com/v1/chat/completions
 api_key =
-model = gpt-4o-mini
-summary_count = 50
+model = mimo-v2.6-flash
+summary_count = 80
 log_enable = false
 summary_prompt = ...
 ask_system_prompt = ...
+output_template = ...
 ask_template = ...
 ```
+
+说明：`output_template` 是 1.4.0 起的统一输出模板，`ask_template` 作为旧键保留兼容。
 
 ### `api_url`
 
@@ -242,7 +254,7 @@ x-api-key
 默认：
 
 ```text
-gpt-4o-mini
+mimo-v2.6-flash
 ```
 
 OpenAI 兼容接口和 Claude 原生接口都会把它放到 `model` 字段。
@@ -253,7 +265,7 @@ OpenAI 兼容接口和 Claude 原生接口都会把它放到 `model` 字段。
 
 当前 `getSummaryCount()` 会用 `clampCount(...)` 限制到 `50~200`。
 
-注意：`config.prop` 当前默认写的是 `50`，但 `ensureDefaultConfig()` 在缺失时补的是 `100`。如果希望完全一致，可后续统一为同一个值。
+注意：`config.prop` 当前默认写的是 `80`，而 `ensureDefaultConfig()` 与 getter 在缺失时补的是 `100`。两者都在合法范围内，只是取值不同；如需完全一致可后续统一。
 
 ### `log_enable`
 
@@ -299,21 +311,36 @@ String DEFAULT_SUMMARY_PROMPT = "请基于聊天记录生成简短中文总结�
 String DEFAULT_ASK_SYSTEM_PROMPT = "回答时言简意赅，直接回答结论即可。控制在300字以下。";
 ```
 
-### `ask_template`
+### `ask_context_count`
 
-提问功能的回答模板。
+`/ai 提问` 时附带多少条最近聊天记录作参考。
+
+默认：
+
+```properties
+ask_context_count = 30
+```
+
+`getAskContextCount()` 用 `clampAskContextCount(...)` 限制到 `0~200`。为 0 时 `askAi(...)` 跳过读取历史，直接把问题原文发给模型。
+
+### `output_template`
+
+总结和提问共用的输出模板。
 
 支持占位符：
 
-- `{问题原文}`
+- `{问题原文/总结标题}`：多个候选名用 `/` 分隔，按顺序取第一个非空值
+- `{回复正文}`
 - `{回答正文}`
 - `{模型名称}`
 
 当前默认：
 
 ```text
-问：{问题原文}\n---------\n{回答正文}\n--\n(以上回答由[{模型名称}]回答，仅供参考)
+问：{问题原文/总结标题}\n---------\n{回复正文}\n---------\n(以上内容由[{模型名称}]整理，仅供参考)
 ```
+
+渲染由 `formatOutput(template, values)` 完成，支持 `{A/B}` 这种多候选写法；占位符都取不到值时替换为空。
 
 注意：`config.prop` 中使用 `\n` 字面量表示换行。代码通过：
 
@@ -322,6 +349,10 @@ String decodeConfigText(String text)
 ```
 
 把 `\n` 转成真实换行。
+
+### `ask_template`（旧键，兼容保留）
+
+1.4.0 之前的提问回答模板。`getOutputTemplate()` 在 `output_template` 为空时回退读它，再为空才用 `DEFAULT_OUTPUT_TEMPLATE`。新配置不要再用这个键。
 
 ## 配置弹窗设计
 
@@ -337,10 +368,11 @@ void showConfigDialog()
 2. API Key
 3. 模型名称
 4. 默认总结条数
-5. 总结提示词
-6. 提问系统提示词
-7. 提问回答模板
-8. 运行日志开关
+5. 提问附带记录条数
+6. 总结提示词
+7. 提问系统提示词
+8. 输出模板
+9. 运行日志开关
 
 保存时写入：
 
@@ -349,9 +381,10 @@ putString(CFG_API_URL, ...)
 putString(CFG_API_KEY, ...)
 putString(CFG_MODEL, ...)
 putInt(CFG_SUMMARY_COUNT, ...)
+putInt(CFG_ASK_CONTEXT_COUNT, ...)
 putString(CFG_SUMMARY_PROMPT, ...)
 putString(CFG_ASK_SYSTEM_PROMPT, ...)
-putString(CFG_ASK_TEMPLATE, ...)
+putString(CFG_OUTPUT_TEMPLATE, ...)
 putBoolean(CFG_LOG_ENABLE, ...)
 ```
 
@@ -372,10 +405,12 @@ putBoolean(CFG_LOG_ENABLE, ...)
 
 ```java
 void summarizeChat(final String talker, final int count)
-String buildHistoryText(String talker, int count)
+Map buildHistoryText(String talker, int count)
 List queryRecentHistoryMsg(String talker, int count)
-void callSummaryApi(final String talker, String historyText, int count)
+void callSummaryApi(final String talker, String historyText, int count, String codeTitle)
 ```
+
+`buildHistoryText(...)` 返回 `Map`，含 `text`（整理后的聊天记录）和 `title`（按消息时间范围生成的标题）两个键。`/ai 提问` 只取 `text`。
 
 流程：
 
@@ -399,9 +434,11 @@ void callSummaryApi(final String talker, String historyText, int count)
 List queryHistoryMsg(String talker, long startTime, boolean isAsc, int count);
 ```
 
-优先以 `isAsc=false`（倒序）从 `startTime=now` 往前的取最近的 `count` 条，一步到位，最准确也最快；取 `Math.max(count * 2, 200)` 双倍量，过滤无关消息后仍够不足时取全量。
+优先以 `isAsc=false`（倒序）取最近一批，取 `Math.max(count * 2, 200)` 双倍量。注意宿主把 `startTime` 当下限处理（`createTime >= startTime`），传 `now` 会一条都取不到，所以起点用 `0L`，取不到再退回试 `now`。
 
-倒序不可用时，回退到按时间窗口扩大正序查询：从最近 1 天开始，逐步翻倍（2 天、4 天、8 天……），最多 8 轮，起点不超过 `now` 的范围。
+拿到倒序结果后，再用正序查一次 `descNewest` 之后的消息，判断这批是否已经覆盖到最新。已覆盖就直接过滤、排序、截取最后 `count` 条返回。
+
+未覆盖时走正序兜底：窗口从最近 1 天开始逐步翻倍（2、4、8 天……），最多 10 轮；若某一轮返回满页（`>= queryCount`），用 `aiSumPageForward(...)` 从页尾继续按 `msgId` 去重翻页补齐到最新，最多 20 页。
 
 最后会过滤可读消息并按时间排序，只保留最后 `count` 条。
 
@@ -449,7 +486,8 @@ List queryHistoryMsg(String talker, long startTime, boolean isAsc, int count);
 boolean isAskCommand(String cmd)
 String parseAskQuestion(String cmd)
 void askAi(final String talker, final String question)
-void callAskApi(final String talker, final String question)
+String buildAskUserContent(String question, String contextText)
+void callAskApi(final String talker, final String question, final String contextText)
 String formatAskAnswer(String question, String answer, String model)
 ```
 
@@ -460,10 +498,12 @@ String formatAskAnswer(String question, String answer, String model)
 3. 如果问题为空，toast 提示。
 4. 检查 API 配置。
 5. toast：`AI 正在回答，请稍候...`
-6. 调用模型接口。
-7. 解析回答正文。
-8. 套用 `ask_template`。
-9. 发送到当前聊天。
+6. 新线程中按 `ask_context_count` 读取最近聊天记录（为 0 则跳过），复用 `buildHistoryText(...)` 的整理逻辑。
+7. `buildAskUserContent(...)` 把记录和问题拼成发给模型的用户消息：记录在前并声明“仅供参考、可忽略”，问题原文在末尾；记录为空时直接返回问题原文。
+8. 调用模型接口。
+9. 解析回答正文。
+10. 套用 `output_template`，其中 `{问题原文}` 用的是干净的问题原文，不含拼进去的聊天记录。
+11. 发送到当前聊天。
 
 ### 提问系统提示词
 
@@ -477,14 +517,35 @@ OpenAI 兼容接口中放入 system message。
 
 Claude 原生接口中放入 `system` 字段。
 
+### 提问附带聊天记录
+
+`buildAskUserContent(...)` 拼出的用户消息形如：
+
+```text
+以下是当前聊天的最近聊天记录，仅供参考，可能与问题无关，可直接忽略：
+--------
+[09-22 10:03] 张三: 今天下午三点开会
+[09-22 10:05] 李四: 收到
+--------
+
+问题：<问题原文>
+```
+
+设计要点：
+
+- 聊天记录只进请求体，不进输出模板；输出里的 `{问题原文}` 始终是干净的问题原文。
+- 记录声明为“仅供参考、可忽略”，避免模型被无关聊天带偏。
+- `ask_context_count = 0` 时完全不读历史，行为与 1.4.0 一致。
+
 ### 回答模板
 
-`formatAskAnswer(...)` 替换：
+`formatAskAnswer(...)` 走 `formatOutput(getOutputTemplate(), values)`，传入：
 
 ```java
-.replace("{问题原文}", safeString(question))
-.replace("{回答正文}", safeString(answer))
-.replace("{模型名称}", safeString(model))
+values.put("问题原文", safeString(question))
+values.put("回复正文", safeString(answer))
+values.put("回答正文", safeString(answer))
+values.put("模型名称", safeString(model))
 ```
 
 如果用户把模板改坏，只要还包含普通文本，也会照常发送；没有强校验占位符。
@@ -614,7 +675,7 @@ String buildHelpText()
 本插件会把以下内容发送到用户配置的外部 API：
 
 - `/ai 总结`：整理后的聊天记录。
-- `/ai 提问`：用户输入的问题。
+- `/ai 提问`：用户输入的问题，以及 `ask_context_count` 条最近聊天记录（1.5.0 起，默认 30 条；配置为 0 时不发送）。
 
 因此后续改动时：
 
@@ -638,9 +699,10 @@ String buildHelpText()
 1. 打开 `/ai 配置`，确认所有输入框可见并能保存。
 2. 开启运行日志后执行 `/ai 日志`，确认能看到宿主日志。
 3. 配置有效 API 后测试 `/ai 提问 1+1等于几？`。
-4. 测试 `/ai 总结` 和 `/ai 总结 120`。
-5. 测试未知命令 `/ai abc` 是否弹帮助。
-6. 修改 `ask_template`，确认 `\n` 能转成真实换行。
+4. 把 `ask_context_count` 设为 0 和 30 各测一次 `/ai 提问`，确认附带记录时能答出依赖上下文的问题，且输出模板里的问题原文没有被记录污染。
+5. 测试 `/ai 总结` 和 `/ai 总结 120`。
+6. 测试未知命令 `/ai abc` 是否弹帮助。
+7. 修改 `output_template`，确认 `\n` 能转成真实换行。
 
 ## 常见修改入口
 
@@ -687,6 +749,17 @@ String buildHelpText()
 - `queryRecentHistoryMsg(...)`
 - `config.prop` 的 `summary_count`
 - README 对范围的说明
+
+### 修改提问附带记录
+
+重点看：
+
+- `clampAskContextCount(...)`
+- `getAskContextCount()`
+- `askAi(...)` 里的读取分支
+- `buildAskUserContent(...)`
+- `config.prop` 的 `ask_context_count`
+- README 与本文档对隐私范围的说明
 
 ## 当前设计取舍
 

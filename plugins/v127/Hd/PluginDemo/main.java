@@ -57,6 +57,6 @@ void onMemberChange(String type, String groupWxid, String userWxid, String userN
 }
 
 // 监听好友申请
-void onNewFriend(String wxid, String ticket, int scene) {
+void onNewFriend(String wxid, String ticket, int scene, JSONObject info) {
     verifyUser(wxid, ticket, scene) // 通过好友申请
 }

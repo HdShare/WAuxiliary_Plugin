@@ -305,7 +305,7 @@ void onMemberChange(String type, String groupWxid, String userWxid, String userN
     handleCommunityMemberChange(type, groupWxid, userWxid, userName);
 }
 
-void onNewFriend(String wxid, String ticket, int scene) {
+void onNewFriend(String wxid, String ticket, int scene, JSONObject info) {
     if (core != null) {
         core.onNewFriend(wxid, ticket, scene);
         return;

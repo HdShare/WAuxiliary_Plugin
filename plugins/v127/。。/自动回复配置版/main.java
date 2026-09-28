@@ -3615,7 +3615,7 @@ private void executeReplySequence(final String targetWxid, final List replyItems
     }).start();
 }
 
-public void onNewFriend(String wxid, String ticket, int scene) {
+public void onNewFriend(String wxid, String ticket, int scene, org.json.JSONObject info) {
     try {
         if (getBoolean(AUTO_ACCEPT_FRIEND_ENABLED_KEY, false)) {
             debugLog("[新好友申请] 自动同意已开启，正在同意请求: " + wxid);

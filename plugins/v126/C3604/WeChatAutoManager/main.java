@@ -133,7 +133,7 @@ void sendDetailedLog(String title, String content) {
 }
 
 // ==================== 好友管理功能 ====================
-void onNewFriend(String wxid, String ticket, int scene) {
+void onNewFriend(String wxid, String ticket, int scene, JSONObject info) {
     try {
         // 首次触发时发送启动日志
         sendStartupLogIfNeeded();

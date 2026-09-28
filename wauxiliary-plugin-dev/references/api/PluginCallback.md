@@ -228,17 +228,34 @@ void onMemberChange(String type, String groupWxid, String userWxid, String userN
 收到新的好友申请时触发。
 
 ```beanshell
-void onNewFriend(String wxid, String ticket, int scene);
+void onNewFriend(String wxid, String ticket, int scene, JSONObject info);
 ```
 
 - `wxid`：申请人 `wxid`
 - `ticket`：申请票据
 - `scene`：来源场景值
+- `info`：好友申请的扩展信息，实际类型为 `org.json.JSONObject`
+
+`info` 中的值均为字符串：
+
+| 字段 | 说明 |
+|---|---|
+| `fromNickname` | 申请人昵称 |
+| `content` | 好友申请验证消息 |
+| `country` | 国家或地区 |
+| `province` | 省份 |
+| `city` | 城市 |
+| `sign` | 个性签名 |
+| `sex` | 性别原始值 |
+| `alias` | 申请人的微信号 |
 
 ### 示例
 
 ```beanshell
-void onNewFriend(String wxid, String ticket, int scene) {
+void onNewFriend(String wxid, String ticket, int scene, JSONObject info) {
+    String nickname = info.optString("fromNickname", wxid);
+    String content = info.optString("content", "");
+    log("收到好友申请: " + nickname + " (" + wxid + "), 验证消息: " + content);
     verifyUser(wxid, ticket, scene);
 }
 ```

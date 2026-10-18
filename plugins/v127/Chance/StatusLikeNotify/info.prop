@@ -1,0 +1,5 @@
+﻿name = 状态通知与自动点赞
+author = Chance
+version = 5.2.0
+updateTime = 20261018
+description = 监控好友微信状态，按名单自动点赞并发送通知。
